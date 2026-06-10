@@ -1,0 +1,30 @@
+[package]
+name = "caelus_core"
+version = "0.1.0"
+edition = "2021"
+
+# CAELUS OS — Nedensel Çekirdek (no_std + alloc)
+# include/causal_engine.h'nin bit-bit sadık Rust portu (F1).
+# Masaüstü C++ motoru ile diferansiyel golden eşitliği zorunludur:
+#   python tests/run_bs_exec_golden.py --binary caelus_core/target/release/caelus_core_repl.exe
+#
+# Bağımsız crate: kök caelus_network paketinin build'ine DOKUNMAZ
+# (workspace üyesi değildir; kendi caelus_core/target dizinini kullanır).
+
+[features]
+default = []
+# Harness bin'i ve testler std ister; çekirdek lib no_std + alloc'tur.
+std = []
+
+[lib]
+name = "caelus_core"
+
+[[bin]]
+name = "caelus_core_repl"
+path = "src/bin/caelus_core_repl.rs"
+required-features = ["std"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

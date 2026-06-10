@@ -1,0 +1,252 @@
+==============================================================
+      CAELUS OS — Air-Gapped Neuro-Symbolic LMOS
+      Universal Causal Crisis Engine
+      Senaryo : BS-02_GOLGE_ARSIV
+      BUILD MODE: BLACKBOX (UI Embedded)
+==============================================================
+[DET] Deterministik mod aktif — tohumlu PRNG + sanal saat(0)
+[REGISTRY] Eklenti kaydı tamamlandı (det-mode)
+           Solver    : DeterministicSolver
+           KEYMGMT   : (none)
+           Connector : 1 kayıtlı
+           Reporter  : 1 kayıtlı
+
+[UI] Stratejik Arayuz bellege cikartiliyor...
+[UI] Arayuz hazir -> C:\Users\Lenovo\AppData\Local\Temp/caelus_ui.html
+[UI] (Bu dosyalar cikista silinecektir.)
+
+[INTEL-CORE] -- Security Enclave -------------------------
+[INTEL-CORE] AES-256 self-test (FIPS-197 KAT): PASS
+[INTEL-CORE] Enclave key: env-provided (CAELUS_ENCLAVE_KEY)
+[INTEL-CORE] AES-256-CBC round-trip: PASS
+
+[INTEL-CORE] -- Operational Profile Load -----------------
+[INTEL-CORE] No encrypted override found; using built-in baseline for BS-02_GOLGE_ARSIV.
+[INTEL-CORE] Scenario: BS-02_GOLGE_ARSIV (UNIVERSAL)
+[SCENARIO] ed25519 imza doğrulandı (payload=CAELUS_SCENARIO_PACK_V1 canonical critical fields).
+[SCENARIO] Yüklendi: BS-02_GOLGE_ARSIV [tacit_knowledge_singularity] sektör=multinational_merger_day1
+           Düğüm:7 Kenar:9 Döngü:1 Kaldıraç:5 Histerezis:2 Intel:4
+[SCENARIO] Nedensel motor 'BS-02_GOLGE_ARSIV' ile yapılandırıldı.
+[SCENARIO] Domain: multinational_merger_day1 | Ufuk: 168 saat | Tick: 30 dak
+[CONNECTOR] CsvReplayConnector yuklendi: 4 olay (scenarios/BS-02_GOLGE_ARSIV.json, max=65536)
+[CONNECTOR] Tick 0: 1 intel olayi enjekte edildi.
+[CAUSAL-v2] Baseline sürtünme (tick=1):
+            Ham  : 4.259240x
+            Kenet: 3.000000x
+            Durum: mu=3.000x REGIME_EXCEEDED
+[CRITICAL] REGIME_EXCEEDED (baseline): 4.25924x > 3.0x
+[AUDIT] Günlük açıldı: caelus_audit_0000000000000000.log  genesis=965cacbb92cf1e93  max_bytes=16777216  flush_every=1
+
+[INTEL-FEED] -- Shadow-Mesh -> Intel-Core Bridge --------
+[INTEL-FEED] Paket alındı:
+             Session ID    : 0xcae10001
+             Crisis Level  : 2
+             Field coeff   : 0.8200
+             Memo          : GENERIC_FIELD_SIGNAL: Actor_Alpha elevated friction
+[CAUSAL-v2] Intel sonrası sürtünme (tick=3):
+            Ham  : 4.266920x
+            Kenet: 3.000000x
+            Durum: mu=3.000x REGIME_EXCEEDED
+
+[CORE] -- Solver Plugin [DeterministicSolver] ----------------
+[CORE] Cycle: Generic constrained transfer
+[CORE] Task starts 06:00 | Deadline 08:00
+[CORE] Friction multiplier: 3.00x  → travel band [135, 195] min
+
+[CORE] Solver: AT RISK
+       Arrival time     : 9:15
+       Completion time  : 9:45
+       OTP Status       : AT RISK / DELAYED
+[CORE] ---------------------------------------------------
+
+[REPL] Senaryo REPL basladi. Yardim icin 'help', cikis icin 'quit'.
+[REPL] Snapshot:
+       current_tick      : 3
+       last_snapshot_tick: 2
+       raw_friction     : 4.266920x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=3> [REPL] Snapshot:
+       current_tick      : 3
+       last_snapshot_tick: 2
+       raw_friction     : 4.266920x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=3> [REPL] Kaldiraclar:
+  L-01_CERCEVE  target=ACQUIRER_CEO  p=0.70  cost_ticks=8  lockout_ticks=0
+  L-02_MIRAS  target=ACQUIRED_CTO  p=0.75  cost_ticks=16  lockout_ticks=0
+  L-03_REGULATOR  target=REGULATOR_HEAD  p=0.65  cost_ticks=48  lockout_ticks=144
+  L-04_SIGORTA  target=MIDDLE_MGMT_POOL  p=0.80  cost_ticks=12  lockout_ticks=0
+  L-05_BUMERANG  target=RESIGNED_ENGINEER  p=0.50  cost_ticks=0  lockout_ticks=0
+
+caelus:BS-02_GOLGE_ARSIV t=3> [REPL] Lever sonucu: BASARILI | cost_ticks=8 (tam maliyet icin ek tick: 7)
+[REPL] Snapshot:
+       current_tick      : 4
+       last_snapshot_tick: 3
+       raw_friction     : 3.490760x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=4> [REPL] Lever sonucu: BASARILI | cost_ticks=16 (tam maliyet icin ek tick: 15)
+[REPL] Snapshot:
+       current_tick      : 5
+       last_snapshot_tick: 4
+       raw_friction     : 2.678600x
+       clamped_friction : 2.678600x
+       live_multiplier  : 2.678600x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.373329
+       summary          : mu=2.679x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=5> [REPL] Lever sonucu: BASARILI | cost_ticks=48 (tam maliyet icin ek tick: 47)
+[REPL] Snapshot:
+       current_tick      : 6
+       last_snapshot_tick: 5
+       raw_friction     : 1.677940x
+       clamped_friction : 1.677940x
+       live_multiplier  : 1.677940x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.595969
+       summary          : mu=1.678x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=6> [REPL] Lever sonucu: BASARILI | cost_ticks=12 (tam maliyet icin ek tick: 11)
+[REPL] Snapshot:
+       current_tick      : 7
+       last_snapshot_tick: 6
+       raw_friction     : 1.683700x
+       clamped_friction : 1.683700x
+       live_multiplier  : 1.683700x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.593930
+       summary          : mu=1.684x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=7> [REPL] Lever sonucu: BASARISIZ/KILITLI | cost_ticks=0 (tam maliyet icin ek tick: 0)
+[REPL] Snapshot:
+       current_tick      : 8
+       last_snapshot_tick: 7
+       raw_friction     : 1.683700x
+       clamped_friction : 1.683700x
+       live_multiplier  : 1.683700x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.593930
+       summary          : mu=1.684x REGIME_EXCEEDED
+
+caelus:BS-02_GOLGE_ARSIV t=8> [CONNECTOR] Tick 24: 1 intel olayi enjekte edildi.
+[CONNECTOR] Tick 48: 1 intel olayi enjekte edildi.
+[CONNECTOR] Tick 72: 1 intel olayi enjekte edildi.
+[REPL] 137 tick tamamlandi.
+[REPL] Snapshot:
+       current_tick      : 145
+       last_snapshot_tick: 144
+       raw_friction     : 1.683700x
+       clamped_friction : 1.683700x
+       live_multiplier  : 1.683700x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : EVET
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=145
+
+caelus:BS-02_GOLGE_ARSIV t=145> [REPL] Snapshot:
+       current_tick      : 145
+       last_snapshot_tick: 144
+       raw_friction     : 1.683700x
+       clamped_friction : 1.683700x
+       live_multiplier  : 1.683700x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : EVET
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=145
+
+caelus:BS-02_GOLGE_ARSIV t=145> [REPL] 96 tick tamamlandi.
+[REPL] Snapshot:
+       current_tick      : 241
+       last_snapshot_tick: 240
+       raw_friction     : 2.033700x
+       clamped_friction : 2.033700x
+       live_multiplier  : 2.033700x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : EVET
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=241
+
+caelus:BS-02_GOLGE_ARSIV t=241> [REPL] Snapshot:
+       current_tick      : 241
+       last_snapshot_tick: 240
+       raw_friction     : 2.033700x
+       clamped_friction : 2.033700x
+       live_multiplier  : 2.033700x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : EVET
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=241
+
+caelus:BS-02_GOLGE_ARSIV t=241> [AUDIT] Mühürlendi: caelus_audit_0000000000000000.log  zincir_başı=b7d1b3afa82d93b8  giriş=256
+[REPL] Cikis.
+
+[OK] CAELUS OS cycle complete.
+
+CDET: BLOCK_BEGIN
+CDET: scenario=BS-02_GOLGE_ARSIV
+CDET: scenario_state=SCENARIO_ACTIVE
+CDET: region=ATLAS-MERIDYEN Gun-1 (cok-ulke)
+CDET: bureaucratic_complexity=0.950000
+CDET: historical_delay_rate=0.150000
+CDET: labor_action_probability=0.780000
+CDET: route_congestion=0.620000
+CDET: weather_severity=0.050000
+CDET: raw_friction=2.033700
+CDET: clamped_friction=2.033700
+CDET: regime_exceeded=true
+CDET: causal_engine_ticks=241
+CDET: field_friction_coeff=0.820000
+CDET: field_crisis_level=2
+CDET: causal_post_intel_friction=2.033700
+CDET: final_friction=2.033700
+CDET: travel_band_low=135
+CDET: travel_band_high=195
+CDET: arrival_min=555
+CDET: completion_min=585
+CDET: on_time=false
+CDET: audit_chain_head=22055b88b28979be8eed385a96c58b612b2f90fed14934f92251953f51f9184e
+CDET: audit_entry_count=255
+CDET: BLOCK_END

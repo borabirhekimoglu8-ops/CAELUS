@@ -1,0 +1,13 @@
+status
+list levers
+lever L-01_ZIMRH
+lever L-02_TEKNIK_EK
+lever L-03_ILKACIN
+lever L-04_ZAFER
+tick 18
+snapshot
+tick 96
+snapshot
+tick 96
+snapshot
+quit

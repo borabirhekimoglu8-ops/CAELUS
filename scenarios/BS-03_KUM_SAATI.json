@@ -1,0 +1,373 @@
+{
+  "schema_version": "2.0",
+  "id": "BS-03_KUM_SAATI",
+  "blackswan_class": "reinforcing_loop_hysteresis",
+  "sector": "tri_jurisdiction_transit_corridor",
+  "min_caelus_engine": "2.0",
+  "signature": "ed25519:9bb1dbd039043670b7bf2c5d7533777866135b92f9b38fe6cd8d9735a04fa802:b327cffc0a4dbbe854243aed3333781c5644975201a8fe4503ee52144faf940a3e83dbce414938481234bb64e0173fc3ac68380918ad521b0577e2ba215f090e",
+
+  "meta": {
+    "title": "Kum Saati — Üç Yargı Bölgesi Transit Koridoru Tıkanması",
+    "region": "TRIAD_CORRIDOR (coğrafya-bağımsız, tek şeritli köprü + iki gümrük sahası)",
+    "tick_minutes": 60,
+    "horizon_hours": 264,
+    "synopsis": "Herkes kendi küçük korkusunda rasyonel; toplam sonuç kolektif intihar. Vekil amir video korkusunda, bakan damga peşinde, direktör inkârda, şoförler köprüyü kesmek üzere. Geri besleme döngüleri kaos üzerine kaos yığıyor.",
+    "sınanan_aksiyom": "Gecikme maliyeti doğrusal ve geri döndürülebilirdir. Yanılıyor: 9. gün eşiği = kalıcı %35 trafik kaybı."
+  },
+
+  "extended_causal_model": {
+
+    "nodes": [
+      {
+        "id": "INSPECTION_RATE",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 1000000,
+        "weight_fp": 320000,
+        "reported_state_fp": 1000000,
+        "trust_fp": 1000000,
+        "notes": "%100 fiziki muayene: 40 TIR/saat → 6 TIR/saat. Vekil amir sıfır-risk doktrini."
+      },
+      {
+        "id": "CATCH_COUNT",
+        "kind": "Buffer",
+        "capacity_fp": 1000000,
+        "state_fp": 200000,
+        "weight_fp": 0,
+        "reported_state_fp": 200000,
+        "trust_fp": 1000000,
+        "notes": "Kaçakçılar kasıtlı 2 düşük profilli yakalama servis ediyor. Meşruiyet beslemesi."
+      },
+      {
+        "id": "LEGITIMACY",
+        "kind": "Buffer",
+        "capacity_fp": 1000000,
+        "state_fp": 900000,
+        "weight_fp": 0,
+        "reported_state_fp": 900000,
+        "trust_fp": 1000000,
+        "notes": "Muayene meşruiyeti: yükseldikçe INSPECTION_RATE daha da artıyor."
+      },
+      {
+        "id": "CERT_INVALIDITY",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 450000,
+        "weight_fp": 280000,
+        "reported_state_fp": 450000,
+        "trust_fp": 1000000,
+        "notes": "B ülkesi yeni format: 1.800 TIR'ın belgesi bir gecede geçersiz. Geçiş=0 gün."
+      },
+      {
+        "id": "QUEUE_LENGTH",
+        "kind": "Queue",
+        "capacity_fp": 1000000,
+        "state_fp": 900000,
+        "weight_fp": 250000,
+        "reported_state_fp": 900000,
+        "trust_fp": 1000000,
+        "notes": "60 km kuyruk. HOS tükendi, nakit ve mazot bitti. Karaborsa ekonomisi aktif."
+      },
+      {
+        "id": "SHADOW_ECONOMY",
+        "kind": "Adversary",
+        "capacity_fp": 1000000,
+        "state_fp": 600000,
+        "weight_fp": 0,
+        "reported_state_fp": 600000,
+        "trust_fp": 1000000,
+        "notes": "Su, yemek, 'liste sırası satışı'. Yolsuzluk ekonomisi daha sıkı denetimi meşrulaştırıyor."
+      },
+      {
+        "id": "DIRECTOR_BLACKOUT",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 1000000,
+        "weight_fp": 150000,
+        "reported_state_fp": 0,
+        "trust_fp": 100000,
+        "notes": "Direktör telemetriyi karartıyor. Trust=0.10: sigorta kara listeye aldı, rakip koridor prim alıyor."
+      },
+      {
+        "id": "BLOCKADE_PRESSURE",
+        "kind": "Service",
+        "capacity_fp": 1000000,
+        "state_fp": 300000,
+        "weight_fp": 250000,
+        "reported_state_fp": 300000,
+        "trust_fp": 1000000,
+        "notes": "Şoför blokaj olasılığı: başlangıç 0.30, her gün 0.15 artıyor. Köprü fiili kapanma noktasında."
+      },
+      {
+        "id": "REEFER_CONVOY",
+        "kind": "Perishable",
+        "capacity_fp": 1000000,
+        "state_fp": 950000,
+        "weight_fp": 200000,
+        "reported_state_fp": 950000,
+        "trust_fp": 1000000,
+        "deadline_tick": 120,
+        "notes": "Aşı+gıda konvoyu, jeneratör 120 saat = 120 tick (60dak/tick)."
+      }
+    ],
+
+    "edges": [
+      {
+        "from": "INSPECTION_RATE",
+        "to": "CATCH_COUNT",
+        "multiplier_fp": 800000,
+        "lag_ticks": 2,
+        "active": true,
+        "notes": "Muayene → 2 saat gecikme sonrası yakalama sayısı artar."
+      },
+      {
+        "from": "CATCH_COUNT",
+        "to": "LEGITIMACY",
+        "multiplier_fp": 1200000,
+        "lag_ticks": 1,
+        "active": true,
+        "notes": "Her yakalama meşruiyeti x1.2 artırıyor."
+      },
+      {
+        "from": "QUEUE_LENGTH",
+        "to": "SHADOW_ECONOMY",
+        "multiplier_fp": 1500000,
+        "lag_ticks": 4,
+        "active": true,
+        "notes": "4 saat kuyrukta kalan şoförler karaborsa yaratıyor."
+      },
+      {
+        "from": "SHADOW_ECONOMY",
+        "to": "INSPECTION_RATE",
+        "multiplier_fp": 600000,
+        "lag_ticks": 2,
+        "active": true,
+        "notes": "Yolsuzluk ekonomisi → 'daha sıkı denetim şart' siyasi baskısı."
+      },
+      {
+        "from": "INSPECTION_RATE",
+        "to": "",
+        "multiplier_fp": 320000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "CERT_INVALIDITY",
+        "to": "QUEUE_LENGTH",
+        "multiplier_fp": 1800000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Geçersiz belge → kuyruk anında büyüyor (420 TIR/gün ek giriş)."
+      },
+      {
+        "from": "CERT_INVALIDITY",
+        "to": "",
+        "multiplier_fp": 280000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "QUEUE_LENGTH",
+        "to": "",
+        "multiplier_fp": 250000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "BLOCKADE_PRESSURE",
+        "to": "",
+        "multiplier_fp": 250000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "DIRECTOR_BLACKOUT",
+        "to": "",
+        "multiplier_fp": 150000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "REEFER_CONVOY",
+        "to": "",
+        "multiplier_fp": 200000,
+        "lag_ticks": 0,
+        "active": true
+      }
+    ],
+
+    "feedback_loops": [
+      {
+        "id": "FL-1_MUAYENE_KASAKDI",
+        "path": ["INSPECTION_RATE", "CATCH_COUNT", "LEGITIMACY"],
+        "gain_fp": 1300000,
+        "notes": "Pekiştiren döngü gain=1.30: muayene → yakalama → meşruiyet → daha fazla muayene."
+      },
+      {
+        "id": "FL-2_YOLSUZLUK",
+        "path": ["QUEUE_LENGTH", "SHADOW_ECONOMY"],
+        "gain_fp": 1180000,
+        "notes": "Kuyruk → karaborsa ekonomisi → siyasi baskı → muayene artışı (gain=1.18)."
+      },
+      {
+        "id": "FL-3_KARARTMA",
+        "path": ["DIRECTOR_BLACKOUT"],
+        "gain_fp": 1220000,
+        "notes": "Telemetri karartma → sigorta kara liste → rota kaybı → inkâr → daha derin karartma."
+      }
+    ],
+
+    "levers": [
+      {
+        "id": "L-01_ZIMRH",
+        "target": "ACTING_CUSTOMS_OFFICER",
+        "success_p_fp": 700000,
+        "cost_ticks": 10,
+        "lockout_ticks": 48,
+        "on_success": {
+          "target_node_id": "INSPECTION_RATE",
+          "state_delta_fp": -850000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -320000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "INSPECTION_RATE",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Zırh: mühür+3.taraf+ortak tutanak. Yeşil koridor 'riskini düşüren' prosedür = yazılı üst emir."
+      },
+      {
+        "id": "L-02_TEKNIK_EK",
+        "target": "MINISTER_B",
+        "success_p_fp": 650000,
+        "cost_ticks": 18,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "CERT_INVALIDITY",
+          "state_delta_fp": -400000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -280000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "CERT_INVALIDITY",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 300000
+        },
+        "notes": "Geri adım isteme. 30 günlük çift-format penceresi 'bakanlığın kolaylaştırma vizyonu'."
+      },
+      {
+        "id": "L-03_ILKACIN",
+        "target": "CORRIDOR_DIRECTOR",
+        "success_p_fp": 600000,
+        "cost_ticks": 6,
+        "lockout_ticks": 72,
+        "on_success": {
+          "target_node_id": "DIRECTOR_BLACKOUT",
+          "state_delta_fp": -1000000,
+          "trust_delta_fp": 900000,
+          "friction_delta_fp": -150000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "DIRECTOR_BLACKOUT",
+          "state_delta_fp": 0,
+          "trust_delta_fp": -500000,
+          "friction_delta_fp": 0
+        },
+        "notes": "İlk açan kahraman: rakip koridorun kazandığı hacim grafiği. Şeffaflık = güven operasyonu."
+      },
+      {
+        "id": "L-04_ZAFER",
+        "target": "DRIVERS_UNION_LEADER",
+        "success_p_fp": 800000,
+        "cost_ticks": 4,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "BLOCKADE_PRESSURE",
+          "state_delta_fp": -250000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -250000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "BLOCKADE_PRESSURE",
+          "state_delta_fp": 650000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Mazot+nakit+insani koridor ONUN zaferi = köprü açık kalır. Küçümseme = otomatik başarısızlık."
+      }
+    ],
+
+    "hysteresis": [
+      {
+        "id": "HYST_TRAFIK_KAYBI",
+        "threshold_tick": 216,
+        "reversible": false,
+        "permanent_loss_fp": 350000,
+        "notes": "9. gün (216 saat/tick): trafiğin %35'i kalıcı olarak rakip rotaya geçer. GERİ ALINAMAZ."
+      },
+      {
+        "id": "HYST_BLOKAJ",
+        "threshold_tick": 24,
+        "reversible": true,
+        "permanent_loss_fp": 0,
+        "notes": "24 saat sonra blokaj olasılığı 0.90'a ulaşır. Geri alınabilir (L-04 yeterli)."
+      }
+    ],
+
+    "hard_deadlines": [
+      {
+        "node_id": "REEFER_CONVOY",
+        "at_tick": 120,
+        "label": "REEFER_MED_EXPIRY_120H",
+        "notes": "120 saat = 120 tick (60dak/tick). İnsani kriz: aşı+gıda."
+      }
+    ]
+  },
+
+  "v1_engine_bridge": {
+    "operational_risk_profile": {
+      "scenario_id": "BS03_KUM_SAATI",
+      "region": "TRIAD_CORRIDOR (cografya-bagimsiz)",
+      "bureaucratic_complexity": 0.99,
+      "historical_delay_rate": 0.55,
+      "labor_action_probability": 0.85,
+      "route_congestion": 1.00,
+      "weather_severity": 0.30
+    },
+    "intel_feed_sequence": [
+      {
+        "t_hour": 0,
+        "friction_coefficient": 0.62,
+        "crisis_level": 2,
+        "memo": "TAM_MUAYENE_DOKTRINI: vekil amir risk-bazli kontrolu iptal etti, 40->6 tir/saat"
+      },
+      {
+        "t_hour": 24,
+        "friction_coefficient": 0.81,
+        "crisis_level": 2,
+        "memo": "EVRAK_FORMAT_DARBESI: B ulkesi sertifikalari gecersiz, gecis suresi 0 gun"
+      },
+      {
+        "t_hour": 96,
+        "friction_coefficient": 0.92,
+        "crisis_level": 3,
+        "memo": "KUYRUK_60KM+HOS_TUKENISI: nakit/mazot bitti, reefer jenerator 5 gun"
+      },
+      {
+        "t_hour": 168,
+        "friction_coefficient": 0.99,
+        "crisis_level": 3,
+        "memo": "BLOKAJ_ESIGI+TELEMETRI_KARARTMA: kopru fiili kapanma noktasinda"
+      }
+    ],
+    "saturation_note": "Blokaj gerceklesirse throughput=0. Motor 'multiplier' rejiminden 'outage' rejimine gecisi ayri modellemeli.",
+    "reinforcing_loops_note": "FL-1 gain=1.30, FL-2 gain=1.18, FL-3 gain=1.22. Uc pekistiren dongu ayni anda aktif = kademeli kaz kritik hız."
+  }
+}

@@ -1,0 +1,52 @@
+[package]
+name = "caelus_network"
+version = "0.1.0"
+edition = "2021"
+
+# CAELUS OS — Shadow-Mesh P2P Network Layer
+# Air-Gapped, No Cloud, 100% Deterministic
+# Compiled as a C-compatible static library for C++ FFI linkage
+
+[lib]
+name = "caelus_network"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "caelus_sign_scenario"
+path = "src/bin/caelus_sign_scenario.rs"
+
+[dependencies]
+# Cryptographic identity: ed25519 signing & verification
+ed25519-dalek = { version = "2.1", features = ["rand_core", "zeroize"] }
+
+# X25519 Diffie-Hellman for ephemeral session key exchange
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+
+# Secure random number generation (hardware entropy)
+rand = "0.8"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+# Constant-time equality checks to prevent timing attacks
+subtle = "2.5"
+
+# Zero-on-drop for sensitive key material
+zeroize = { version = "1.7", features = ["derive"] }
+
+# Blake3 for fast deterministic hashing of OTP slots
+blake3 = "1.5"
+
+[profile.release]
+# Minimize binary size — target < 50MB static binary
+opt-level = "z"          # Optimize for size
+lto = true               # Link-Time Optimization
+codegen-units = 1        # Single codegen unit for maximum LTO
+# NOTE: panic = "unwind" (the default) is REQUIRED here. The FFI surface wraps
+# every entry point in std::panic::catch_unwind so a single malformed field
+# packet can be turned into an error return instead of aborting the whole host
+# process. With panic = "abort" catch_unwind is a no-op and one bad input would
+# tear down the air-gapped device (denial of service).
+panic = "unwind"
+strip = true             # Strip debug symbols
+
+[profile.dev]
+opt-level = 1

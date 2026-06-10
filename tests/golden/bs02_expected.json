@@ -1,0 +1,146 @@
+{
+  "case_id": "bs02_repl",
+  "scenario_id": "BS-02_GOLGE_ARSIV",
+  "scenario_file": "scenarios/BS-02_GOLGE_ARSIV.json",
+  "command_file": "tests/golden/bs02_repl.commands",
+  "determinism": {
+    "mode": "--det-mode",
+    "seed_hex": "0xCAE105DEADBEEF00",
+    "dev_signature_bypass_required": false,
+    "signature_path": "scenario carries a real ed25519 signature matching the pinned trust anchor (CAELUS_TRUSTED_PUBKEY); no env bypass",
+    "repl_start_current_tick": 3,
+    "repl_start_last_snapshot_tick": 2
+  },
+  "lever_expectations": [
+    {
+      "id": "L-01_CERCEVE",
+      "tick_used": 3,
+      "success_p_fp": 700000,
+      "det_roll_fp": 650030,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-02_MIRAS",
+      "tick_used": 4,
+      "success_p_fp": 750000,
+      "det_roll_fp": 511421,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-03_REGULATOR",
+      "tick_used": 5,
+      "success_p_fp": 650000,
+      "det_roll_fp": 153915,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-04_SIGORTA",
+      "tick_used": 6,
+      "success_p_fp": 800000,
+      "det_roll_fp": 22320,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-05_BUMERANG",
+      "tick_used": 7,
+      "success_p_fp": 500000,
+      "det_roll_fp": 918411,
+      "expected_result": "BASARISIZ"
+    }
+  ],
+  "milestones": [
+    {
+      "name": "repl_start",
+      "after_command": "status",
+      "expected_snapshot": {
+        "current_tick": 3,
+        "last_snapshot_tick": 2,
+        "raw_friction": 4.26692,
+        "clamped_friction": 3.0,
+        "regime_exceeded": true,
+        "outage_active": false,
+        "deadline_missed": false,
+        "hysteresis_flip": false,
+        "throughput_ratio": 0.333333
+      }
+    },
+    {
+      "name": "after_all_levers",
+      "after_command": "lever L-05_BUMERANG",
+      "expected_snapshot": {
+        "current_tick": 8,
+        "last_snapshot_tick": 7,
+        "raw_friction": 1.6837,
+        "clamped_friction": 1.6837,
+        "regime_exceeded": true,
+        "outage_active": false,
+        "deadline_missed": false,
+        "hysteresis_flip": false,
+        "throughput_ratio": 0.59393
+      }
+    },
+    {
+      "name": "payroll_deadline_and_hysteresis",
+      "after_command": "tick 137",
+      "deadline": {
+        "node_id": "PAYROLL_FAILURE",
+        "label": "PAYROLL_RUN_72H",
+        "miss_tick": 144
+      },
+      "hysteresis": {
+        "id": "HYST_PAYROLL_MISS",
+        "threshold_tick": 144,
+        "reversible": false,
+        "permanent_loss_fp": 350000
+      },
+      "expected_snapshot": {
+        "current_tick": 145,
+        "last_snapshot_tick": 144,
+        "raw_friction": 1.6837,
+        "clamped_friction": 1.6837,
+        "regime_exceeded": true,
+        "outage_active": true,
+        "deadline_missed": true,
+        "hysteresis_flip": true,
+        "throughput_ratio": 0.0
+      },
+      "current_engine_note": "Latched outage semantics (T-20): PAYROLL_FAILURE is Service, so its deadline alone does not latch — but HYST_PAYROLL_MISS is non-reversible and latches outage on its own flip at tick 144. Only a successful recovery lever clears the latch."
+    },
+    {
+      "name": "supplier_hysteresis",
+      "after_command": "tick 96",
+      "hysteresis": {
+        "id": "HYST_SUPPLIER_FLIGHT",
+        "threshold_tick": 240,
+        "reversible": false,
+        "permanent_loss_fp": 200000
+      },
+      "expected_snapshot": {
+        "current_tick": 241,
+        "last_snapshot_tick": 240,
+        "raw_friction": 2.0337,
+        "clamped_friction": 2.0337,
+        "regime_exceeded": true,
+        "outage_active": true,
+        "deadline_missed": true,
+        "hysteresis_flip": true,
+        "throughput_ratio": 0.0
+      },
+      "current_engine_note": "Latched outage semantics (T-20): outage latched at tick 144 (HYST_PAYROLL_MISS) is still held here; the second non-reversible flip keeps it latched."
+    }
+  ],
+  "runner_assertions": {
+    "trace_note": "Traces refreshed for the current REPL output format: lever results print as '[REPL] Lever sonucu: <SONUC> | cost_ticks=N' (lever id is not echoed; cost_ticks disambiguates), and deadline/hysteresis effects are asserted via the latched-outage snapshot summary lines.",
+    "must_contain": [
+      "Lever sonucu: BASARILI | cost_ticks=8",
+      "Lever sonucu: BASARILI | cost_ticks=16",
+      "Lever sonucu: BASARILI | cost_ticks=48",
+      "Lever sonucu: BASARILI | cost_ticks=12",
+      "Lever sonucu: BASARISIZ/KILITLI | cost_ticks=0",
+      "last_snapshot_tick: 144",
+      "OUTAGE: throughput=0, tick=145",
+      "last_snapshot_tick: 240",
+      "OUTAGE: throughput=0, tick=241"
+    ]
+  }
+}

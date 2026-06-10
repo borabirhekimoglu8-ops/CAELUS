@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cmd /c \"tests\\\\run_bs_exec_golden.bat\"; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cmd /c \"C:\\\\Users\\\\Lenovo\\\\Desktop\\\\CAELUS\\\\ci.bat > C:\\\\Users\\\\Lenovo\\\\Desktop\\\\CAELUS\\\\ci_run.log 2>&1 & echo EXITCODE=%ERRORLEVEL% >> C:\\\\Users\\\\Lenovo\\\\Desktop\\\\CAELUS\\\\ci_run.log\")",
+      "PowerShell(Select-String -Path ci_run.log -Pattern \"ADIM|GECTI|PASS|FAIL|SIG\" | ForEach-Object { $_.Line.Trim\\(\\) } | Select-Object -First 40)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Lenovo\\\\Desktop\\\\CAELUS\" -Recurse)",
+      "Bash(Select-Object FullName, PSIsContainer)"
+    ]
+  }
+}

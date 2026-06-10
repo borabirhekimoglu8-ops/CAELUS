@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAELUS OS // UNIVERSAL CAUSAL UI</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   CAELUS OS — Universal Causal Interface v3.0
+   Zero external dependencies. Air-gapped. Pure Vanilla CSS + JS.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Variables ─────────────────────────────────────────────── */
+:root {
+  --bg:          #05090f;
+  --panel-bg:    #07111d;
+  --panel-bg2:   #091520;
+  --border:      #122030;
+  --border-lit:  #1a3550;
+  --border-glow: #0d2844;
+
+  --cyan:        #06c2d4;
+  --cyan-glow:   rgba(6,194,212,.20);
+  --cyan-dim:    #047a88;
+  --green:       #4ade80;
+  --green-glow:  rgba(74,222,128,.18);
+  --amber:       #e8a838;
+  --amber-glow:  rgba(232,168,56,.22);
+  --crisis:      #cf6679;
+  --crisis-glow: rgba(207,102,121,.22);
+  --blue:        #3b82f6;
+  --blue-glow:   rgba(59,130,246,.20);
+
+  --text:        #b8cfe4;
+  --text-2:      #5a7a9a;
+  --text-3:      #4a6a8a; /* WCAG AA improved from #2a4060 */
+
+  --mono: "Consolas","Courier New",Courier,monospace;
+  --sans: system-ui,-apple-system,sans-serif;
+
+  /* NOC/Hollywood palette additions */
+  --amber-noc:   #FF8C00;
+  --crisis-bg:   rgba(207,102,121,.12);
+  --outage-text: #ff4d6a;
+
+  /* Throughput gauge thresholds */
+  --tp-high:     #4ade80;
+  --tp-mid:      #e8a838;
+  --tp-low:      #cf6679;
+  --tp-zero:     #8b0000;
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+::-webkit-scrollbar { width:3px; height:3px; }
+::-webkit-scrollbar-track { background:var(--bg); }
+::-webkit-scrollbar-thumb { background:var(--border-lit); border-radius:2px; }
+::-webkit-scrollbar-thumb:hover { background:var(--cyan-dim); }
+
+html,body { height:100%; width:100%; overflow:hidden; }
+
+body {
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--mono);
+  font-size:12px;
+  line-height:1.5;
+  user-select:none;
+  position:relative;
+}
+
+/* ── CRT overlays ───────────────────────────────────────────── */
+.crt-scanlines {
+  position:fixed; inset:0; pointer-events:none; z-index:9999;
+  background:repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 2px,
+    rgba(0,0,0,.07) 2px,
+    rgba(0,0,0,.07) 4px
+  );
+}
+.crt-vignette {
+  position:fixed; inset:0; pointer-events:none; z-index:9998;
+  background:radial-gradient(ellipse at center,
+    transparent 55%,
+    rgba(0,0,0,.70) 100%
+  );
+}
+.crt-glow {
+  position:fixed; inset:0; pointer-events:none; z-index:9997;
+  background:linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(6,194,212,.012) 50%,
+    transparent 100%
+  );
+  animation:crt-roll 14s linear infinite;
+}
+@keyframes crt-roll {
+  0%   { transform:translateY(-100vh); }
+  100% { transform:translateY(100vh); }
+}
+
+/* ── Boot overlay ───────────────────────────────────────────── */
+#boot-overlay {
+  position:fixed; inset:0; z-index:8000;
+  background:var(--bg);
+  display:flex; align-items:center; justify-content:center;
+  transition:opacity .6s ease;
+}
+#boot-overlay.hidden { opacity:0; pointer-events:none; }
+.boot-terminal {
+  width:580px;
+  border:1px solid var(--cyan-dim);
+  box-shadow:0 0 40px var(--cyan-glow), inset 0 0 20px rgba(6,194,212,.03);
+  background:var(--panel-bg2);
+  padding:28px 32px;
+}
+.boot-header {
+  font-size:15px;
+  color:var(--cyan);
+  letter-spacing:3px;
+  margin-bottom:6px;
+  text-shadow:0 0 12px var(--cyan-glow);
+}
+.boot-sep { height:1px; background:var(--border-lit); margin:10px 0; }
+.boot-lines { font-size:11px; color:var(--text-2); min-height:130px; }
+.boot-line { margin:2px 0; white-space:pre; }
+.boot-line .ok  { color:var(--green); }
+.boot-line .warn{ color:var(--amber); }
+.boot-line .err { color:var(--crisis); }
+.boot-line .kw  { color:var(--cyan); }
+.boot-cursor { display:inline-block; width:8px; height:13px; background:var(--cyan); animation:bcursor .9s step-end infinite; vertical-align:middle; margin-left:2px; }
+@keyframes bcursor { 0%,100%{opacity:1} 50%{opacity:0} }
+.boot-final { margin-top:12px; font-size:12px; color:var(--cyan); letter-spacing:2px; }
+
+/* ── Shell layout ───────────────────────────────────────────── */
+.shell {
+  display:grid;
+  grid-template-rows:50px 1fr auto 26px;
+  height:100vh;
+  padding:8px;
+  gap:8px;
+  position:relative; z-index:10;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.hdr {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 18px;
+  background:var(--panel-bg);
+  border:1px solid var(--border);
+  box-shadow:0 0 20px rgba(6,194,212,.06);
+  position:relative;
+  overflow:hidden;
+}
+.hdr::after {
+  content:'';
+  position:absolute; bottom:0; left:0; width:100%; height:1px;
+  background:linear-gradient(90deg, transparent 0%, var(--cyan-dim) 30%, var(--cyan) 50%, var(--cyan-dim) 70%, transparent 100%);
+  opacity:.6;
+}
+.hdr::before {
+  content:'';
+  position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(6,194,212,.025) 0%, transparent 100%);
+  pointer-events:none;
+}
+.hdr-brand { display:flex; flex-direction:column; }
+.hdr-logo {
+  font-size:17px;
+  letter-spacing:4px;
+  color:var(--cyan);
+  text-shadow:0 0 16px var(--cyan-glow);
+  font-weight:400;
+}
+.hdr-sub {
+  font-size:8.5px;
+  color:var(--text-3);
+  letter-spacing:1.5px;
+  text-transform:uppercase;
+  margin-top:1px;
+}
+.hdr-badges { display:flex; align-items:center; gap:12px; }
+.badge {
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:2px;
+  padding:3px 9px;
+  border:1px solid;
+  text-transform:uppercase;
+}
+.badge--sim  { color:var(--amber); border-color:var(--amber); background:rgba(232,168,56,.06); }
+.badge--ok   { color:var(--green); border-color:var(--green); background:rgba(74,222,128,.06); }
+.badge--crisis { color:var(--crisis); border-color:var(--crisis); background:rgba(207,102,121,.06); animation:pulse-badge 2s ease infinite; }
+@keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.55} }
+
+.hdr-telemetry { display:flex; align-items:center; gap:24px; }
+.tel { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+.tel-label { font-size:8px; color:var(--text-3); letter-spacing:1px; text-transform:uppercase; }
+.tel-val   { font-size:11px; color:var(--cyan); font-weight:400; }
+.tel-val--ok     { color:var(--green); }
+.tel-val--warn   { color:var(--amber); }
+.tel-val--crisis { color:var(--crisis); }
+
+/* ── Main workspace grid ────────────────────────────────────── */
+.workspace {
+  display:grid;
+  grid-template-columns:288px 1fr 304px;
+  gap:8px;
+  min-height:0;
+}
+
+/* ── Panel base ─────────────────────────────────────────────── */
+.panel {
+  background:var(--panel-bg);
+  border:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  position:relative;
+}
+.panel::before, .panel::after {
+  content:'';
+  position:absolute;
+  width:10px; height:10px;
+  border-color:var(--cyan-dim);
+  border-style:solid;
+  opacity:.5;
+}
+.panel::before { top:4px; left:4px; border-width:1px 0 0 1px; }
+.panel::after  { bottom:4px; right:4px; border-width:0 1px 1px 0; }
+
+.panel-cap {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:7px 12px;
+  background:rgba(6,194,212,.035);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.panel-cap--sub {
+  border-top:1px solid var(--border);
+  background:rgba(0,0,0,.2);
+  margin-top:0;
+}
+.panel-title {
+  font-size:9px;
+  letter-spacing:2px;
+  color:var(--cyan-dim);
+  text-transform:uppercase;
+  display:flex; align-items:center; gap:6px;
+}
+.panel-title::before {
+  content:'';
+  display:inline-block;
+  width:5px; height:5px;
+  background:var(--cyan);
+  box-shadow:0 0 6px var(--cyan-glow);
+  flex-shrink:0;
+}
+.panel-badge {
+  font-size:8.5px;
+  letter-spacing:1.5px;
+  color:var(--green);
+  display:flex; align-items:center; gap:5px;
+}
+.panel-badge::before {
+  content:'';
+  width:5px; height:5px;
+  border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 5px var(--green-glow);
+  flex-shrink:0;
+  animation:dot-pulse 2.5s ease infinite;
+}
+.panel-badge--warn { color:var(--amber); }
+.panel-badge--warn::before { background:var(--amber); box-shadow:0 0 5px var(--amber-glow); }
+.panel-badge--crisis { color:var(--crisis); animation:pulse-badge 1.5s ease infinite; }
+.panel-badge--crisis::before { background:var(--crisis); box-shadow:0 0 5px var(--crisis-glow); }
+@keyframes dot-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.panel-body {
+  flex:1;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:10px;
+  min-height:0;
+}
+
+/* ── Tab navigation ─────────────────────────────────────────── */
+.tab-nav {
+  display:flex;
+  flex-shrink:0;
+  border-bottom:1px solid var(--border);
+  background:rgba(0,0,0,.15);
+}
+.tab-btn {
+  flex:1;
+  background:transparent;
+  border:none;
+  border-right:1px solid var(--border);
+  border-bottom:2px solid transparent;
+  padding:5px 0;
+  font-family:var(--mono);
+  font-size:8px;
+  letter-spacing:1.5px;
+  color:var(--text-3);
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:color .2s, border-color .2s;
+}
+.tab-btn:last-child { border-right:none; }
+.tab-btn:hover { color:var(--text-2); }
+.tab-btn.tab-btn--active { color:var(--cyan); border-bottom-color:var(--cyan); }
+.tab-panel { display:flex; flex-direction:column; flex-shrink:0; }
+.tab-panel.hidden { display:none !important; }
+
+/* ── LEFT: Mesh canvas ──────────────────────────────────────── */
+.mesh-viewport {
+  position:relative;
+  height:180px;
+  flex-shrink:0;
+  background:linear-gradient(135deg, rgba(5,9,15,.95) 0%, rgba(7,20,35,.95) 100%);
+  border-bottom:1px solid var(--border);
+  overflow:hidden;
+}
+#mesh-canvas { display:block; width:100%; height:100%; }
+.mesh-meta {
+  position:absolute; bottom:5px; left:8px;
+  font-size:7.5px; color:var(--text-3);
+  letter-spacing:1px; pointer-events:none;
+  text-transform:uppercase;
+}
+.mesh-count-badge {
+  position:absolute; top:6px; right:8px;
+  font-size:8px; color:var(--cyan-dim);
+  letter-spacing:1px;
+  border:1px solid var(--border-lit);
+  padding:2px 6px;
+  background:rgba(7,17,29,.85);
+}
+
+/* ── LEFT: Causal graph ─────────────────────────────────────── */
+.causal-viewport {
+  position:relative;
+  height:200px;
+  flex-shrink:0;
+  background:linear-gradient(135deg, rgba(5,9,15,.98) 0%, rgba(7,20,35,.98) 100%);
+  border-bottom:1px solid var(--border);
+  overflow:hidden;
+}
+#causal-canvas { display:block; width:100%; height:100%; cursor:crosshair; }
+.causal-empty {
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--text-3); font-size:9px; letter-spacing:1px;
+  text-align:center; line-height:1.7;
+  pointer-events:none;
+}
+.causal-legend {
+  position:absolute; bottom:4px; left:6px;
+  font-size:7px; color:var(--text-3);
+  letter-spacing:.5px; pointer-events:none;
+  line-height:1.8;
+}
+
+/* ── LEFT: Peer list shared section ────────────────────────── */
+.left-scroll {
+  flex:1;
+  overflow-y:auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:0;
+}
+.peer-list {
+  display:flex; flex-direction:column; gap:4px;
+  padding:6px 8px;
+  flex-shrink:0;
+}
+.peer-item {
+  padding:5px 8px;
+  border:1px solid var(--border);
+  background:rgba(5,9,15,.5);
+  transition:border-color .3s, box-shadow .3s;
+}
+.peer-item.handshaking {
+  border-color:var(--cyan-dim);
+  box-shadow:0 0 8px rgba(6,194,212,.08);
+  animation:peer-pulse 1.5s ease infinite;
+}
+@keyframes peer-pulse { 0%,100%{border-color:var(--cyan-dim)} 50%{border-color:var(--cyan)} }
+.peer-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; }
+.peer-id   { color:var(--text); font-weight:700; font-size:10px; letter-spacing:.5px; }
+.peer-status { font-size:7.5px; padding:1px 5px; border:1px solid; letter-spacing:1px; }
+.peer-status.synced { color:var(--green); border-color:rgba(74,222,128,.3); background:rgba(74,222,128,.07); }
+.peer-status.handshaking { color:var(--cyan); border-color:rgba(6,194,212,.3); background:rgba(6,194,212,.07); }
+.peer-detail { font-size:8.5px; color:var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ── LEFT: Crypto event log ─────────────────────────────────── */
+.crypto-log {
+  flex:1;
+  overflow-y:auto;
+  padding:6px 8px;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  min-height:0;
+  max-height:130px;
+  font-size:9.5px;
+}
+.log-entry {
+  display:flex;
+  align-items:flex-start;
+  gap:6px;
+  padding:2px 0;
+  border-bottom:1px solid rgba(18,32,48,.6);
+  animation:logfade .4s ease;
+  line-height:1.4;
+}
+@keyframes logfade { from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:translateY(0)} }
+.log-ts   { color:var(--text-3); flex-shrink:0; font-size:8.5px; margin-top:1px; }
+.log-ok   { color:var(--green); flex-shrink:0; font-weight:700; font-size:8.5px; }
+.log-warn { color:var(--amber); flex-shrink:0; font-weight:700; font-size:8.5px; }
+.log-err  { color:var(--crisis); flex-shrink:0; font-weight:700; font-size:8.5px; }
+.log-info { color:var(--cyan-dim); flex-shrink:0; font-weight:700; font-size:8.5px; }
+.log-msg  { color:var(--text-2); word-break:break-all; }
+.log-live-dot {
+  width:6px; height:6px;
+  border-radius:50%;
+  background:var(--crisis);
+  box-shadow:0 0 5px var(--crisis-glow);
+  flex-shrink:0;
+  animation:dot-pulse 1s ease infinite;
+}
+
+/* ── LEFT: Lever console ────────────────────────────────────── */
+.lever-console {
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  border-top:1px solid var(--border);
+  background:var(--panel-bg2);
+  max-height:140px;
+}
+.lc-output {
+  flex:1;
+  overflow-y:auto;
+  padding:4px 8px;
+  font-size:9px;
+  line-height:1.5;
+  min-height:40px;
+  max-height:88px;
+  background:var(--panel-bg2);
+}
+.lc-line { margin:1px 0; }
+.lc-line--cmd  { color:var(--cyan); }
+.lc-line--ok   { color:var(--green); }
+.lc-line--err  { color:var(--crisis); }
+.lc-line--info { color:var(--text-2); }
+.lc-line--hint { color:var(--text-3); font-style:italic; }
+.lc-input-row {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 6px;
+  border-top:1px solid var(--border);
+  background:rgba(0,0,0,.35);
+  flex-shrink:0;
+}
+.lc-prompt { color:var(--cyan); font-size:9.5px; flex-shrink:0; }
+.lc-input {
+  flex:1; min-width:0;
+  background:transparent;
+  border:none; outline:none;
+  color:var(--cyan);
+  font-family:var(--mono);
+  font-size:9.5px;
+  caret-color:var(--cyan);
+}
+.lc-input::placeholder { color:var(--text-3); font-size:8px; }
+
+/* ── LEFT: Audio toggle ─────────────────────────────────────── */
+.audio-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:5px 10px;
+  border-top:1px solid var(--border);
+  font-size:9.5px;
+  color:var(--text-3);
+  flex-shrink:0;
+}
+.tgl-switch { position:relative; width:32px; height:17px; cursor:pointer; }
+.tgl-switch input { opacity:0; width:0; height:0; position:absolute; }
+.tgl-thumb {
+  position:absolute; inset:0;
+  background:var(--border-lit);
+  border:1px solid var(--text-3);
+  transition:.25s;
+}
+.tgl-thumb::before {
+  content:'';
+  position:absolute;
+  width:11px; height:11px;
+  left:2px; bottom:2px;
+  background:var(--text-3);
+  transition:.25s;
+}
+.tgl-switch input:checked + .tgl-thumb { background:rgba(6,194,212,.15); border-color:var(--cyan); }
+.tgl-switch input:checked + .tgl-thumb::before { transform:translateX(15px); background:var(--cyan); }
+
+/* ── Outage banner overlay ──────────────────────────────────── */
+#outage-banner {
+  position:fixed;
+  top:0; left:0; right:0;
+  z-index:9993;
+  padding:6px 24px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:2px solid var(--crisis);
+  background:rgba(207,102,121,.10);
+  pointer-events:none;
+  animation:outage-bg-pulse 1.1s ease infinite;
+}
+#outage-banner.hidden { display:none; }
+@keyframes outage-bg-pulse {
+  0%,100% { background:rgba(207,102,121,.10); }
+  50%     { background:rgba(207,102,121,.22); }
+}
+.outage-title {
+  font-size:11px; font-weight:700;
+  letter-spacing:3px; text-transform:uppercase;
+  animation:outage-text-blink 1s ease infinite;
+}
+@keyframes outage-text-blink {
+  0%,100% { color:var(--outage-text); text-shadow:0 0 10px rgba(255,77,106,.6); }
+  50%     { color:var(--crisis); text-shadow:none; }
+}
+.outage-detail { font-size:9.5px; color:var(--crisis); letter-spacing:1px; }
+.outage-suggest {
+  font-size:9px; color:var(--amber);
+  letter-spacing:1px;
+  border:1px solid rgba(232,168,56,.4);
+  padding:2px 8px;
+  background:rgba(232,168,56,.05);
+}
+
+/* ── CENTER: Throughput gauge section ───────────────────────── */
+.tp-section {
+  flex-shrink:0;
+  padding:8px 14px;
+  border-bottom:1px solid var(--border);
+  background:rgba(0,0,0,.18);
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.tp-gauge-svg-wrap { position:relative; width:90px; height:90px; flex-shrink:0; }
+#tp-gauge-svg { width:100%; height:100%; overflow:visible; }
+.tp-gauge-track { fill:none; stroke:var(--border-lit); stroke-width:8; }
+.tp-gauge-fill  {
+  fill:none; stroke:var(--tp-high); stroke-width:8; stroke-linecap:round;
+  transition:stroke-dasharray .6s cubic-bezier(.4,0,.2,1), stroke .4s;
+}
+.tp-center-pct {
+  font-size:19px; font-weight:700;
+  transition:fill .4s;
+  font-family:var(--mono);
+}
+.tp-center-label {
+  font-size:5.5px; letter-spacing:1px; text-transform:uppercase;
+  fill:var(--text-3);
+}
+.tp-info { flex:1; display:flex; flex-direction:column; gap:4px; }
+.tp-headline {
+  font-size:8.5px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--text-2);
+}
+.tp-bar-track {
+  height:8px; background:var(--border); border:1px solid var(--border-lit);
+  position:relative; overflow:hidden;
+}
+.tp-bar-fill {
+  height:100%;
+  background:var(--tp-high);
+  transition:width .6s cubic-bezier(.4,0,.2,1), background .4s;
+  position:relative;
+}
+.tp-bar-fill::after {
+  content:''; position:absolute; right:0; top:0;
+  width:3px; height:100%; background:rgba(255,255,255,.4);
+}
+.tp-stats-row {
+  display:flex; gap:10px;
+  font-size:8px; color:var(--text-3); letter-spacing:.5px;
+}
+.tp-stat-val { color:var(--text-2); }
+/* Outage state modifiers */
+.tp-section.tp-outage .tp-gauge-fill { stroke:var(--tp-zero); animation:tp-blink .7s step-end infinite; }
+.tp-section.tp-outage .tp-center-pct { animation:tp-blink .7s step-end infinite; }
+.tp-section.tp-outage .tp-bar-fill { background:var(--tp-zero); }
+.tp-section.tp-outage .tp-bar-track { border-color:var(--crisis); box-shadow:0 0 6px var(--crisis-glow); }
+@keyframes tp-blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── CENTER panel ───────────────────────────────────────────── */
+.panel--center { display:flex; flex-direction:column; }
+
+.engine-state {
+  display:flex; align-items:center; gap:6px;
+  font-size:9px; letter-spacing:1.5px;
+}
+.engine-dot {
+  width:7px; height:7px; border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 6px var(--green-glow);
+  flex-shrink:0;
+  transition:background .3s, box-shadow .3s;
+}
+.engine-dot.processing { background:var(--amber); box-shadow:0 0 6px var(--amber-glow); animation:dot-pulse .8s ease infinite; }
+.engine-dot.alert { background:var(--crisis); box-shadow:0 0 6px var(--crisis-glow); animation:dot-pulse .5s ease infinite; }
+#engine-label { color:var(--green); transition:color .3s; }
+#engine-label.processing { color:var(--amber); }
+#engine-label.alert { color:var(--crisis); }
+
+/* ── Command input block ────────────────────────────────────── */
+.cmd-block {
+  flex-shrink:0;
+  border:1px solid var(--border);
+  background:rgba(5,9,15,.6);
+  position:relative;
+}
+.cmd-prompt-line {
+  padding:7px 12px 0;
+  display:flex; align-items:center; gap:0;
+  font-size:10px;
+}
+.cmd-prompt-char { color:var(--cyan); margin-right:6px; font-size:13px; line-height:1; }
+.cmd-prompt-path { color:var(--text-3); letter-spacing:.5px; font-size:9.5px; }
+.cmd-textarea {
+  display:block;
+  width:100%;
+  height:72px;
+  background:transparent;
+  border:none;
+  outline:none;
+  padding:6px 12px 6px 32px;
+  color:var(--cyan);
+  font-family:var(--mono);
+  font-size:12px;
+  resize:none;
+  caret-color:var(--cyan);
+  line-height:1.55;
+}
+.cmd-textarea::placeholder { color:var(--text-3); font-style:italic; }
+.cmd-textarea:disabled { opacity:.5; cursor:not-allowed; }
+.cmd-action-bar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:5px 12px;
+  border-top:1px solid var(--border);
+  background:rgba(0,0,0,.2);
+}
+.cmd-info { display:flex; align-items:center; gap:12px; }
+.cmd-hint { font-size:8.5px; color:var(--text-3); letter-spacing:.5px; }
+#cmd-counter { font-size:8.5px; color:var(--text-3); }
+.cmd-buttons { display:flex; gap:8px; }
+
+.btn {
+  font-family:var(--mono);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:1.5px;
+  text-transform:uppercase;
+  padding:5px 14px;
+  cursor:pointer;
+  border:1px solid;
+  transition:all .18s ease;
+  background:transparent;
+}
+.btn--ghost {
+  color:var(--text-3); border-color:var(--border-lit);
+}
+.btn--ghost:hover { color:var(--text-2); border-color:var(--text-3); }
+.btn--primary {
+  color:var(--cyan); border-color:var(--cyan);
+  box-shadow:0 0 8px rgba(6,194,212,.12);
+}
+.btn--primary:hover {
+  background:var(--cyan); color:var(--bg);
+  box-shadow:0 0 16px rgba(6,194,212,.35);
+}
+.btn--primary:disabled {
+  color:var(--text-3); border-color:var(--border);
+  box-shadow:none; cursor:not-allowed;
+}
+.btn--crisis {
+  color:var(--crisis); border-color:var(--crisis);
+}
+.btn--crisis:hover { background:var(--crisis); color:var(--bg); }
+
+.cmd-feedback {
+  padding:4px 12px;
+  font-size:9px;
+  color:var(--text-3);
+  letter-spacing:.5px;
+  border-top:1px solid var(--border);
+  min-height:22px;
+  display:flex; align-items:center;
+  transition:color .3s;
+}
+
+/* ── Output panel ───────────────────────────────────────────── */
+.output-panel {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  border:1px solid var(--border);
+  background:rgba(5,9,15,.4);
+  min-height:0;
+  margin-top:8px;
+}
+.output-hdr {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:6px 12px;
+  border-bottom:1px solid var(--border);
+  background:rgba(0,0,0,.2);
+  flex-shrink:0;
+}
+.output-hdr-left { font-size:8.5px; color:var(--text-3); letter-spacing:1.5px; text-transform:uppercase; }
+.output-hdr-right { display:flex; gap:14px; font-size:8.5px; color:var(--text-3); }
+.output-hdr-right span { letter-spacing:.5px; }
+
+.output-body {
+  flex:1;
+  overflow-y:auto;
+  padding:16px;
+  font-size:13px;
+  line-height:1.65;
+  color:var(--text);
+  position:relative;
+  min-height:0;
+}
+.output-idle {
+  position:absolute; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:8px; color:var(--text-3);
+  font-size:11px; letter-spacing:1px;
+  text-transform:uppercase;
+  pointer-events:none;
+}
+.output-idle-icon {
+  font-size:32px; color:var(--border-lit);
+  animation:idle-spin 12s linear infinite;
+}
+@keyframes idle-spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+.output-idle-hint { font-size:9px; color:var(--text-3); letter-spacing:.5px; text-transform:none; font-style:italic; }
+
+/* Report HTML styles */
+.output-body h3 {
+  font-size:12px; font-weight:700; color:var(--cyan);
+  letter-spacing:2px; text-transform:uppercase;
+  margin:16px 0 6px;
+  padding-bottom:4px;
+  border-bottom:1px solid rgba(6,194,212,.15);
+  font-family:var(--mono);
+}
+.output-body h3:first-child { margin-top:0; }
+.output-body p { font-size:12px; color:var(--text-2); margin-bottom:8px; line-height:1.7; }
+.output-body ul {
+  margin:6px 0 10px 18px; list-style:none;
+  display:flex; flex-direction:column; gap:4px;
+}
+.output-body ul li { font-size:11px; color:var(--text-2); position:relative; padding-left:14px; }
+.output-body ul li::before {
+  content:'▸'; position:absolute; left:0;
+  color:var(--cyan-dim); font-size:9px; top:1px;
+}
+.output-body strong { color:var(--text); font-weight:700; }
+.output-body .alert-block {
+  border-left:2px solid var(--crisis);
+  background:rgba(207,102,121,.06);
+  padding:7px 10px; margin:8px 0;
+  font-size:11px; color:var(--crisis); letter-spacing:.5px;
+}
+.output-body .stat-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:8px 0; }
+.output-body .stat-cell {
+  border:1px solid var(--border-lit); padding:6px 8px;
+  background:rgba(5,9,15,.5);
+}
+.output-body .stat-cell .sc-label { font-size:8px; color:var(--text-3); letter-spacing:1px; text-transform:uppercase; }
+.output-body .stat-cell .sc-val { font-size:14px; color:var(--cyan); font-weight:700; }
+
+.cursor-blink::after {
+  content:'█'; color:var(--cyan);
+  animation:bcursor .9s step-end infinite;
+  margin-left:2px; font-size:11px;
+}
+
+/* ── RIGHT: Scenario card ───────────────────────────────────── */
+.scenario-card {
+  padding:7px 12px;
+  border-bottom:1px solid var(--border);
+  background:rgba(6,194,212,.02);
+  flex-shrink:0;
+}
+.sc-name-row {
+  display:flex; align-items:center;
+  justify-content:space-between; gap:6px;
+}
+.sc-name {
+  font-size:8.5px; font-weight:700; color:var(--cyan);
+  letter-spacing:1px;
+  text-overflow:ellipsis; overflow:hidden; white-space:nowrap; flex:1;
+}
+.sc-sig-badge {
+  font-size:7.5px; font-weight:700; letter-spacing:1px;
+  padding:2px 6px; border:1px solid; flex-shrink:0;
+  text-transform:uppercase;
+}
+.sc-sig--verified   { color:var(--green); border-color:rgba(74,222,128,.4); background:rgba(74,222,128,.06); }
+.sc-sig--dev-bypass { color:var(--amber); border-color:rgba(232,168,56,.4); background:rgba(232,168,56,.06); animation:pulse-badge 2s ease infinite; }
+.sc-sig--neutral    { color:var(--text-3); border-color:var(--border-lit); }
+.sc-detail-row {
+  display:flex; gap:12px; margin-top:3px;
+  font-size:8px; color:var(--text-3); letter-spacing:.5px;
+}
+
+/* ── RIGHT: Power Matrix ────────────────────────────────────── */
+.section-label {
+  font-size:8.5px;
+  color:var(--text-3);
+  letter-spacing:2px;
+  text-transform:uppercase;
+  padding-bottom:6px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:8px;
+  display:flex; align-items:center; gap:6px;
+}
+.section-label::before {
+  content:''; width:3px; height:12px;
+  background:var(--cyan-dim); flex-shrink:0;
+}
+
+.lev-item { margin-bottom:10px; }
+.lev-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; }
+.lev-name { font-size:10px; color:var(--text); }
+.lev-val  { font-size:11px; color:var(--cyan); font-weight:700; letter-spacing:.5px; }
+.lev-track { height:5px; background:var(--border); position:relative; overflow:hidden; }
+.lev-fill {
+  height:100%; background:var(--cyan);
+  box-shadow:0 0 6px rgba(6,194,212,.4);
+  transition:width .9s cubic-bezier(.4,0,.2,1);
+  position:relative;
+}
+.lev-fill::after {
+  content:''; position:absolute; right:0; top:0;
+  width:4px; height:100%; background:rgba(255,255,255,.4);
+}
+.lev-sparkline { margin-top:3px; height:18px; position:relative; overflow:hidden; }
+.lev-sparkline svg { width:100%; height:100%; }
+.sparkline-path { fill:none; stroke:rgba(6,194,212,.3); stroke-width:1; }
+.sparkline-area { fill:rgba(6,194,212,.06); }
+
+/* ── RIGHT: Gauge ───────────────────────────────────────────── */
+.gauge-wrap {
+  display:flex; flex-direction:column; align-items:center;
+  padding:6px 0; gap:8px;
+}
+.gauge-svg-wrap { position:relative; width:200px; height:112px; flex-shrink:0; }
+#gauge-svg { width:100%; height:100%; overflow:visible; }
+.gauge-track-arc { fill:none; stroke:var(--border-lit); stroke-width:7; stroke-linecap:round; }
+.gauge-zone-green { fill:none; stroke:var(--green); stroke-width:7; stroke-linecap:butt; opacity:.25; }
+.gauge-zone-amber { fill:none; stroke:var(--amber); stroke-width:7; stroke-linecap:butt; opacity:.25; }
+.gauge-zone-crisis{ fill:none; stroke:var(--crisis); stroke-width:7; stroke-linecap:butt; opacity:.25; }
+.gauge-fill-arc {
+  fill:none; stroke:var(--cyan); stroke-width:7; stroke-linecap:round;
+  transition:stroke-dasharray .8s cubic-bezier(.4,0,.2,1), stroke .5s;
+}
+#gauge-needle {
+  stroke:var(--text-2); stroke-width:1.5; stroke-linecap:round;
+  transition:x2 .8s cubic-bezier(.4,0,.2,1), y2 .8s cubic-bezier(.4,0,.2,1);
+}
+.gauge-center-dot { fill:var(--text-3); }
+
+.gauge-readout { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.gauge-val {
+  font-size:28px; font-weight:700; color:var(--cyan);
+  text-shadow:0 0 12px var(--cyan-glow); line-height:1; transition:color .5s;
+}
+.gauge-unit { font-size:8px; color:var(--text-3); letter-spacing:2px; text-transform:uppercase; }
+
+.gauge-stats { display:grid; grid-template-columns:1fr 1fr; gap:5px; width:100%; }
+.g-stat { border:1px solid var(--border); padding:5px 7px; background:rgba(5,9,15,.5); }
+.g-stat-label { font-size:7.5px; color:var(--text-3); letter-spacing:1px; text-transform:uppercase; }
+.g-stat-val { font-size:12px; color:var(--cyan); font-weight:700; letter-spacing:.5px; margin-top:1px; transition:color .4s; }
+
+/* ── RIGHT: OTP timeline ────────────────────────────────────── */
+.otp-timeline { display:flex; flex-direction:column; gap:5px; }
+.otp-row { display:flex; align-items:center; gap:6px; font-size:9px; }
+.otp-slot-id { color:var(--text-3); width:84px; flex-shrink:0; font-size:8.5px; letter-spacing:.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.otp-track { flex:1; height:8px; background:var(--border); position:relative; overflow:hidden; }
+.otp-fill { height:100%; transition:width 1s linear; }
+.otp-fill--active { background:var(--cyan); box-shadow:0 0 5px rgba(6,194,212,.4); }
+.otp-fill--exp    { background:var(--text-3); }
+.otp-fill--future { background:var(--border-lit); }
+.otp-status { width:42px; text-align:right; flex-shrink:0; color:var(--text-3); font-size:8.5px; }
+
+/* ── RIGHT: Plugin panel ────────────────────────────────────── */
+.plugin-list { display:flex; flex-direction:column; gap:3px; }
+.plugin-none { font-size:9px; color:var(--text-3); letter-spacing:.5px; padding:3px 0; }
+.plugin-item { display:flex; align-items:center; justify-content:space-between; font-size:9px; padding:3px 0; border-bottom:1px solid rgba(18,32,48,.5); }
+.plugin-name { color:var(--text-2); }
+.plugin-sig-ok  { color:var(--green); }
+.plugin-sig-dev { color:var(--amber); animation:pulse-badge 2s ease infinite; }
+
+/* ── Crisis timeline strip ──────────────────────────────────── */
+.crisis-timeline-row {
+  background:var(--panel-bg2);
+  border:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  min-height:0;
+  position:relative;
+}
+.ct-cap {
+  display:flex; align-items:center;
+  justify-content:space-between;
+  padding:4px 12px;
+  border-bottom:1px solid var(--border);
+  background:rgba(6,194,212,.025);
+  flex-shrink:0;
+}
+.ct-tick-badge {
+  font-size:8px; color:var(--cyan-dim);
+  letter-spacing:1px;
+}
+#crisis-timeline {
+  flex:1; width:100%; display:block; cursor:crosshair;
+}
+.ct-tooltip {
+  position:absolute;
+  background:var(--panel-bg2);
+  border:1px solid var(--border-lit);
+  padding:4px 8px; font-size:8.5px; color:var(--text-2);
+  pointer-events:none; z-index:100; white-space:nowrap;
+  transition:opacity .12s;
+}
+.ct-tooltip.hidden { opacity:0; }
+
+/* ── Status bar / footer ────────────────────────────────────── */
+.status-bar {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0 10px;
+  background:var(--panel-bg);
+  border:1px solid var(--border);
+  box-shadow:0 0 12px rgba(0,0,0,.4);
+  overflow:hidden;
+}
+.sb-badges { display:flex; gap:8px; flex-shrink:0; }
+.sb-badge {
+  font-size:8px; letter-spacing:1.5px; font-weight:700;
+  padding:2px 7px; border:1px solid;
+  text-transform:uppercase;
+}
+.sb-badge--ok   { color:var(--green); border-color:rgba(74,222,128,.3); }
+.sb-badge--warn { color:var(--amber); border-color:rgba(232,168,56,.3); }
+.sb-badge--crisis{ color:var(--crisis); border-color:rgba(207,102,121,.3); animation:pulse-badge 2s ease infinite; }
+
+.ticker-area { flex:1; overflow:hidden; display:flex; align-items:center; gap:0; min-width:0; }
+.ticker-label {
+  flex-shrink:0; font-size:8px; font-weight:700; letter-spacing:1.5px;
+  background:var(--cyan-dim); color:var(--bg); padding:2px 7px; margin-right:10px;
+}
+.ticker-track { flex:1; overflow:hidden; position:relative; height:100%; display:flex; align-items:center; }
+.ticker-text {
+  display:inline-block; white-space:nowrap; font-size:9.5px; color:var(--text-3);
+  position:absolute; animation:ticker-scroll 60s linear infinite; letter-spacing:.5px;
+}
+@keyframes ticker-scroll { 0%{transform:translateX(100vw)} 100%{transform:translateX(-100%)} }
+.sb-right { display:flex; gap:16px; flex-shrink:0; font-size:8.5px; color:var(--text-3); letter-spacing:.5px; }
+
+/* ── Utility animations ─────────────────────────────────────── */
+@keyframes flash-green  { 0%,100%{color:var(--green)} 50%{color:var(--text)} }
+@keyframes flash-crisis { 0%,100%{color:var(--crisis)} 50%{color:var(--text)} }
+
+/* ── Live / Demo watermark ───────────────────────────────────── */
+#live-watermark {
+  position:fixed; top:50%; left:50%;
+  transform:translate(-50%,-50%) rotate(-28deg);
+  font-family:var(--mono); font-size:52px; font-weight:700;
+  letter-spacing:5px; text-transform:uppercase;
+  pointer-events:none; z-index:9996; white-space:nowrap; user-select:none;
+  transition:color .6s ease, opacity .6s ease;
+}
+#live-watermark.wm--offline  { color:var(--crisis); opacity:.13; }
+#live-watermark.wm--live     { color:var(--green);  opacity:.09; }
+#live-watermark.wm--awaiting { color:var(--amber);  opacity:.12; }
+
+#live-pill {
+  position:fixed; top:58px; right:16px; z-index:9994;
+  font-family:var(--mono); font-size:9px; font-weight:700;
+  letter-spacing:2px; text-transform:uppercase;
+  padding:3px 10px; border:1px solid;
+  pointer-events:none; transition:all .4s ease;
+}
+#live-pill.pill--offline  { color:var(--crisis); border-color:rgba(207,102,121,.4); background:rgba(207,102,121,.07); }
+#live-pill.pill--live     { color:var(--green);  border-color:rgba(74,222,128,.4);  background:rgba(74,222,128,.07); animation:dot-pulse 2.5s ease infinite; }
+#live-pill.pill--awaiting { color:var(--amber);  border-color:rgba(232,168,56,.45); background:rgba(232,168,56,.08); animation:dot-pulse 1.8s ease infinite; }
+</style>
+</head>
+<body>
+
+<!-- CRT Effects -->
+<div class="crt-scanlines"></div>
+<div class="crt-vignette"></div>
+<div class="crt-glow"></div>
+
+<!-- Outage Banner (position:fixed, above everything except CRT) -->
+<div id="outage-banner" class="hidden" aria-live="assertive" role="alert">
+  <div class="outage-title">▓▓▓ OUTAGE — THROUGHPUT BLOCKED ▓▓▓</div>
+  <div class="outage-detail" id="outage-detail">tick=— · throughput=0%</div>
+  <div class="outage-suggest">ÖNERİ: lever clear_irrecoverable</div>
+</div>
+
+<!-- Live / Demo watermark & status pill -->
+<div id="live-watermark" class="wm--offline">DEMO MODE: OFFLINE</div>
+<div id="live-pill"      class="pill--offline">● DEMO · OFFLINE</div>
+
+<!-- Boot Overlay -->
+<div id="boot-overlay">
+  <div class="boot-terminal">
+    <div class="boot-header">CAELUS OS v3.0.0 // UNIVERSAL ENGINE BOOT</div>
+    <div class="boot-sep"></div>
+    <div class="boot-lines" id="boot-lines"></div>
+    <div class="boot-sep"></div>
+    <div class="boot-final" id="boot-final" style="opacity:0"></div>
+  </div>
+</div>
+
+<!-- Main Shell -->
+<div class="shell">
+
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-brand">
+      <div class="hdr-logo">CAELUS OS</div>
+      <div class="hdr-sub">// UNIVERSAL UI v3.0 · SHADOW-MESH ACTIVE · CAUSAL ENGINE</div>
+    </div>
+
+    <div class="hdr-badges">
+      <div class="badge badge--sim" id="hdr-mode">EVRENSEL TABAN</div>
+      <div class="badge badge--ok">AIR-GAPPED</div>
+      <div class="badge badge--ok" id="hdr-enclave">AES-256 ✓</div>
+      <div class="badge badge--crisis" id="hdr-threat" style="display:none">KRİZ AKTİF</div>
+    </div>
+
+    <div class="hdr-telemetry">
+      <div class="tel">
+        <span class="tel-label">Sistem</span>
+        <span class="tel-val tel-val--ok" id="hdr-sys">AKTİF</span>
+      </div>
+      <div class="tel">
+        <span class="tel-label">Oturum</span>
+        <span class="tel-val" id="hdr-uptime">00:00:00</span>
+      </div>
+      <div class="tel">
+        <span class="tel-label">UTC</span>
+        <span class="tel-val" id="hdr-utc">00:00:00</span>
+      </div>
+      <div class="tel">
+        <span class="tel-label">Mesh Düğüm</span>
+        <span class="tel-val" id="hdr-mesh">0 / 12</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- WORKSPACE -->
+  <main class="workspace">
+
+    <!-- ── LEFT: P2P Mesh + Causal Graf + Crypto Log + Lever Console ── -->
+    <aside class="panel">
+      <div class="panel-cap">
+        <span class="panel-title" id="left-panel-title">P2P / Nedensel Graf</span>
+        <span class="panel-badge" id="mesh-badge">LOKAL TARAMA</span>
+      </div>
+
+      <!-- Tab navigation -->
+      <div class="tab-nav">
+        <button class="tab-btn tab-btn--active" id="tab-btn-mesh"   onclick="switchLeftTab('mesh')">P2P MESH</button>
+        <button class="tab-btn"                 id="tab-btn-causal" onclick="switchLeftTab('causal')">CAUSAL GRAF</button>
+      </div>
+
+      <!-- Mesh tab -->
+      <div id="tab-mesh" class="tab-panel">
+        <div class="mesh-viewport">
+          <canvas id="mesh-canvas" aria-label="P2P Mesh Topolojisi" role="img"></canvas>
+          <div class="mesh-meta">AD-HOC MESH · ED25519 + BLAKE3</div>
+          <div class="mesh-count-badge" id="mesh-count-badge">DÜĞÜM: 5 / 12</div>
+        </div>
+        <div class="peer-list" id="peer-list"></div>
+      </div>
+
+      <!-- Causal graph tab -->
+      <div id="tab-causal" class="tab-panel hidden">
+        <div class="causal-viewport">
+          <canvas id="causal-canvas" aria-label="CAELUS Nedensel Graf" role="img"></canvas>
+          <div class="causal-empty" id="causal-empty">
+            <div>SNAPSHOT verisi bekleniyor</div>
+            <div style="font-size:8px;margin-top:4px;">lever konsola: snapshot --json</div>
+          </div>
+          <div class="causal-legend" id="causal-legend">
+            ● Nominal &nbsp; ◆ Sürtünme &nbsp; ▲ Outage/Geri-dönüşsüz
+          </div>
+        </div>
+      </div>
+
+      <!-- Crypto event log (always visible) -->
+      <div class="panel-cap panel-cap--sub" style="padding:5px 10px;">
+        <span class="panel-title" style="font-size:8px;">KRİPTO OLAY KAYDI</span>
+        <span class="log-live-dot"></span>
+      </div>
+      <div class="crypto-log" id="crypto-log" aria-live="polite"></div>
+
+      <!-- Lever / REPL Console (P1-B) -->
+      <div class="lever-console">
+        <div class="panel-cap panel-cap--sub" style="padding:4px 8px;">
+          <span class="panel-title" style="font-size:8px;">LEVER KONSOL</span>
+          <button class="btn btn--ghost" id="lc-clear" style="font-size:7px;padding:1px 5px;letter-spacing:1px;">CLR</button>
+        </div>
+        <div class="lc-output" id="lc-output" aria-live="polite"></div>
+        <div class="lc-input-row">
+          <span class="lc-prompt">$&nbsp;</span>
+          <input id="lc-input" class="lc-input" type="text"
+            placeholder="lever, status, tick, snapshot --json..."
+            autocomplete="off" spellcheck="false" list="lc-suggestions">
+          <button id="lc-send" class="btn btn--primary" style="font-size:8px;padding:2px 7px;letter-spacing:1px;">SND</button>
+        </div>
+        <datalist id="lc-suggestions">
+          <option value="status">
+          <option value="list levers">
+          <option value="snapshot --json">
+          <option value="tick 10">
+          <option value="clear_irrecoverable">
+        </datalist>
+      </div>
+
+      <!-- Audio toggle -->
+      <div class="audio-row">
+        <span>Ses Efektleri</span>
+        <label class="tgl-switch">
+          <input type="checkbox" id="audio-toggle" checked>
+          <span class="tgl-thumb"></span>
+        </label>
+      </div>
+    </aside>
+
+    <!-- ── CENTER: Throughput Gauge + Command + Output ── -->
+    <section class="panel panel--center">
+      <div class="panel-cap">
+        <span class="panel-title">Causal Command &amp; Analysis</span>
+        <div class="engine-state">
+          <div class="engine-dot" id="engine-dot"></div>
+          <span id="engine-label">HAZIR</span>
+        </div>
+      </div>
+
+      <!-- Throughput Gauge (P0-A) -->
+      <div class="tp-section" id="tp-section">
+        <div class="tp-gauge-svg-wrap">
+          <svg id="tp-gauge-svg" viewBox="0 0 90 90" xmlns="http://www.w3.org/2000/svg">
+            <!-- Background circle track -->
+            <circle cx="45" cy="45" r="35" class="tp-gauge-track" />
+            <!-- Fill arc (updated by JS) -->
+            <circle cx="45" cy="45" r="35" class="tp-gauge-fill" id="tp-gauge-fill"
+              stroke-dasharray="0 220" stroke-dashoffset="-55" />
+            <!-- Center text -->
+            <text id="tp-pct-text" class="tp-center-pct" x="45" y="49"
+              text-anchor="middle" fill="#4ade80">100%</text>
+            <text class="tp-center-label" x="45" y="58"
+              text-anchor="middle">AKIŞ</text>
+          </svg>
+        </div>
+        <div class="tp-info">
+          <div class="tp-headline">SİSTEM AKIŞI (THROUGHPUT)</div>
+          <div class="tp-bar-track">
+            <div class="tp-bar-fill" id="tp-bar-fill" style="width:100%"></div>
+          </div>
+          <div class="tp-stats-row">
+            <span>Tick: <span class="tp-stat-val" id="tp-tick">—</span></span>
+            <span>μ: <span class="tp-stat-val" id="tp-friction">1.00</span></span>
+            <span>Durum: <span class="tp-stat-val" id="tp-status-text">NOMİNAL</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-body" style="gap:0; padding:10px;">
+        <!-- Command input -->
+        <div class="cmd-block">
+          <div class="cmd-prompt-line">
+            <span class="cmd-prompt-char">▶</span>
+            <span class="cmd-prompt-path">CAELUS://CAUSAL-ENGINE $&nbsp;</span>
+          </div>
+          <textarea
+            id="cmd-input"
+            class="cmd-textarea"
+            maxlength="400"
+            placeholder="ScenarioPack JSON veya senaryo parametrelerini girin..."
+          ></textarea>
+          <div class="cmd-action-bar">
+            <div class="cmd-info">
+              <span class="cmd-hint">[CTRL+ENTER] Çalıştır · [ESC] Temizle</span>
+              <span id="cmd-counter">0 / 400</span>
+            </div>
+            <div class="cmd-buttons">
+              <button class="btn btn--ghost" id="btn-clear">TEMİZLE</button>
+              <button class="btn btn--primary" id="btn-execute">ANALİZ ET [EXE]</button>
+            </div>
+          </div>
+          <div class="cmd-feedback" id="cmd-feedback">Causal Engine ScenarioPack veya analiz girdisi bekliyor...</div>
+        </div>
+
+        <!-- Output report -->
+        <div class="output-panel">
+          <div class="output-hdr">
+            <span class="output-hdr-left">Causal Engine Analiz Raporu</span>
+            <div class="output-hdr-right">
+              <span id="scenario-context">UNIVERSAL_BASELINE · UNIVERSAL</span>
+              <span id="report-id">ID: —</span>
+              <span id="report-ts">—</span>
+            </div>
+          </div>
+          <div class="output-body" id="report-output">
+            <div class="output-idle" id="output-idle">
+              <div class="output-idle-icon">⬡</div>
+              <div>ScenarioPack JSON veya senaryo girerek analizi başlatın</div>
+              <div class="output-idle-hint">Dinamik etiketler: labels · sector · scenario_id · nodes</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── RIGHT: Scenario Card + Signal Matrix + Gauge + OTP + Plugin ── -->
+    <aside class="panel">
+      <div class="panel-cap">
+        <span class="panel-title">Causal Signal Matrix</span>
+        <span class="panel-badge panel-badge--warn" id="monitor-badge">TELEMETRİ</span>
+      </div>
+
+      <!-- Scenario card (P1-C) -->
+      <div class="scenario-card">
+        <div class="sc-name-row">
+          <span class="sc-name" id="sc-name">UNIVERSAL_BASELINE</span>
+          <span class="sc-sig-badge sc-sig--neutral" id="sc-sig-badge">—</span>
+        </div>
+        <div class="sc-detail-row">
+          <span>Sektör: <span id="sc-sector">UNIVERSAL</span></span>
+          <span id="sc-tick-display">Tick: —</span>
+        </div>
+      </div>
+
+      <div class="panel-body">
+
+        <!-- Leverage section -->
+        <div>
+          <div class="section-label" id="signal-section-label">Node / Edge / Actor Signals — Simüle Veri</div>
+          <div id="leverage-list"></div>
+        </div>
+
+        <!-- Friction gauge -->
+        <div>
+          <div class="section-label" id="friction-section-label">Friction Entity Katsayısı</div>
+          <div class="gauge-wrap">
+            <div class="gauge-svg-wrap">
+              <svg id="gauge-svg" viewBox="0 0 200 112" xmlns="http://www.w3.org/2000/svg">
+                <path id="gauge-track" class="gauge-track-arc" d="" />
+                <path id="gauge-zone-green"  class="gauge-zone-green"  d="" />
+                <path id="gauge-zone-amber"  class="gauge-zone-amber"  d="" />
+                <path id="gauge-zone-crisis" class="gauge-zone-crisis" d="" />
+                <path id="gauge-fill" class="gauge-fill-arc" d="" />
+                <g id="gauge-ticks"></g>
+                <line id="gauge-needle" x1="100" y1="100" x2="100" y2="30" />
+                <circle class="gauge-center-dot" cx="100" cy="100" r="4" />
+              </svg>
+            </div>
+            <div class="gauge-readout">
+              <span class="gauge-val" id="friction-val">1.00</span>
+              <span class="gauge-unit" id="friction-unit">μ · Friction Entity</span>
+            </div>
+            <div class="gauge-stats">
+              <div class="g-stat"><div class="g-stat-label">Risk Seviyesi</div><div class="g-stat-val" id="g-risk">NÖTR</div></div>
+              <div class="g-stat"><div class="g-stat-label">Gecikme Tahmini</div><div class="g-stat-val" id="g-delay">0.0 SAAT</div></div>
+              <div class="g-stat"><div class="g-stat-label">OTP Durumu</div><div class="g-stat-val" id="g-otp">AKTİF</div></div>
+              <div class="g-stat"><div class="g-stat-label">Çarpan</div><div class="g-stat-val" id="g-mult">1.00×</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- OTP session timeline -->
+        <div>
+          <div class="section-label">OTP Oturum Zaman Çizelgesi</div>
+          <div class="otp-timeline" id="otp-timeline"></div>
+        </div>
+
+        <!-- Plugin status panel (P1-D) -->
+        <div>
+          <div class="section-label">Eklenti Durumu</div>
+          <div class="plugin-list" id="plugin-list">
+            <div class="plugin-none" id="plugin-none-msg">Aktif eklenti yok (--plugin flag gerekli)</div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- CRISIS TIMELINE (P0-B) — horizontal strip -->
+  <div class="crisis-timeline-row">
+    <div class="ct-cap">
+      <span class="panel-title" style="font-size:8px;">KRİZ ZAMAN ÇİZELGESİ (TICK-BAZLI)</span>
+      <span class="ct-tick-badge" id="ct-tick-badge">TICK: 0 · 0 kayıt</span>
+    </div>
+    <canvas id="crisis-timeline" role="img" aria-label="CAELUS Kriz Zaman Çizelgesi"></canvas>
+    <div id="ct-tooltip" class="ct-tooltip hidden"></div>
+  </div>
+
+  <!-- FOOTER STATUS BAR -->
+  <footer class="status-bar">
+    <div class="sb-badges">
+      <div class="sb-badge sb-badge--ok">KAPALI DEVRE</div>
+      <div class="sb-badge sb-badge--ok">AES-256-CBC</div>
+      <div class="sb-badge sb-badge--ok">ED25519</div>
+      <div class="sb-badge" id="sb-threat" style="color:var(--green);border-color:rgba(74,222,128,.3);">RİSK: NÖTR</div>
+    </div>
+    <div class="ticker-area">
+      <span class="ticker-label">INTEL</span>
+      <div class="ticker-track">
+        <div class="ticker-text" id="ticker-text">BAŞLATILIYOR...</div>
+      </div>
+    </div>
+    <div class="sb-right">
+      <span id="sb-session">SESSION: —</span>
+      <span id="sb-pkts">PKT: 0</span>
+      <span id="sb-reports">RPT: 0</span>
+    </div>
+  </footer>
+
+</div><!-- /shell -->
+
+<script src="app.js"></script>
+</body>
+</html>
