@@ -1,0 +1,237 @@
+==============================================================
+      CAELUS OS — Air-Gapped Neuro-Symbolic LMOS
+      Universal Causal Crisis Engine
+      Senaryo : BS-01_SAHTE_UFUK
+      BUILD MODE: BLACKBOX (UI Embedded)
+==============================================================
+[DET] Deterministik mod aktif — tohumlu PRNG + sanal saat(0)
+[REGISTRY] Eklenti kaydı tamamlandı (det-mode)
+           Solver    : DeterministicSolver
+           KEYMGMT   : (none)
+           Connector : 1 kayıtlı
+           Reporter  : 1 kayıtlı
+
+[UI] Stratejik Arayuz bellege cikartiliyor...
+[UI] Arayuz hazir -> C:\Users\Lenovo\AppData\Local\Temp/caelus_ui.html
+[UI] (Bu dosyalar cikista silinecektir.)
+
+[INTEL-CORE] -- Security Enclave -------------------------
+[INTEL-CORE] AES-256 self-test (FIPS-197 KAT): PASS
+[INTEL-CORE] Enclave key: env-provided (CAELUS_ENCLAVE_KEY)
+[INTEL-CORE] AES-256-CBC round-trip: PASS
+
+[INTEL-CORE] -- Operational Profile Load -----------------
+[INTEL-CORE] No encrypted override found; using built-in baseline for BS-01_SAHTE_UFUK.
+[INTEL-CORE] Scenario: BS-01_SAHTE_UFUK (UNIVERSAL)
+[SCENARIO] ed25519 imza doğrulandı (payload=CAELUS_SCENARIO_PACK_V1 canonical critical fields).
+[SCENARIO] Yüklendi: BS-01_SAHTE_UFUK [observability_attack] sektör=global_transshipment_hub
+           Düğüm:7 Kenar:7 Döngü:0 Kaldıraç:4 Histerezis:1 Intel:4
+[SCENARIO] Nedensel motor 'BS-01_SAHTE_UFUK' ile yapılandırıldı.
+[SCENARIO] Domain: global_transshipment_hub | Ufuk: 240 saat | Tick: 15 dak
+[CONNECTOR] CsvReplayConnector yuklendi: 4 olay (scenarios/BS-01_SAHTE_UFUK.json, max=65536)
+[CONNECTOR] Tick 0: 1 intel olayi enjekte edildi.
+[CAUSAL-v2] Baseline sürtünme (tick=1):
+            Ham  : 3.117844x
+            Kenet: 3.000000x
+            Durum: mu=3.000x REGIME_EXCEEDED
+[CRITICAL] REGIME_EXCEEDED (baseline): 3.11784x > 3.0x
+[AUDIT] Günlük açıldı: caelus_audit_0000000000000000.log  genesis=965cacbb92cf1e93  max_bytes=16777216  flush_every=1
+
+[INTEL-FEED] -- Shadow-Mesh -> Intel-Core Bridge --------
+[INTEL-FEED] Paket alındı:
+             Session ID    : 0xcae10001
+             Crisis Level  : 2
+             Field coeff   : 0.8200
+             Memo          : GENERIC_FIELD_SIGNAL: Actor_Alpha elevated friction
+[CAUSAL-v2] Intel sonrası sürtünme (tick=3):
+            Ham  : 3.131532x
+            Kenet: 3.000000x
+            Durum: mu=3.000x REGIME_EXCEEDED
+
+[CORE] -- Solver Plugin [DeterministicSolver] ----------------
+[CORE] Cycle: Generic constrained transfer
+[CORE] Task starts 06:00 | Deadline 08:00
+[CORE] Friction multiplier: 3.00x  → travel band [135, 195] min
+
+[CORE] Solver: AT RISK
+       Arrival time     : 9:15
+       Completion time  : 9:45
+       OTP Status       : AT RISK / DELAYED
+[CORE] ---------------------------------------------------
+
+[REPL] Senaryo REPL basladi. Yardim icin 'help', cikis icin 'quit'.
+[REPL] Snapshot:
+       current_tick      : 3
+       last_snapshot_tick: 2
+       raw_friction     : 3.131532x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-01_SAHTE_UFUK t=3> [REPL] Snapshot:
+       current_tick      : 3
+       last_snapshot_tick: 2
+       raw_friction     : 3.131532x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-01_SAHTE_UFUK t=3> [REPL] Kaldiraclar:
+  L-01_ZAFER_ANLATI  target=PORT_DIRECTOR  p=0.75  cost_ticks=24  lockout_ticks=96
+  L-02_TANIIMA  target=HARBOR_MASTER  p=0.80  cost_ticks=12  lockout_ticks=0
+  L-03_FOMO  target=ALLIANCE_CEO  p=0.65  cost_ticks=48  lockout_ticks=0
+  L-04_ZIMRH  target=CUSTOMS_CHIEF  p=0.70  cost_ticks=32  lockout_ticks=192
+
+caelus:BS-01_SAHTE_UFUK t=3> [REPL] Lever sonucu: BASARILI | cost_ticks=24 (tam maliyet icin ek tick: 23)
+[REPL] Snapshot:
+       current_tick      : 4
+       last_snapshot_tick: 3
+       raw_friction     : 3.203178x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-01_SAHTE_UFUK t=4> [REPL] Lever sonucu: BASARILI | cost_ticks=12 (tam maliyet icin ek tick: 11)
+[REPL] Snapshot:
+       current_tick      : 5
+       last_snapshot_tick: 4
+       raw_friction     : 3.046182x
+       clamped_friction : 3.000000x
+       live_multiplier  : 3.000000x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.333333
+       summary          : mu=3.000x REGIME_EXCEEDED
+
+caelus:BS-01_SAHTE_UFUK t=5> [REPL] Lever sonucu: BASARILI | cost_ticks=48 (tam maliyet icin ek tick: 47)
+[REPL] Snapshot:
+       current_tick      : 6
+       last_snapshot_tick: 5
+       raw_friction     : 2.933826x
+       clamped_friction : 2.933826x
+       live_multiplier  : 2.933826x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.340852
+       summary          : mu=2.934x REGIME_EXCEEDED
+
+caelus:BS-01_SAHTE_UFUK t=6> [REPL] Lever sonucu: BASARILI | cost_ticks=32 (tam maliyet icin ek tick: 31)
+[REPL] Snapshot:
+       current_tick      : 7
+       last_snapshot_tick: 6
+       raw_friction     : 2.413470x
+       clamped_friction : 2.413470x
+       live_multiplier  : 2.413470x
+       regime_exceeded  : EVET
+       outage_active    : HAYIR
+       deadline_missed  : HAYIR
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.414341
+       summary          : mu=2.413x REGIME_EXCEEDED
+
+caelus:BS-01_SAHTE_UFUK t=7> [CONNECTOR] Tick 96: 1 intel olayi enjekte edildi.
+[CONNECTOR] Tick 192: 1 intel olayi enjekte edildi.
+[CONNECTOR] Tick 288: 1 intel olayi enjekte edildi.
+[REPL] 378 tick tamamlandi.
+[REPL] Snapshot:
+       current_tick      : 385
+       last_snapshot_tick: 384
+       raw_friction     : 2.524600x
+       clamped_friction : 2.524600x
+       live_multiplier  : 2.524600x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=385
+
+caelus:BS-01_SAHTE_UFUK t=385> [REPL] Snapshot:
+       current_tick      : 385
+       last_snapshot_tick: 384
+       raw_friction     : 2.524600x
+       clamped_friction : 2.524600x
+       live_multiplier  : 2.524600x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : HAYIR
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=385
+
+caelus:BS-01_SAHTE_UFUK t=385> [REPL] 192 tick tamamlandi.
+[REPL] Snapshot:
+       current_tick      : 577
+       last_snapshot_tick: 576
+       raw_friction     : 2.524600x
+       clamped_friction : 2.524600x
+       live_multiplier  : 2.524600x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : EVET
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=577
+
+caelus:BS-01_SAHTE_UFUK t=577> [REPL] Snapshot:
+       current_tick      : 577
+       last_snapshot_tick: 576
+       raw_friction     : 2.524600x
+       clamped_friction : 2.524600x
+       live_multiplier  : 2.524600x
+       regime_exceeded  : EVET
+       outage_active    : EVET
+       deadline_missed  : EVET
+       hysteresis_flip  : EVET
+       throughput_ratio : 0.000000
+       summary          : OUTAGE: throughput=0, tick=577
+
+caelus:BS-01_SAHTE_UFUK t=577> [AUDIT] Mühürlendi: caelus_audit_0000000000000000.log  zincir_başı=febf690d3dc8ed8e  giriş=591
+[REPL] Cikis.
+
+[OK] CAELUS OS cycle complete.
+
+CDET: BLOCK_BEGIN
+CDET: scenario=BS-01_SAHTE_UFUK
+CDET: scenario_state=SCENARIO_ACTIVE
+CDET: region=HUB_ALPHA (coğrafya-bağımsız)
+CDET: bureaucratic_complexity=0.880000
+CDET: historical_delay_rate=0.350000
+CDET: labor_action_probability=0.930000
+CDET: route_congestion=0.970000
+CDET: weather_severity=0.660000
+CDET: raw_friction=2.524600
+CDET: clamped_friction=2.524600
+CDET: regime_exceeded=true
+CDET: causal_engine_ticks=577
+CDET: field_friction_coeff=0.820000
+CDET: field_crisis_level=2
+CDET: causal_post_intel_friction=2.524600
+CDET: final_friction=2.524600
+CDET: travel_band_low=135
+CDET: travel_band_high=195
+CDET: arrival_min=555
+CDET: completion_min=585
+CDET: on_time=false
+CDET: audit_chain_head=41179a91ca6b0c5f97675f2bc5ad9cf6131bf5e4d3f7674008439df0757b7d27
+CDET: audit_entry_count=590
+CDET: BLOCK_END

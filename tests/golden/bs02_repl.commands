@@ -1,0 +1,12 @@
+status
+list levers
+lever L-01_CERCEVE
+lever L-02_MIRAS
+lever L-03_REGULATOR
+lever L-04_SIGORTA
+lever L-05_BUMERANG
+tick 137
+snapshot
+tick 96
+snapshot
+quit

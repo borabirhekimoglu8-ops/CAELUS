@@ -1,0 +1,153 @@
+{
+  "case_id": "bs03_repl",
+  "scenario_id": "BS-03_KUM_SAATI",
+  "scenario_file": "scenarios/BS-03_KUM_SAATI.json",
+  "command_file": "tests/golden/bs03_repl.commands",
+  "determinism": {
+    "mode": "--det-mode",
+    "seed_hex": "0xCAE105DEADBEEF00",
+    "dev_signature_bypass_required": false,
+    "signature_path": "scenario carries a real ed25519 signature matching the pinned trust anchor (CAELUS_TRUSTED_PUBKEY); no env bypass",
+    "repl_start_current_tick": 3,
+    "repl_start_last_snapshot_tick": 2
+  },
+  "lever_expectations": [
+    {
+      "id": "L-01_ZIMRH",
+      "tick_used": 3,
+      "success_p_fp": 700000,
+      "det_roll_fp": 650030,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-02_TEKNIK_EK",
+      "tick_used": 4,
+      "success_p_fp": 650000,
+      "det_roll_fp": 511421,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-03_ILKACIN",
+      "tick_used": 5,
+      "success_p_fp": 600000,
+      "det_roll_fp": 153915,
+      "expected_result": "BASARILI"
+    },
+    {
+      "id": "L-04_ZAFER",
+      "tick_used": 6,
+      "success_p_fp": 800000,
+      "det_roll_fp": 22320,
+      "expected_result": "BASARILI"
+    }
+  ],
+  "milestones": [
+    {
+      "name": "repl_start",
+      "after_command": "status",
+      "expected_snapshot": {
+        "current_tick": 3,
+        "last_snapshot_tick": 2,
+        "raw_friction": 3.352,
+        "clamped_friction": 3.0,
+        "regime_exceeded": true,
+        "outage_active": false,
+        "deadline_missed": false,
+        "hysteresis_flip": false,
+        "throughput_ratio": 0.333333
+      }
+    },
+    {
+      "name": "after_all_levers",
+      "after_command": "lever L-04_ZAFER",
+      "expected_snapshot": {
+        "current_tick": 7,
+        "last_snapshot_tick": 6,
+        "raw_friction": 1.298757,
+        "clamped_friction": 1.298757,
+        "regime_exceeded": true,
+        "outage_active": false,
+        "deadline_missed": false,
+        "hysteresis_flip": false,
+        "throughput_ratio": 0.769967
+      }
+    },
+    {
+      "name": "reversible_blockade_hysteresis",
+      "after_command": "tick 18",
+      "hysteresis": {
+        "id": "HYST_BLOKAJ",
+        "threshold_tick": 24,
+        "reversible": true,
+        "permanent_loss_fp": 0
+      },
+      "expected_snapshot": {
+        "current_tick": 25,
+        "last_snapshot_tick": 24,
+        "raw_friction": 1.800951,
+        "clamped_friction": 1.800951,
+        "regime_exceeded": true,
+        "outage_active": false,
+        "deadline_missed": false,
+        "hysteresis_flip": true,
+        "throughput_ratio": 0.555262
+      }
+    },
+    {
+      "name": "reefer_convoy_deadline",
+      "after_command": "tick 96",
+      "deadline": {
+        "node_id": "REEFER_CONVOY",
+        "label": "REEFER_MED_EXPIRY_120H",
+        "miss_tick": 120
+      },
+      "expected_snapshot": {
+        "current_tick": 121,
+        "last_snapshot_tick": 120,
+        "raw_friction": 2.053,
+        "clamped_friction": 2.053,
+        "regime_exceeded": true,
+        "outage_active": true,
+        "deadline_missed": true,
+        "hysteresis_flip": true,
+        "throughput_ratio": 0.0
+      }
+    },
+    {
+      "name": "permanent_traffic_loss_hysteresis",
+      "after_command": "tick 96",
+      "hysteresis": {
+        "id": "HYST_TRAFIK_KAYBI",
+        "threshold_tick": 216,
+        "reversible": false,
+        "permanent_loss_fp": 350000
+      },
+      "expected_snapshot": {
+        "current_tick": 217,
+        "last_snapshot_tick": 216,
+        "raw_friction": 2.053,
+        "clamped_friction": 2.053,
+        "regime_exceeded": true,
+        "outage_active": true,
+        "deadline_missed": true,
+        "hysteresis_flip": true,
+        "throughput_ratio": 0.0
+      },
+      "current_engine_note": "Latched outage semantics (T-20): the REEFER_CONVOY perishable deadline latched outage at tick 120; the later non-reversible HYST_TRAFIK_KAYBI flip keeps the latch instead of clearing it. Only a successful recovery lever clears outage."
+    }
+  ],
+  "runner_assertions": {
+    "trace_note": "Traces refreshed for the current REPL output format: lever results print as '[REPL] Lever sonucu: <SONUC> | cost_ticks=N' (lever id is not echoed; cost_ticks disambiguates), and deadline/hysteresis effects are asserted via the latched-outage snapshot summary lines.",
+    "must_contain": [
+      "Lever sonucu: BASARILI | cost_ticks=10",
+      "Lever sonucu: BASARILI | cost_ticks=18",
+      "Lever sonucu: BASARILI | cost_ticks=6",
+      "Lever sonucu: BASARILI | cost_ticks=4",
+      "last_snapshot_tick: 24",
+      "last_snapshot_tick: 120",
+      "OUTAGE: throughput=0, tick=121",
+      "last_snapshot_tick: 216",
+      "OUTAGE: throughput=0, tick=217"
+    ]
+  }
+}

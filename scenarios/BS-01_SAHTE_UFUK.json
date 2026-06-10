@@ -1,0 +1,293 @@
+{
+  "schema_version": "2.0",
+  "id": "BS-01_SAHTE_UFUK",
+  "blackswan_class": "observability_attack",
+  "sector": "global_transshipment_hub",
+  "min_caelus_engine": "2.0",
+  "signature": "ed25519:9bb1dbd039043670b7bf2c5d7533777866135b92f9b38fe6cd8d9735a04fa802:2c6aa704a83c35e5818675fe44837fe8b5292d692fff4e9ac5e4ea151de63380f4ae667d92259fb4ae42c2cb6ba4da900451c68622e169bc7b4edf6d1f170a0e",
+
+  "meta": {
+    "title": "Sahte Ufuk — Küresel Aktarma Limanı Gözlemlenebilirlik Saldırısı",
+    "region": "HUB_ALPHA (coğrafya-bağımsız, küresel konteyner trafiği)",
+    "tick_minutes": 15,
+    "horizon_hours": 240,
+    "synopsis": "Motor mükemmel bir plan üretiyor — yalnız planladığı liman, gerçekte var olmayan bir liman. TOS checksum atlandı, 11.000 TEU hayalet envanter, direktör ego kilidinde, ittifak CEO'su bilinçli kuyruğu şişiriyor.",
+    "sınanan_aksiyom": "Veri gerçektir. Plan-gerçekleşme sapması > %18 → veri güven katsayısı düşürülmeli."
+  },
+
+  "extended_causal_model": {
+
+    "nodes": [
+      {
+        "id": "HUB_BERTHS",
+        "kind": "Service",
+        "capacity_fp": 1000000,
+        "state_fp": 650000,
+        "weight_fp": 280000,
+        "reported_state_fp": 650000,
+        "trust_fp": 1000000,
+        "notes": "Vinç verimliliği work-to-rule ile %35 düştü: 480→312 hamle/saat"
+      },
+      {
+        "id": "GHOST_INVENTORY",
+        "kind": "Buffer",
+        "capacity_fp": 1000000,
+        "state_fp": 110000,
+        "weight_fp": 0,
+        "reported_state_fp": 0,
+        "trust_fp": 730000,
+        "notes": "11.000 TEU hayalet envanter (%27 uyumsuzluk). Raporlanan=0 çünkü TOS bunu göstermiyor."
+      },
+      {
+        "id": "UNION_PRESSURE",
+        "kind": "Service",
+        "capacity_fp": 1000000,
+        "state_fp": 930000,
+        "weight_fp": 350000,
+        "reported_state_fp": 930000,
+        "trust_fp": 1000000,
+        "notes": "Kurala tam uyum (work-to-rule) aktif. Yasal grev yok ama verim %35 düştü."
+      },
+      {
+        "id": "CUSTOMS_BARRIER",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 1000000,
+        "weight_fp": 300000,
+        "reported_state_fp": 1000000,
+        "trust_fp": 1000000,
+        "notes": "%100 fiziki muayene: rakip liman danışmanının servis ettiği düşük profilli ihbar."
+      },
+      {
+        "id": "RIVAL_CEO_FLEET",
+        "kind": "Adversary",
+        "capacity_fp": 1000000,
+        "state_fp": 800000,
+        "weight_fp": 150000,
+        "reported_state_fp": 800000,
+        "trust_fp": 1000000,
+        "notes": "İttifak CEO'su: 14 gemi demirde kasıtlı tutuluyor. Kazanç stratejisi olarak kuyruğu şişiriyor."
+      },
+      {
+        "id": "DIRECTOR_EGO",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 1000000,
+        "weight_fp": 200000,
+        "reported_state_fp": 200000,
+        "trust_fp": 200000,
+        "notes": "Direktör telemetriyi karartıyor: gerçek bekleme 31 saat, ekranda 9 saat görünüyor. trust=0.20"
+      },
+      {
+        "id": "REEFER_PHARMA",
+        "kind": "Perishable",
+        "capacity_fp": 1000000,
+        "state_fp": 900000,
+        "weight_fp": 200000,
+        "reported_state_fp": 900000,
+        "trust_fp": 1000000,
+        "deadline_tick": 384,
+        "notes": "41M USD ilaç+gıda, jeneratör özerkliği 96 saat = 384 tick (15 dak/tick)."
+      }
+    ],
+
+    "edges": [
+      {
+        "from": "GHOST_INVENTORY",
+        "to": "HUB_BERTHS",
+        "multiplier_fp": 3400000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Hayalet envanter anında rıhtım tahsis hatasına dönüşür (lag=0)."
+      },
+      {
+        "from": "UNION_PRESSURE",
+        "to": "",
+        "multiplier_fp": 350000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Agregasyon kenarı: UNION_PRESSURE → toplam sürtünme."
+      },
+      {
+        "from": "CUSTOMS_BARRIER",
+        "to": "",
+        "multiplier_fp": 300000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "DIRECTOR_EGO",
+        "to": "",
+        "multiplier_fp": 200000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "RIVAL_CEO_FLEET",
+        "to": "HUB_BERTHS",
+        "multiplier_fp": 1400000,
+        "lag_ticks": 4,
+        "active": true,
+        "notes": "Demirde tutma → 1 saat (4 tick) sonra berth tahsis baskısı yaratır."
+      },
+      {
+        "from": "HUB_BERTHS",
+        "to": "",
+        "multiplier_fp": 280000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "REEFER_PHARMA",
+        "to": "",
+        "multiplier_fp": 200000,
+        "lag_ticks": 0,
+        "active": true
+      }
+    ],
+
+    "feedback_loops": [],
+
+    "levers": [
+      {
+        "id": "L-01_ZAFER_ANLATI",
+        "target": "PORT_DIRECTOR",
+        "success_p_fp": 750000,
+        "cost_ticks": 24,
+        "lockout_ticks": 96,
+        "on_success": {
+          "target_node_id": "DIRECTOR_EGO",
+          "state_delta_fp": -800000,
+          "trust_delta_fp": 800000,
+          "friction_delta_fp": 0,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "DIRECTOR_EGO",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Direktöre çözümün babası olma fırsatı ver. Kişi değil nesne: 'eski yazılım altyapısı'."
+      },
+      {
+        "id": "L-02_TANIIMA",
+        "target": "HARBOR_MASTER",
+        "success_p_fp": 800000,
+        "cost_ticks": 12,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "UNION_PRESSURE",
+          "state_delta_fp": -280000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "on_failure": {
+          "target_node_id": "UNION_PRESSURE",
+          "state_delta_fp": 50000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Tanınma kaldıracı: para teklifi = otomatik başarısızlık."
+      },
+      {
+        "id": "L-03_FOMO",
+        "target": "ALLIANCE_CEO",
+        "success_p_fp": 650000,
+        "cost_ticks": 48,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "RIVAL_CEO_FLEET",
+          "state_delta_fp": -800000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "on_failure": {
+          "target_node_id": "RIVAL_CEO_FLEET",
+          "state_delta_fp": 200000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "FOMO: histerezis eşiği öncesi kalıcı rota kaybını göster."
+      },
+      {
+        "id": "L-04_ZIMRH",
+        "target": "CUSTOMS_CHIEF",
+        "success_p_fp": 700000,
+        "cost_ticks": 32,
+        "lockout_ticks": 192,
+        "on_success": {
+          "target_node_id": "CUSTOMS_BARRIER",
+          "state_delta_fp": -880000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "on_failure": {
+          "target_node_id": "CUSTOMS_BARRIER",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Zırh ver: mühür+3.taraf tarama+ortak tutanak. Başarısızlık=48h kilit."
+      }
+    ],
+
+    "hysteresis": [
+      {
+        "id": "HYST_PERM_REROUTE",
+        "threshold_tick": 576,
+        "reversible": false,
+        "permanent_loss_fp": 220000,
+        "notes": "144 saat (6 gün) sonra trafik akışının %22'si kalıcı olarak rota değiştirir."
+      }
+    ],
+
+    "hard_deadlines": [
+      {
+        "node_id": "REEFER_PHARMA",
+        "at_tick": 384,
+        "label": "REEFER_PHARMA_EXPIRY_96H",
+        "notes": "96 saat = 384 tick (15dak/tick). 41M USD ilaç+gıda bozulur."
+      }
+    ]
+  },
+
+  "v1_engine_bridge": {
+    "operational_risk_profile": {
+      "scenario_id": "BS01_SAHTE_UFUK",
+      "region": "HUB_ALPHA (coğrafya-bağımsız)",
+      "bureaucratic_complexity": 0.88,
+      "historical_delay_rate": 0.35,
+      "labor_action_probability": 0.93,
+      "route_congestion": 0.97,
+      "weather_severity": 0.66
+    },
+    "intel_feed_sequence": [
+      {
+        "t_hour": 0,
+        "friction_coefficient": 0.55,
+        "crisis_level": 1,
+        "memo": "TOS_GOLGE_ENVANTER: saha-dijital uyumsuzluk %27, manifesto guvenilmez"
+      },
+      {
+        "t_hour": 24,
+        "friction_coefficient": 0.72,
+        "crisis_level": 2,
+        "memo": "KURALA_TAM_UYUM: vinc verimi %35 dustu, resmi grev yok"
+      },
+      {
+        "t_hour": 48,
+        "friction_coefficient": 0.91,
+        "crisis_level": 3,
+        "memo": "TAM_MUAYENE+REEFER_GERISAYIM_96S: soguk zincir kritik"
+      },
+      {
+        "t_hour": 72,
+        "friction_coefficient": 0.97,
+        "crisis_level": 3,
+        "memo": "DEMIRDE_KASITLI_BEKLEME: ittifak filosu yanasmayi reddediyor"
+      }
+    ],
+    "saturation_note": "t+48 itibariyle gercek dunya ~4.1x carpan ister; 3.0 tavaninda doyum. Doyma aninda REGIME_EXCEEDED alarmi."
+  }
+}

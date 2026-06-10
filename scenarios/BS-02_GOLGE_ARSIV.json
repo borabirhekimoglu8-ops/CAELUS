@@ -1,0 +1,346 @@
+{
+  "schema_version": "2.0",
+  "id": "BS-02_GOLGE_ARSIV",
+  "blackswan_class": "tacit_knowledge_singularity",
+  "sector": "multinational_merger_day1",
+  "min_caelus_engine": "2.0",
+  "signature": "ed25519:9bb1dbd039043670b7bf2c5d7533777866135b92f9b38fe6cd8d9735a04fa802:edfe2ceced437f3a99b31d848f6ac9358106c1084294189334104bcfefef113c6156bb1138cddafd7821cbdfc6d97fa4249b48f3bd4a4d175018212d15a08a07",
+
+  "meta": {
+    "title": "Gölge Arşiv — Çok Uluslu Birleşme Günü-1 Örtük Bilgi Krizi",
+    "region": "ATLAS-MERIDYEN (14 ülke, 12.000 çalışan)",
+    "tick_minutes": 30,
+    "horizon_hours": 168,
+    "synopsis": "Şirketin en kritik sunucusu, küstürülmüş bir adamın hipokampüsüdür. 20 yıllık bordro istisna kuralları tek kişide. İstifa eden mühendis son sürümle uyumsuz script bıraktı. CEO taahhüt tuzağında. Bakan egemenlik damgası arıyor.",
+    "sınanan_aksiyom": "Motor kaynakların ikame edilebilir olduğunu varsayar. En sert kısıt (Gün-1 tarihi) fiziksel değil politiktir."
+  },
+
+  "extended_causal_model": {
+
+    "nodes": [
+      {
+        "id": "TACIT_KNOWLEDGE",
+        "kind": "Buffer",
+        "capacity_fp": 1000000,
+        "state_fp": 780000,
+        "weight_fp": 400000,
+        "reported_state_fp": 780000,
+        "trust_fp": 1000000,
+        "notes": "Bordro istisna kurallarının %78'i belgelenmemiş, tek kişide. Documentation coverage=0.22"
+      },
+      {
+        "id": "REGULATOR_FREEZE",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 1000000,
+        "weight_fp": 350000,
+        "reported_state_fp": 1000000,
+        "trust_fp": 1000000,
+        "notes": "B ülkesi veri koruma denetimi: sınır ötesi veri akışı donduruldu."
+      },
+      {
+        "id": "CEO_COMMITMENT",
+        "kind": "Adversary",
+        "capacity_fp": 1000000,
+        "state_fp": 1000000,
+        "weight_fp": 300000,
+        "reported_state_fp": 1000000,
+        "trust_fp": 1000000,
+        "notes": "Taahhüt-tutarlılık tuzağı: bülten çıktı, aktivist yatırımcı baskısı. Ego kilidi."
+      },
+      {
+        "id": "PAYROLL_FAILURE",
+        "kind": "Service",
+        "capacity_fp": 1000000,
+        "state_fp": 950000,
+        "weight_fp": 300000,
+        "reported_state_fp": 950000,
+        "trust_fp": 1000000,
+        "deadline_tick": 144,
+        "notes": "3 ülkede null dönen bordro hesabı. 72 saat = 144 tick (30dak/tick). Grev tetikleyici."
+      },
+      {
+        "id": "SUPPLIER_STOPPAGE",
+        "kind": "Queue",
+        "capacity_fp": 1000000,
+        "state_fp": 900000,
+        "weight_fp": 200000,
+        "reported_state_fp": 900000,
+        "trust_fp": 1000000,
+        "notes": "214 tedarikçi COC maddesi tetiklendi, 9 kritik tedarikçi sevkiyatı durdurdu."
+      },
+      {
+        "id": "MIDDLE_MGMT_HOARDING",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 550000,
+        "weight_fp": 150000,
+        "reported_state_fp": 220000,
+        "trust_fp": 400000,
+        "notes": "Orta kademe bilgi rehine alıyor. Rapor güvenilirliği %55→%40 (gerçek < raporlanan)."
+      },
+      {
+        "id": "ERP_MIGRATION",
+        "kind": "Buffer",
+        "capacity_fp": 1000000,
+        "state_fp": 610000,
+        "weight_fp": 150000,
+        "reported_state_fp": 610000,
+        "trust_fp": 1000000,
+        "notes": "Migrasyon %61 tamamlandı. Rollback script uyumsuz (istifa eden müh. yazdı)."
+      }
+    ],
+
+    "edges": [
+      {
+        "from": "TACIT_KNOWLEDGE",
+        "to": "PAYROLL_FAILURE",
+        "multiplier_fp": 4200000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Örtük bilgi boşluğu → bordro istisna hataları anında (x4.2)"
+      },
+      {
+        "from": "REGULATOR_FREEZE",
+        "to": "ERP_MIGRATION",
+        "multiplier_fp": 300000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Dondurma → ERP migration hızı 0.30'a düşüyor"
+      },
+      {
+        "from": "CEO_COMMITMENT",
+        "to": "",
+        "multiplier_fp": 300000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Taahhüt kilidi sürtünme oluşturuyor: erteleme yoktur."
+      },
+      {
+        "from": "PAYROLL_FAILURE",
+        "to": "",
+        "multiplier_fp": 300000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "SUPPLIER_STOPPAGE",
+        "to": "",
+        "multiplier_fp": 200000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "MIDDLE_MGMT_HOARDING",
+        "to": "",
+        "multiplier_fp": 150000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "ERP_MIGRATION",
+        "to": "",
+        "multiplier_fp": 150000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "TACIT_KNOWLEDGE",
+        "to": "",
+        "multiplier_fp": 400000,
+        "lag_ticks": 0,
+        "active": true
+      },
+      {
+        "from": "REGULATOR_FREEZE",
+        "to": "",
+        "multiplier_fp": 350000,
+        "lag_ticks": 0,
+        "active": true
+      }
+    ],
+
+    "feedback_loops": [
+      {
+        "id": "FL_PAYROLL_LEAK",
+        "path": ["PAYROLL_FAILURE", "SUPPLIER_STOPPAGE"],
+        "gain_fp": 1180000,
+        "notes": "Bordro riski sızarsa sendika uyarı grevi → tedarikçi daha da durur (x1.18)"
+      }
+    ],
+
+    "levers": [
+      {
+        "id": "L-01_CERCEVE",
+        "target": "ACQUIRER_CEO",
+        "success_p_fp": 700000,
+        "cost_ticks": 8,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "CEO_COMMITMENT",
+          "state_delta_fp": -800000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -300000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "CEO_COMMITMENT",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 300000
+        },
+        "notes": "Yeniden çerçevele: 'erteleme' değil 'hızlandırılmış değer koruma fazı'."
+      },
+      {
+        "id": "L-02_MIRAS",
+        "target": "ACQUIRED_CTO",
+        "success_p_fp": 750000,
+        "cost_ticks": 16,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "TACIT_KNOWLEDGE",
+          "state_delta_fp": -520000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -400000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "TACIT_KNOWLEDGE",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Miras sahne: 'Baş Entegrasyon Mimarı' unvanı, amfide ders. Tehdit ederse taşlaşır."
+      },
+      {
+        "id": "L-03_REGULATOR",
+        "target": "REGULATOR_HEAD",
+        "success_p_fp": 650000,
+        "cost_ticks": 48,
+        "lockout_ticks": 144,
+        "on_success": {
+          "target_node_id": "REGULATOR_FREEZE",
+          "state_delta_fp": -1000000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -350000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "REGULATOR_FREEZE",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Zafer fotoğrafı: denetim protokolünü onun kurumunun taslağı yap."
+      },
+      {
+        "id": "L-04_SIGORTA",
+        "target": "MIDDLE_MGMT_POOL",
+        "success_p_fp": 800000,
+        "cost_ticks": 12,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "MIDDLE_MGMT_HOARDING",
+          "state_delta_fp": -450000,
+          "trust_delta_fp": 600000,
+          "friction_delta_fp": -150000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "MIDDLE_MGMT_HOARDING",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Sözleşme: kilometre taşına bağlı yazılı pozisyon güvencesi + kamuya açık katkı panosu."
+      },
+      {
+        "id": "L-05_BUMERANG",
+        "target": "RESIGNED_ENGINEER",
+        "success_p_fp": 500000,
+        "cost_ticks": 0,
+        "lockout_ticks": 0,
+        "on_success": {
+          "target_node_id": "ERP_MIGRATION",
+          "state_delta_fp": -390000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": -150000,
+          "clear_irrecoverable": true
+        },
+        "on_failure": {
+          "target_node_id": "ERP_MIGRATION",
+          "state_delta_fp": 0,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 0
+        },
+        "notes": "Boomerang danışmanlık: 180K USD, x5 oran. %50 başarı."
+      }
+    ],
+
+    "hysteresis": [
+      {
+        "id": "HYST_PAYROLL_MISS",
+        "threshold_tick": 144,
+        "reversible": false,
+        "permanent_loss_fp": 350000,
+        "notes": "72 saat maaş gecikirse sendika grevi → kalıcı itibar hasarı. Marka = geri kazanılamaz."
+      },
+      {
+        "id": "HYST_SUPPLIER_FLIGHT",
+        "threshold_tick": 240,
+        "reversible": false,
+        "permanent_loss_fp": 200000,
+        "notes": "120 saat sonra 5 kritik tedarikçi kalıcı başka partnere geçer."
+      }
+    ],
+
+    "hard_deadlines": [
+      {
+        "node_id": "PAYROLL_FAILURE",
+        "at_tick": 144,
+        "label": "PAYROLL_RUN_72H",
+        "notes": "Grev olasılığı 0.95'e fırlar. İrrecoverable brand damage."
+      }
+    ]
+  },
+
+  "v1_engine_bridge": {
+    "operational_risk_profile": {
+      "scenario_id": "BS02_GOLGE_ARSIV",
+      "region": "ATLAS-MERIDYEN Gun-1 (cok-ulke)",
+      "bureaucratic_complexity": 0.95,
+      "historical_delay_rate": 0.15,
+      "labor_action_probability": 0.78,
+      "route_congestion": 0.62,
+      "weather_severity": 0.05
+    },
+    "intel_feed_sequence": [
+      {
+        "t_hour": 0,
+        "friction_coefficient": 0.58,
+        "crisis_level": 1,
+        "memo": "ORTUK_BILGI_KAYBI: bordro istisna kurallari tek kisida, dokuman yok"
+      },
+      {
+        "t_hour": 12,
+        "friction_coefficient": 0.80,
+        "crisis_level": 2,
+        "memo": "REGULATOR_DONDURMA: sinir-otesi veri akisi denetim sonuna dek kapali"
+      },
+      {
+        "t_hour": 24,
+        "friction_coefficient": 0.94,
+        "crisis_level": 3,
+        "memo": "BORDRO_GERISAYIM_72S: 3 ulkede maas null, rollback uyumsuz"
+      },
+      {
+        "t_hour": 36,
+        "friction_coefficient": 0.97,
+        "crisis_level": 3,
+        "memo": "TEDARIK_COC_KASKADI: 9 kritik tedarikci durdu, grev uyarisi yayinda"
+      }
+    ],
+    "base_rate_trap": "historical_delay_rate=0.15 yaniltici: Gun-1 olayinin gecmis verisi YOKTUR.",
+    "saturation_note": "Bordro kacirilirsa gercek dunya ~5x ister; 3.0 tavani asildiginda REGIME_EXCEEDED + kisit-disi rejim."
+  }
+}

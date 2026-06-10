@@ -1,0 +1,12 @@
+{
+  "verus": {
+    "profile": "release",
+    "version": "0.2026.06.07.cd03505",
+    "platform": {
+      "os": "windows",
+      "arch": "x86_64"
+    },
+    "toolchain": "1.95.0-x86_64-pc-windows-msvc",
+    "commit": "cd0350583e528acb7367d56dc0e5a23f6336fe63"
+  }
+}
