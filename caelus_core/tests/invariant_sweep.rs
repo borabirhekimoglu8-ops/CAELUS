@@ -220,9 +220,15 @@ fn check_invariants(
             s.clamped_friction_fp
         );
         if s.outage_active {
+            assert_eq!(s.throughput_ratio_fp, 0, "{ctx}: I-6 outage throughput_fp");
             assert_eq!(s.throughput_ratio, 0.0, "{ctx}: I-6 outage throughput");
         } else {
-            let want = 1.0 / fp_to_d(s.clamped_friction_fp);
+            let want_fp = caelus_core::fp_div(FP_ONE, s.clamped_friction_fp);
+            let want = fp_to_d(want_fp);
+            assert_eq!(
+                s.throughput_ratio_fp, want_fp,
+                "{ctx}: I-6 throughput_fp formülü"
+            );
             assert_eq!(s.throughput_ratio, want, "{ctx}: I-6 throughput formülü");
         }
     }
