@@ -37,13 +37,14 @@ if strings "$EXE" | rg 'CAELUS_ALLOW_DEV_SCENARIOS|CAELUS_TRUST_ANY_PUBKEY|CAELU
 fi
 
 log "Determinism double-run"
-rm -f "$ROOT/caelus_audit_0000000000000000.log"
 out1="$(mktemp)"
 out2="$(mktemp)"
 blk1="$(mktemp)"
 blk2="$(mktemp)"
 trap 'rm -f "$out1" "$out2" "$blk1" "$blk2"' EXIT
+rm -f "$ROOT/caelus_audit_0000000000000000.log"
 "$EXE" --scenario UNIVERSAL_BASELINE --det-mode > "$out1" 2>&1
+rm -f "$ROOT/caelus_audit_0000000000000000.log"
 "$EXE" --scenario UNIVERSAL_BASELINE --det-mode > "$out2" 2>&1
 rg '^CDET:' "$out1" > "$blk1"
 rg '^CDET:' "$out2" > "$blk2"

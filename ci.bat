@@ -286,6 +286,7 @@ del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 
 :: ── Koşum 1 ─────────────────────────────────────────────────────────────────
 echo %C%[CI] Koşum 1/2 başlıyor...%N%
+del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT1%" 2>&1
 set "EC1=!errorlevel!"
 if "!EC1!" NEQ "0" (
@@ -301,6 +302,7 @@ echo %G%[CI OK] Koşum 1 tamamlandı%N%
 
 :: ── Koşum 2 ─────────────────────────────────────────────────────────────────
 echo %C%[CI] Koşum 2/2 başlıyor...%N%
+del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT2%" 2>&1
 set "EC2=!errorlevel!"
 if "!EC2!" NEQ "0" (
