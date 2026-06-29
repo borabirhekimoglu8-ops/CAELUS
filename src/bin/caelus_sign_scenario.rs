@@ -624,8 +624,8 @@ fn usage() -> &'static str {
                              <path>.sig sidecar dosyasina tek satir yazar:\n\
                              ed25519:<64hex-pubkey>:<128hex-sig>\n\
      Ornekler:\n\
-       cargo run --bin caelus_sign_scenario -- --json scenarios/BS-01_SAHTE_UFUK.json --key tools/caelus_signing.key --write\n\
-       cargo run --bin caelus_sign_scenario -- --sign-plugin plugins/solver.dll --key tools/caelus_signing.key"
+       cargo run --bin caelus_sign_scenario -- --json scenarios/BS-01_SAHTE_UFUK.json --key /secure/offline/caelus_signing.key --write\n\
+       cargo run --bin caelus_sign_scenario -- --sign-plugin plugins/solver.dll --key /secure/offline/caelus_signing.key"
 }
 
 fn run() -> Result<(), String> {

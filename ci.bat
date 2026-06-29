@@ -371,6 +371,21 @@ if "!HASH1!"=="!HASH2!" (
 :: ── Geçici dosyaları temizle ──────────────────────────────────────────────────
 del /q "%OUT1%" "%OUT2%" "%BLK1%" "%BLK2%" "%HSH1%" "%HSH2%" > nul 2>&1
 
+echo.
+echo %C%[CI] Audit zincir + SEAL doğrulaması...%N%
+if not defined PYTHON_CMD (
+    py -3 --version > nul 2>&1
+    if not errorlevel 1 (set "PYTHON_CMD=py -3") else (set "PYTHON_CMD=python")
+)
+!PYTHON_CMD! "%ROOT%\tools\verify_audit_log.py" "%ROOT%\caelus_audit_0000000000000000.log"
+if errorlevel 1 (
+    echo %R%[CI FAIL] Audit doğrulaması başarısız.%N%
+    set "CI_PASS=1"
+    set "STEP_FAIL=!STEP_FAIL! AUDIT_VERIFY"
+) else (
+    echo %G%[CI OK] Audit zinciri ve SEAL doğrulandı%N%
+)
+
 :step5
 :: ════════════════════════════════════════════════════════════════════════════
 :: ADIM 6: Negatif imza doğrulama (SIG-CI / SIGNED-CI)

@@ -1309,7 +1309,9 @@ mod tests {
             *b = (i as u8).wrapping_mul(7).wrapping_add(1);
         }
 
-        let payload = delegate.protect(&seed).expect("delegate protect must succeed");
+        let payload = delegate
+            .protect(&seed)
+            .expect("delegate protect must succeed");
         // payload = [format u32 LE] + [0xC5 tag] + [32-byte seed] = 37 bytes.
         assert_eq!(payload.len(), 4 + 1 + 32);
         let format = u32::from_le_bytes(payload[..4].try_into().unwrap());

@@ -730,12 +730,14 @@ private:
     // anahtarla imzalanmış olmalıdır.
     //
     // ANAHTAR TÖRENİ: Bu sabiti güncellemek için:
-    //   1. tools/caelus_signing.key dosyasından signer CLI ile pubkey türetin:
-    //        cargo run --bin caelus_sign_scenario --export-pubkey \
+    //   1. Repo DISINDA/offline tutulan signer seed'den CLI ile pubkey türetin:
+    //        cargo run --bin caelus_sign_scenario -- --key /secure/offline/seed --export-pubkey \
     //            > tools/caelus_trusted_pubkey.txt
     //   2. Aşağıdaki 32 hex baytı yeni pubkey değerleriyle değiştirin.
     //   3. Tüm üretim senaryolarını yeni anahtar çiftiyle yeniden imzalayın.
-    //   4. Bu başlık dosyasını (include/scenario_pack.h) commit edin;
+    //   4. Public trust anchor + imzalı senaryoları commit edin; private seed'i
+    //      ASLA commit etmeyin.
+    //   5. Bu başlık dosyasını (include/scenario_pack.h) commit edin;
     //      CI pin doğrulamasını otomatik olarak onaylayacaktır.
     // ─────────────────────────────────────────────────────────────────────────
     static constexpr uint8_t CAELUS_TRUSTED_PUBKEY[32] = {

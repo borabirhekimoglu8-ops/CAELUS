@@ -11,10 +11,9 @@
 //   2. no_std + alloc — çekirdek hiçbir std API'si kullanmaz; Cortex-M sınıfı
 //      hedeflere (F3) taşınabilir. Harness/test katmanı "std" feature'ı ister.
 //
-//   3. Sadakat > şıklık — C++ tarafındaki kasıtlı VE kazara davranışlar
-//      (örn. remaining_lockout'un hiç azalmaması, (int32_t)tick_ cast'leri)
-//      AYNEN korunur; "düzeltme" ancak iki motora birden, diferansiyel testle
-//      birlikte iner. Sapma = golden hash uyuşmazlığı = kırmızı CI.
+//   3. Sadakat > şıklık — motor semantiği iki dile birlikte iner. Lockout
+//      expiry, u64 tick karşılaştırmaları ve fixed-point snapshot alanları
+//      C++ ile Rust'ta aynı test/diferansiyel kapıdan geçmek ZORUNDADIR.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

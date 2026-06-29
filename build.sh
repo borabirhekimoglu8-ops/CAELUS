@@ -40,6 +40,10 @@ else
 fi
 
 OUT_EXE="$OUT_DIR/caelus_os"
+PROD_DEFINE=""
+if [[ "${CAELUS_PRODUCTION:-0}" == "1" ]]; then
+    PROD_DEFINE="-DCAELUS_PRODUCTION"
+fi
 
 # ── Hata mesajı yardımcısı ───────────────────────────────────────────────────
 die() { echo -e "${RED}[HATA]${RESET} $*" >&2; exit 1; }
@@ -179,12 +183,17 @@ else
     SYS_LIBS=""
 fi
 
+if [[ -n "$PROD_DEFINE" ]]; then
+    inf "CAELUS_PRODUCTION=1 — dev/demo kapilari derleme-disi birakilacak."
+fi
 inf "Derleme başlıyor: $CXX_BIN -O3 -flto $STATIC_FLAG ..."
 
 "$CXX_BIN" \
     -std=c++17 \
     -O3 \
     -flto \
+    -DCAELUS_EMBEDDED_UI=1 \
+    $PROD_DEFINE \
     $STATIC_FLAG \
     $STATIC_LIBS \
     -I"$ROOT/include" \
@@ -230,6 +239,7 @@ if (( EXE_SIZE_MB < 50 )); then
     echo -e "Hedef   : ${GREEN}<50 MB ✓  BAŞARILI${RESET}"
 else
     echo -e "Hedef   : ${RED}<50 MB ✗  AŞILDI${RESET} — UPX sıkıştırması deneyin: upx --best $OUT_EXE"
+    die "Binary boyut bütçesi aşıldı (<50 MB zorunlu)."
 fi
 
 echo ""
