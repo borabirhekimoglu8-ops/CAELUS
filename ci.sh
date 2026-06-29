@@ -37,6 +37,7 @@ if strings "$EXE" | rg 'CAELUS_ALLOW_DEV_SCENARIOS|CAELUS_TRUST_ANY_PUBKEY|CAELU
 fi
 
 log "Determinism double-run"
+rm -f "$ROOT/caelus_audit_0000000000000000.log"
 out1="$(mktemp)"
 out2="$(mktemp)"
 blk1="$(mktemp)"
