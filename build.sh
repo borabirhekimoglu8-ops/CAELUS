@@ -178,9 +178,9 @@ echo -e "${BOLD}═════════════════════�
 
 # Additional system libs needed by Rust staticlib on Linux
 if [[ "$OS_TYPE" != "Darwin" ]]; then
-    SYS_LIBS="-ldl -lpthread -lm"
+    SYS_LIBS=(-ldl -lpthread -lm)
 else
-    SYS_LIBS=""
+    SYS_LIBS=()
 fi
 
 if [[ -n "$PROD_DEFINE" ]]; then
@@ -203,7 +203,7 @@ inf "Derleme başlıyor: $CXX_BIN -O3 -flto $STATIC_FLAG ..."
     "$ROOT/src/intel_core.cpp" \
     -o "$OUT_EXE" \
     "$RUST_LIB" \
-    $SYS_LIBS \
+    "${SYS_LIBS[@]}" \
     $EXTRA_LINKER_FLAGS \
     2>&1 | sed 's/^/   /'
 
