@@ -770,6 +770,11 @@ int main(int argc, char* argv[]) {
         caelus_setenv("CAELUS_ENCLAVE_KEY",
             "cae1cae1cae1cae1cae1cae1cae1cae1"
             "cae1cae1cae1cae1cae1cae1cae1cae1");
+        // Fixed CI identity seed so audit SESSION_START fingerprint is
+        // deterministic. This is a public test vector, never a production key.
+        caelus_setenv("CAELUS_IDENTITY_KEY_HEX",
+            "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+            "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1");
         // Freeze Rust discovery clock at UNIX epoch 0.
         caelus_clock_set_virtual(0);
         std::cout << "[DET] Deterministik mod aktif — tohumlu PRNG + sanal saat(0)\n";
