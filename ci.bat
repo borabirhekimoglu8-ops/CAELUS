@@ -282,6 +282,7 @@ set "BLK1=%TEMP%\caelus_ci_blk1.txt"
 set "BLK2=%TEMP%\caelus_ci_blk2.txt"
 set "HSH1=%TEMP%\caelus_ci_h1.txt"
 set "HSH2=%TEMP%\caelus_ci_h2.txt"
+del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 
 :: ── Koşum 1 ─────────────────────────────────────────────────────────────────
 echo %C%[CI] Koşum 1/2 başlıyor...%N%
