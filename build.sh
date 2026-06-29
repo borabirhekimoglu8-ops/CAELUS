@@ -196,6 +196,7 @@ inf "Derleme başlıyor: $CXX_BIN -O3 -flto $STATIC_FLAG ..."
     $PROD_DEFINE \
     $STATIC_FLAG \
     $STATIC_LIBS \
+    -I"$ROOT" \
     -I"$ROOT/include" \
     -I"$ROOT/src" \
     "$ROOT/core_engine.cpp" \

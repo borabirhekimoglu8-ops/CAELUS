@@ -80,6 +80,7 @@ add_executable(caelus_os ${CAELUS_SOURCES})
 
 # ─── Include Paths ────────────────────────────────────────────────────────────
 target_include_directories(caelus_os PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"           # root-relative includes (src/...)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"   # ui_payload.h lives here
     "${CMAKE_CURRENT_SOURCE_DIR}/src"       # intel_core.h lives here
 )
