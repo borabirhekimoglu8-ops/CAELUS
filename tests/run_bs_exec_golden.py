@@ -314,12 +314,12 @@ def main(argv: list[str]) -> int:
                     print(f"         {command}")
                 continue
 
-        output = run_repl(binary, scenario_id, commands, args.json_stdout)
+            output = run_repl(binary, scenario_id, commands, args.json_stdout)
             snapshots = parse_snapshots(output)
-        if reference_binary:
-            ref_output = run_repl(reference_binary, scenario_id, commands, args.json_stdout)
-            ref_snapshots = parse_snapshots(ref_output)
-            assert_reference_match(scenario_id, snapshots, ref_snapshots)
+            if reference_binary:
+                ref_output = run_repl(reference_binary, scenario_id, commands, args.json_stdout)
+                ref_snapshots = parse_snapshots(ref_output)
+                assert_reference_match(scenario_id, snapshots, ref_snapshots)
             result = assert_case(
                 scenario_id, hysteresis, output, snapshots, refresh=args.refresh
             )
