@@ -147,17 +147,17 @@ fn p2b_exactness_under_precondition_exhaustive_b6() {
                     }
                     let got = mul_div_sat_n(a, b, divisor, cap, mask);
                     let want = wide_reference(a, b, divisor, cap);
-                    assert_eq!(
-                        got, want,
-                        "P-2b sapma: a={a} b={b} d={divisor} cap={cap}"
-                    );
+                    assert_eq!(got, want, "P-2b sapma: a={a} b={b} d={divisor} cap={cap}");
                     checked += 1;
                 }
             }
         }
     }
     // Ön koşul alanı boş olmamalı ve taramanın anlamlı bölümünü kapsamalı.
-    assert!(checked > skipped / 2, "ön koşul alanı beklenmedik biçimde dar");
+    assert!(
+        checked > skipped / 2,
+        "ön koşul alanı beklenmedik biçimde dar"
+    );
     assert!(checked > 100_000, "tarama beklenenden küçük: {checked}");
 }
 

@@ -282,9 +282,11 @@ set "BLK1=%TEMP%\caelus_ci_blk1.txt"
 set "BLK2=%TEMP%\caelus_ci_blk2.txt"
 set "HSH1=%TEMP%\caelus_ci_h1.txt"
 set "HSH2=%TEMP%\caelus_ci_h2.txt"
+del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 
 :: ── Koşum 1 ─────────────────────────────────────────────────────────────────
 echo %C%[CI] Koşum 1/2 başlıyor...%N%
+del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT1%" 2>&1
 set "EC1=!errorlevel!"
 if "!EC1!" NEQ "0" (
@@ -300,6 +302,7 @@ echo %G%[CI OK] Koşum 1 tamamlandı%N%
 
 :: ── Koşum 2 ─────────────────────────────────────────────────────────────────
 echo %C%[CI] Koşum 2/2 başlıyor...%N%
+del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT2%" 2>&1
 set "EC2=!errorlevel!"
 if "!EC2!" NEQ "0" (
@@ -370,6 +373,21 @@ if "!HASH1!"=="!HASH2!" (
 
 :: ── Geçici dosyaları temizle ──────────────────────────────────────────────────
 del /q "%OUT1%" "%OUT2%" "%BLK1%" "%BLK2%" "%HSH1%" "%HSH2%" > nul 2>&1
+
+echo.
+echo %C%[CI] Audit zincir + SEAL doğrulaması...%N%
+if not defined PYTHON_CMD (
+    py -3 --version > nul 2>&1
+    if not errorlevel 1 (set "PYTHON_CMD=py -3") else (set "PYTHON_CMD=python")
+)
+!PYTHON_CMD! "%ROOT%\tools\verify_audit_log.py" "%ROOT%\caelus_audit_0000000000000000.log"
+if errorlevel 1 (
+    echo %R%[CI FAIL] Audit doğrulaması başarısız.%N%
+    set "CI_PASS=1"
+    set "STEP_FAIL=!STEP_FAIL! AUDIT_VERIFY"
+) else (
+    echo %G%[CI OK] Audit zinciri ve SEAL doğrulandı%N%
+)
 
 :step5
 :: ════════════════════════════════════════════════════════════════════════════

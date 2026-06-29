@@ -1,0 +1,9 @@
+target/
+caelus_core/target/
+*.log
+*.tmp
+*.sig.tmp
+dist/caelus_os
+
+# Private signing material must be generated/stored outside the repository.
+tools/caelus_signing.key

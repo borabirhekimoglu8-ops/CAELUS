@@ -1,9 +1,10 @@
 // CausalEngine — include/causal_engine.h sınıfının SADIK no_std portu.
 //
 // SADAKAT NOTLARI (bilerek korunan C++ davranışları):
-//   • remaining_lockout hiçbir yerde AZALMAZ: lockout'lu başarısız lever kalıcı
-//     kilitli kalır (C++ ile aynı; "düzeltme" iki motora birden iner).
-//   • check_hysteresis/check_deadlines tick'i (int32_t) cast'iyle karşılaştırır.
+//   • remaining_lockout C++ ile aynı tick sırası içinde azalır: başarısız lever
+//     lockout_ticks boyunca bloke edilir, sonra yeniden denenebilir.
+//   • check_hysteresis/check_deadlines tick'i u64 sayaçla karşılaştırır; negatif
+//     deadline sentinel'i korunur.
 //   • propagate_edges delta uygulanan düğümde reported=state yazar (paketin
 //     gözlemlenebilirlik maskesini o düğümde ezer — C++ ile aynı).
 //   • build_snapshot tick_-1 yazar (wrapping; tick() sonrası çağrıldığından ≥1).
@@ -162,6 +163,7 @@ pub struct EngineSnapshot {
     pub any_deadline_missed: bool,
     pub any_hysteresis_flip: bool,
     pub outage_active: bool,
+    pub throughput_ratio_fp: i64,
     pub throughput_ratio: f64,
     pub summary: String,
 }
@@ -290,22 +292,22 @@ impl CausalEngine {
 
     pub fn inject_intel(&mut self, field_coeff: f64, crisis_level: i32, _memo: &str) {
         let field_coeff = field_coeff.clamp(0.0, 1.0);
+        self.inject_intel_fp(d_to_fp(field_coeff), crisis_level, _memo);
+    }
+
+    pub fn inject_intel_fp(&mut self, field_coeff_fp: i64, crisis_level: i32, _memo: &str) {
+        let field_coeff_fp = fp_clamp(field_coeff_fp, 0, FP_ONE);
         let crisis_level = crisis_level.clamp(0, 3);
 
         if let Some(actor) = self.get_node_mut("Actor_Alpha") {
-            let new_fp = d_to_fp(field_coeff);
-            if new_fp > actor.state_fp {
-                actor.state_fp = new_fp;
+            if field_coeff_fp > actor.state_fp {
+                actor.state_fp = field_coeff_fp;
             }
             actor.reported_state_fp = actor.state_fp;
         }
         if let Some(gate) = self.get_node_mut("Regulatory_Gate") {
             let bump = d_to_fp(crisis_level as f64 * 0.10);
-            gate.state_fp = fp_clamp(
-                fp_add_saturating(gate.state_fp, bump),
-                0,
-                gate.capacity_fp,
-            );
+            gate.state_fp = fp_clamp(fp_add_saturating(gate.state_fp, bump), 0, gate.capacity_fp);
             gate.reported_state_fp = gate.state_fp;
         }
         if crisis_level >= 3 {
@@ -327,6 +329,7 @@ impl CausalEngine {
         self.propagate_edges();
         self.apply_feedback_loops();
         self.update_trust();
+        self.decay_lever_lockouts();
 
         let raw = self.aggregate_friction();
         self.friction_fp = fp_add_saturating(raw, self.permanent_friction_fp);
@@ -408,9 +411,16 @@ impl CausalEngine {
                 FRICTION_MAX_FP,
             );
         }
-        if !success {
-            self.levers[li].remaining_lockout = self.levers[li].lockout_ticks;
-        }
+        let action_cost_lockout = if self.levers[li].cost_ticks > 1 {
+            self.levers[li].cost_ticks - 1
+        } else {
+            0
+        };
+        self.levers[li].remaining_lockout = if success {
+            action_cost_lockout
+        } else {
+            core::cmp::max(action_cost_lockout, self.levers[li].lockout_ticks)
+        };
         success
     }
 
@@ -541,7 +551,10 @@ impl CausalEngine {
             let utilization = fp_div(from.state_fp, from.capacity_fp);
             let trusted_u = fp_mul(from.trust_fp, utilization);
             let delta = fp_mul(fp_mul(trusted_u, edge.multiplier_fp), DAMP_FP);
-            deltas.push(Delta { idx: to_idx, val: delta });
+            deltas.push(Delta {
+                idx: to_idx,
+                val: delta,
+            });
         }
 
         for d in &deltas {
@@ -593,15 +606,26 @@ impl CausalEngine {
             if node.capacity_fp == 0 {
                 continue;
             }
-            let mut abs_diff = node.reported_state_fp - node.state_fp;
-            if abs_diff < 0 {
-                abs_diff = -abs_diff;
-            }
+            let diff = fp_add_saturating(node.reported_state_fp, -node.state_fp);
+            let mag = diff.unsigned_abs();
+            let abs_diff = if mag > i64::MAX as u64 {
+                i64::MAX
+            } else {
+                mag as i64
+            };
             let deviation = fp_div(abs_diff, node.capacity_fp);
 
             if deviation > DEVIATION_THRESHOLD_FP {
                 // Güven katsayısını azalt (minimum %10) — C++ ile aynı düz çıkarma
                 node.trust_fp = fp_clamp(node.trust_fp - 10_000, 100_000, FP_ONE);
+            }
+        }
+    }
+
+    fn decay_lever_lockouts(&mut self) {
+        for lever in &mut self.levers {
+            if lever.remaining_lockout > 0 {
+                lever.remaining_lockout -= 1;
             }
         }
     }
@@ -613,10 +637,14 @@ impl CausalEngine {
     }
 
     fn check_hysteresis(&mut self) {
-        let tick_i32 = self.tick_ as i32; // C++ (int32_t)tick_ cast'i birebir
         let mut latch = false;
         for h in &mut self.hysts {
-            if h.flipped || tick_i32 < h.threshold_tick {
+            let threshold = if h.threshold_tick <= 0 {
+                0
+            } else {
+                h.threshold_tick as u64
+            };
+            if h.flipped || self.tick_ < threshold {
                 continue;
             }
             h.flipped = true;
@@ -632,13 +660,12 @@ impl CausalEngine {
     }
 
     fn check_deadlines(&mut self) {
-        let tick_i32 = self.tick_ as i32;
         let mut latch = false;
         for node in &mut self.nodes {
             if node.deadline_tick < 0 || node.deadline_missed {
                 continue;
             }
-            if tick_i32 >= node.deadline_tick {
+            if self.tick_ >= node.deadline_tick as u64 {
                 node.deadline_missed = true;
                 if node.kind == NodeKind::Perishable {
                     // Perishable deadline → açık recovery'ye dek LATCHED outage.
@@ -671,14 +698,13 @@ impl CausalEngine {
         let any_flip = self.hysts.iter().any(|h| h.flipped);
         let any_missed = self.nodes.iter().any(|n| n.deadline_missed);
 
-        let (throughput_ratio, summary) = if self.outage {
-            (
-                0.0,
-                format!("OUTAGE: throughput=0, tick={}", self.tick_),
-            )
+        let (throughput_ratio_fp, throughput_ratio, summary) = if self.outage {
+            (0, 0.0, format!("OUTAGE: throughput=0, tick={}", self.tick_))
         } else {
+            let ratio_fp = fp_div(FP_ONE, clamped);
             (
-                1.0 / fp_to_d(clamped),
+                ratio_fp,
+                fp_to_d(ratio_fp),
                 format!(
                     "mu={:.3}x{}",
                     fp_to_d(clamped),
@@ -699,6 +725,7 @@ impl CausalEngine {
             any_deadline_missed: any_missed,
             any_hysteresis_flip: any_flip,
             outage_active: self.outage,
+            throughput_ratio_fp,
             throughput_ratio,
             summary,
         }
@@ -720,6 +747,7 @@ mod tests {
         let snap = eng.run_ticks(3);
         assert_eq!(snap.raw_friction_fp, FP_ONE);
         assert_eq!(snap.clamped_friction_fp, FP_ONE);
+        assert_eq!(snap.throughput_ratio_fp, FP_ONE);
         assert!(!snap.regime_exceeded);
         assert!(!snap.outage_active);
         assert!((snap.throughput_ratio - 1.0).abs() < 1e-12);
@@ -789,17 +817,47 @@ mod tests {
     }
 
     #[test]
-    fn failed_lever_with_lockout_stays_locked() {
-        // SADAKAT: C++ remaining_lockout'u hiç azaltmaz → kalıcı kilit.
+    fn failed_lever_with_lockout_expires_after_ticks() {
         let mut eng = CausalEngine::new();
         let mut lever = Lever::default();
         lever.id = String::from("L");
-        lever.success_p_fp = 0; // kesin başarısızlık
+        lever.success_p_fp = 0; // first attempt is certainly unsuccessful
         lever.lockout_ticks = 2;
         eng.add_lever(lever);
 
         assert!(!eng.apply_lever("L", 0));
-        let _ = eng.run_ticks(10);
-        assert!(!eng.apply_lever("L", 0), "C++ semantiği: kilit kalıcı");
+        assert!(!eng.apply_lever("L", 0), "same tick is still locked");
+        let _ = eng.run_ticks(1);
+        assert!(!eng.apply_lever("L", 0), "one tick of lockout remains");
+        let _ = eng.run_ticks(1);
+        eng.levers[0].success_p_fp = FP_ONE;
+        assert!(
+            eng.apply_lever("L", 0),
+            "lockout expires after lockout_ticks"
+        );
+    }
+
+    #[test]
+    fn successful_lever_observes_cost_tick_cooldown() {
+        let mut eng = CausalEngine::new();
+        let mut node = Node::default();
+        node.id = String::from("N");
+        eng.add_node(node);
+
+        let mut lever = Lever::default();
+        lever.id = String::from("L");
+        lever.success_p_fp = FP_ONE;
+        lever.cost_ticks = 3;
+        lever.on_success.target_node_id = String::from("N");
+        lever.on_success.state_delta_fp = 100_000;
+        eng.add_lever(lever);
+
+        assert!(eng.apply_lever("L", 0));
+        assert_eq!(eng.get_node("N").unwrap().state_fp, 100_000);
+        assert!(!eng.apply_lever("L", 0));
+        assert_eq!(eng.get_node("N").unwrap().state_fp, 100_000);
+        let _ = eng.run_ticks(2);
+        assert!(eng.apply_lever("L", 0));
+        assert_eq!(eng.get_node("N").unwrap().state_fp, 200_000);
     }
 }

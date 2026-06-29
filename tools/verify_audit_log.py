@@ -3,6 +3,7 @@
 
 Usage:
     python tools/verify_audit_log.py <logfile> [--chain-only] [--verbose]
+    python tools/verify_audit_log.py <logfile> --trusted-pubkey-hex <64-hex>
 
 If <logfile>.1, <logfile>.2, ... exist, they are verified as continuation
 segments and each rotated GENESIS must reference the previous segment head.
@@ -245,14 +246,22 @@ def verify_genesis(
 
 
 def verify_seal_signature(
+    blake3_module: Any,
     verifier: Callable[[bytes, bytes, bytes], None],
     obj: dict[str, Any],
     session_id: int,
     chain_head: bytes,
     where: str,
+    trusted_pubkey: bytes | None,
 ) -> None:
     seq = parse_u64(obj.get("seq"), f"{where}: seq")
     pubkey = bytes.fromhex(expect_hex(obj.get("pubkey"), 64, f"{where}: pubkey"))
+    fingerprint = bytes.fromhex(expect_hex(obj.get("fingerprint"), 64, f"{where}: fingerprint"))
+    expected_fingerprint = blake3_digest(blake3_module, pubkey)
+    if fingerprint != expected_fingerprint:
+        raise VerificationError(f"{where}: SEAL fingerprint does not match pubkey")
+    if trusted_pubkey is not None and pubkey != trusted_pubkey:
+        raise VerificationError(f"{where}: SEAL pubkey does not match trusted pubkey")
     signature = bytes.fromhex(expect_hex(obj.get("sig"), 128, f"{where}: sig"))
     message = (
         AUDIT_SEAL_CTX
@@ -270,6 +279,7 @@ def verify_segment(
     verifier: Callable[[bytes, bytes, bytes], None] | None,
     chain_only: bool,
     verbose: bool,
+    trusted_pubkey: bytes | None,
 ) -> bytes:
     chain_head: bytes | None = None
     session_id: int | None = None
@@ -286,6 +296,16 @@ def verify_segment(
             record_type = obj.get("type")
 
             if record_type == "GENESIS":
+                if saw_seal:
+                    session_id, chain_head = verify_genesis(
+                        blake3_module,
+                        obj,
+                        None,
+                        where,
+                    )
+                    event_count = 0
+                    saw_seal = False
+                    continue
                 if chain_head is not None:
                     raise VerificationError(f"{where}: duplicate GENESIS")
                 session_id, chain_head = verify_genesis(
@@ -299,7 +319,7 @@ def verify_segment(
             if chain_head is None or session_id is None:
                 raise VerificationError(f"{where}: first record must be GENESIS")
             if saw_seal:
-                raise VerificationError(f"{where}: records found after SEAL")
+                raise VerificationError(f"{where}: records found after SEAL before next GENESIS")
 
             if record_type == "EVENT":
                 prev_hex = expect_hex(obj.get("prev"), 64, f"{where}: prev")
@@ -328,7 +348,15 @@ def verify_segment(
                             "SEAL verification requires 'cryptography' or 'pynacl'. "
                             "Use --chain-only to skip ed25519 signature verification."
                         )
-                    verify_seal_signature(verifier, obj, session_id, chain_head, where)
+                    verify_seal_signature(
+                        blake3_module,
+                        verifier,
+                        obj,
+                        session_id,
+                        chain_head,
+                        where,
+                        trusted_pubkey,
+                    )
                 saw_seal = True
                 continue
 
@@ -348,6 +376,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify CAELUS audit log segments")
     parser.add_argument("logfile", type=Path, help="base log file path")
     parser.add_argument("--chain-only", action="store_true", help="skip ed25519 SEAL signatures")
+    parser.add_argument(
+        "--trusted-pubkey-hex",
+        help="optional 32-byte ed25519 public key pin expected in every SEAL",
+    )
     parser.add_argument("--verbose", action="store_true", help="print per-segment details")
     return parser.parse_args(argv)
 
@@ -361,6 +393,11 @@ def main(argv: list[str]) -> int:
         verifier = verifier_info[0] if verifier_info else None
         if verifier_info and args.verbose and not args.chain_only:
             print(f"ed25519 verifier: {verifier_info[1]}")
+        trusted_pubkey = None
+        if args.trusted_pubkey_hex:
+            trusted_pubkey = bytes.fromhex(
+                expect_hex(args.trusted_pubkey_hex, 64, "--trusted-pubkey-hex")
+            )
 
         previous_head: bytes | None = None
         for segment in segments:
@@ -371,6 +408,7 @@ def main(argv: list[str]) -> int:
                 verifier,
                 args.chain_only,
                 args.verbose,
+                trusted_pubkey,
             )
         print(f"OK: verified {len(segments)} segment(s), final_chain_head={previous_head.hex()}")
         return 0

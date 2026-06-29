@@ -54,6 +54,7 @@ TEST_CASE("CausalEngine blank slate stays neutral until scenario injection") {
     CHECK(snap.raw_friction_fp == FP_ONE);
     CHECK(snap.clamped_friction_fp == FP_ONE);
     CHECK(snap.throughput_ratio == 1.0);
+    CHECK(snap.throughput_ratio_fp == FP_ONE);
     CHECK(!snap.regime_exceeded);
     CHECK(!snap.outage_active);
 }
@@ -68,6 +69,69 @@ TEST_CASE("intel injection can change causal friction") {
 
     CHECK(after > before);
     CHECK(after <= FRICTION_MAX_FP);
+}
+
+TEST_CASE("failed lever lockout expires after lockout ticks") {
+    CausalEngine engine;
+    Node node;
+    node.id = "N";
+    node.capacity_fp = FP_ONE;
+    engine.add_node(node);
+
+    Lever lever;
+    lever.id = "L";
+    lever.success_p_fp = 0;
+    lever.lockout_ticks = 2;
+    lever.on_failure.target_node_id = "N";
+    lever.on_failure.state_delta_fp = 100'000;
+    engine.add_lever(lever);
+
+    CHECK(!engine.apply_lever("L", 0));
+    REQUIRE(engine.get_node("N") != nullptr);
+    CHECK(engine.get_node("N")->state_fp == 100'000);
+    CHECK(!engine.apply_lever("L", 0));
+    CHECK(engine.get_node("N")->state_fp == 100'000);
+    engine.run_ticks(1);
+    CHECK(!engine.apply_lever("L", 0));
+    CHECK(engine.get_node("N")->state_fp == 100'000);
+    engine.run_ticks(1);
+    CHECK(!engine.apply_lever("L", 0));
+    CHECK(engine.get_node("N")->state_fp == 200'000);
+}
+
+TEST_CASE("successful lever observes cost tick cooldown") {
+    CausalEngine engine;
+    Node node;
+    node.id = "N";
+    node.capacity_fp = FP_ONE;
+    engine.add_node(node);
+
+    Lever lever;
+    lever.id = "L";
+    lever.success_p_fp = FP_ONE;
+    lever.cost_ticks = 3;
+    lever.on_success.target_node_id = "N";
+    lever.on_success.state_delta_fp = 100'000;
+    engine.add_lever(lever);
+
+    CHECK(engine.apply_lever("L", 0));
+    REQUIRE(engine.get_node("N") != nullptr);
+    CHECK(engine.get_node("N")->state_fp == 100'000);
+    CHECK(!engine.apply_lever("L", 0));
+    CHECK(engine.get_node("N")->state_fp == 100'000);
+    engine.run_ticks(2);
+    CHECK(engine.apply_lever("L", 0));
+    CHECK(engine.get_node("N")->state_fp == 200'000);
+}
+
+TEST_CASE("snapshot exposes fixed-point throughput ratio") {
+    CausalEngine engine;
+    engine.load_universal_blank_slate();
+    engine.inject_intel(0.90, 3, "unit-test escalation");
+    const EngineSnapshot snap = engine.run_ticks(1);
+
+    CHECK(snap.throughput_ratio_fp == fp_div(FP_ONE, snap.clamped_friction_fp));
+    CHECK(snap.throughput_ratio == fp_to_d(snap.throughput_ratio_fp));
 }
 
 TEST_CASE("solver C ABI structs round-trip through plugin vtable") {

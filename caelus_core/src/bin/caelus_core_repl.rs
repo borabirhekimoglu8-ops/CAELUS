@@ -224,10 +224,7 @@ impl<'a> Parser<'a> {
                         Some(b'r') => out.push('\r'),
                         Some(b't') => out.push('\t'),
                         Some(b'u') => {
-                            let hex = self
-                                .b
-                                .get(self.i + 1..self.i + 5)
-                                .ok_or("\\u kesik")?;
+                            let hex = self.b.get(self.i + 1..self.i + 5).ok_or("\\u kesik")?;
                             let cp = u32::from_str_radix(
                                 std::str::from_utf8(hex).map_err(|_| "\\u utf8")?,
                                 16,
@@ -244,10 +241,7 @@ impl<'a> Parser<'a> {
                     // UTF-8 baytlarını olduğu gibi geçir
                     let start = self.i;
                     let len = utf8_len(c);
-                    let chunk = self
-                        .b
-                        .get(start..start + len)
-                        .ok_or("utf8 kesik")?;
+                    let chunk = self.b.get(start..start + len).ok_or("utf8 kesik")?;
                     out.push_str(std::str::from_utf8(chunk).map_err(|_| "utf8")?);
                     self.i += len;
                 }
@@ -455,10 +449,13 @@ fn emit_snapshot_json(
     scenario_id: &str,
     eng: &CausalEngine,
     snap: &EngineSnapshot,
+    json_stdout: bool,
 ) {
+    let prefix = if json_stdout { "" } else { "[REPL_JSON] " };
     let _ = writeln!(
         out,
-        "[REPL_JSON] {{\"type\":\"snapshot\",\"scenario_id\":\"{}\",\"current_tick\":{},\"last_snapshot_tick\":{},\"raw_friction\":{:.6},\"clamped_friction\":{:.6},\"live_multiplier\":{:.6},\"regime_exceeded\":{},\"outage_active\":{},\"deadline_missed\":{},\"hysteresis_flip\":{},\"throughput_ratio\":{:.6},\"summary\":\"{}\"}}",
+        "{}{{\"type\":\"snapshot\",\"scenario_id\":\"{}\",\"current_tick\":{},\"last_snapshot_tick\":{},\"raw_friction\":{:.6},\"clamped_friction\":{:.6},\"live_multiplier\":{:.6},\"regime_exceeded\":{},\"outage_active\":{},\"deadline_missed\":{},\"hysteresis_flip\":{},\"throughput_ratio_fp\":{},\"throughput_ratio\":{:.6},\"summary\":\"{}\"}}",
+        prefix,
         json_escape(scenario_id),
         eng.current_tick(),
         snap.tick,
@@ -469,6 +466,7 @@ fn emit_snapshot_json(
         snap.outage_active,
         snap.any_deadline_missed,
         snap.any_hysteresis_flip,
+        snap.throughput_ratio_fp,
         snap.throughput_ratio,
         json_escape(&snap.summary),
     );
@@ -478,7 +476,11 @@ fn emit_snapshot_text(out: &mut impl Write, eng: &CausalEngine, snap: &EngineSna
     let _ = writeln!(out, "[REPL] Snapshot:");
     let _ = writeln!(out, "       current_tick      : {}", eng.current_tick());
     let _ = writeln!(out, "       last_snapshot_tick: {}", snap.tick);
-    let _ = writeln!(out, "       raw_friction     : {:.6}x", snap.raw_friction_d());
+    let _ = writeln!(
+        out,
+        "       raw_friction     : {:.6}x",
+        snap.raw_friction_d()
+    );
     let _ = writeln!(
         out,
         "       clamped_friction : {:.6}x",
@@ -492,7 +494,11 @@ fn emit_snapshot_text(out: &mut impl Write, eng: &CausalEngine, snap: &EngineSna
     let _ = writeln!(
         out,
         "       regime_exceeded  : {}",
-        if snap.regime_exceeded { "EVET" } else { "HAYIR" }
+        if snap.regime_exceeded {
+            "EVET"
+        } else {
+            "HAYIR"
+        }
     );
     let _ = writeln!(
         out,
@@ -502,14 +508,26 @@ fn emit_snapshot_text(out: &mut impl Write, eng: &CausalEngine, snap: &EngineSna
     let _ = writeln!(
         out,
         "       deadline_missed  : {}",
-        if snap.any_deadline_missed { "EVET" } else { "HAYIR" }
+        if snap.any_deadline_missed {
+            "EVET"
+        } else {
+            "HAYIR"
+        }
     );
     let _ = writeln!(
         out,
         "       hysteresis_flip  : {}",
-        if snap.any_hysteresis_flip { "EVET" } else { "HAYIR" }
+        if snap.any_hysteresis_flip {
+            "EVET"
+        } else {
+            "HAYIR"
+        }
     );
-    let _ = writeln!(out, "       throughput_ratio : {:.6}", snap.throughput_ratio);
+    let _ = writeln!(
+        out,
+        "       throughput_ratio : {:.6}",
+        snap.throughput_ratio
+    );
     let _ = writeln!(out, "       summary          : {}", snap.summary);
 }
 
@@ -521,6 +539,7 @@ fn main() {
     let mut scenario_id = String::from("UNIVERSAL_BASELINE");
     let mut det_mode = false;
     let mut repl = false;
+    let mut json_stdout = false;
 
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
@@ -532,6 +551,7 @@ fn main() {
             }
             "--det-mode" => det_mode = true,
             "--repl" | "--interactive" => repl = true,
+            "--json-stdout" => json_stdout = true,
             _ => {}
         }
         i += 1;
@@ -564,13 +584,17 @@ fn main() {
 
     // C++ main akışı: 1 baseline tick → sentetik intel → 2 tick → t=3
     let mut last_snap = eng.tick();
-    eng.inject_intel(0.82, 2, "GENERIC_FIELD_SIGNAL: Actor_Alpha elevated friction");
+    eng.inject_intel(
+        0.82,
+        2,
+        "GENERIC_FIELD_SIGNAL: Actor_Alpha elevated friction",
+    );
     for _ in 0..2 {
         last_snap = eng.tick();
     }
 
     if !repl {
-        emit_snapshot_json(&mut out, &scenario_id, &eng, &last_snap);
+        emit_snapshot_json(&mut out, &scenario_id, &eng, &last_snap, json_stdout);
         return;
     }
 
@@ -595,7 +619,7 @@ fn main() {
             "status" | "snapshot" => {
                 let format_arg = parts.next().unwrap_or("").to_lowercase();
                 if format_arg == "--json" || format_arg == "json" {
-                    emit_snapshot_json(&mut out, &scenario_id, &eng, &last_snap);
+                    emit_snapshot_json(&mut out, &scenario_id, &eng, &last_snap, json_stdout);
                 } else {
                     emit_snapshot_text(&mut out, &eng, &last_snap);
                 }
@@ -651,7 +675,11 @@ fn main() {
                 let _ = writeln!(
                     out,
                     "[REPL] Lever sonucu: {} | cost_ticks={} (tam maliyet icin ek tick: {})",
-                    if success { "BASARILI" } else { "BASARISIZ/KILITLI" },
+                    if success {
+                        "BASARILI"
+                    } else {
+                        "BASARISIZ/KILITLI"
+                    },
                     meta.cost_ticks,
                     remaining_cost
                 );
