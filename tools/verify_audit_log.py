@@ -296,6 +296,16 @@ def verify_segment(
             record_type = obj.get("type")
 
             if record_type == "GENESIS":
+                if saw_seal:
+                    session_id, chain_head = verify_genesis(
+                        blake3_module,
+                        obj,
+                        None,
+                        where,
+                    )
+                    event_count = 0
+                    saw_seal = False
+                    continue
                 if chain_head is not None:
                     raise VerificationError(f"{where}: duplicate GENESIS")
                 session_id, chain_head = verify_genesis(
@@ -309,7 +319,7 @@ def verify_segment(
             if chain_head is None or session_id is None:
                 raise VerificationError(f"{where}: first record must be GENESIS")
             if saw_seal:
-                raise VerificationError(f"{where}: records found after SEAL")
+                raise VerificationError(f"{where}: records found after SEAL before next GENESIS")
 
             if record_type == "EVENT":
                 prev_hex = expect_hex(obj.get("prev"), 64, f"{where}: prev")
