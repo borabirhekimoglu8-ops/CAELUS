@@ -22,6 +22,9 @@ option(CAELUS_EMBEDDED_UI
 option(CAELUS_STATIC_BINARY
     "Link everything statically to produce a single portable executable"
     ON)
+option(CAELUS_PRODUCTION
+    "Compile out development bypasses and require pinned signatures"
+    OFF)
 
 # ─── Compiler & Linker Flags (Phase 3: size-first, single static binary) ──────
 # Compiler-conditional matrix — MSVC (cl.exe) vs GCC/Clang/MinGW. Both legs target
@@ -93,6 +96,13 @@ if(CAELUS_EMBEDDED_UI)
     message(STATUS "UI Payload: EMBEDDED from ${PAYLOAD_H}")
 else()
     message(STATUS "UI Payload: EXTERNAL (files served from ui/ directory)")
+endif()
+
+if(CAELUS_PRODUCTION)
+    target_compile_definitions(caelus_os PRIVATE CAELUS_PRODUCTION=1)
+    message(STATUS "Production mode: ON (development bypasses compiled out)")
+else()
+    message(STATUS "Production mode: OFF (development bypasses available)")
 endif()
 
 # ─── Rust Shadow-Mesh Static Library ─────────────────────────────────────────
@@ -175,6 +185,7 @@ message(STATUS "══════ CAELUS OS Build Configuration ═════
 message(STATUS "  Binary target      : dist/caelus_os")
 message(STATUS "  Static binary      : ${CAELUS_STATIC_BINARY}")
 message(STATUS "  Embedded UI        : ${CAELUS_EMBEDDED_UI}")
+message(STATUS "  Production mode    : ${CAELUS_PRODUCTION}")
 message(STATUS "  OR-Tools           : ${ortools_FOUND}")
 message(STATUS "  C++ Standard       : C++${CMAKE_CXX_STANDARD}")
 message(STATUS "════════════════════════════════════════════")

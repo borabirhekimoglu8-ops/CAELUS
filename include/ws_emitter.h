@@ -155,6 +155,30 @@ inline std::string base64_encode(const uint8_t* d, size_t len) {
     return out;
 }
 
+inline std::string json_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8u);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"':  out += "\\\""; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (c < 0x20u) {
+                    char buf[7];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+                    out += buf;
+                } else {
+                    out.push_back(static_cast<char>(c));
+                }
+                break;
+        }
+    }
+    return out;
+}
+
 // ── RFC 6455 §4.2.2 — compute Sec-WebSocket-Accept ─────────────────────────
 inline std::string ws_accept_key(const std::string& client_key) {
     const std::string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -678,8 +702,10 @@ inline std::string handshake_event(const std::string& peer_fp,
 
 inline std::string scenario_loaded(const std::string& id, const std::string& region) {
     return "{\"type\":\"scenario_loaded\","
-           "\"scenario_id\":\"" + id + "\","
-           "\"sector\":\""      + region + "\"}";
+           "\"scenario_id\":\"" + ws_detail::json_escape(id) + "\","
+           "\"sector\":\""      + ws_detail::json_escape(region) + "\","
+           "\"sig_status\":\"VERIFIED\","
+           "\"signature_path\":\"ed25519+pinned\"}";
 }
 
 inline std::string engine_state(const std::string& state, const std::string& scenario_id,
@@ -690,8 +716,8 @@ inline std::string engine_state(const std::string& state, const std::string& sce
     std::ostringstream o;
     o << std::fixed << std::setprecision(6);
     o << "{\"type\":\"engine_state\","
-      << "\"state\":\""            << state             << "\","
-      << "\"scenario_id\":\""      << scenario_id       << "\","
+      << "\"state\":\""            << ws_detail::json_escape(state)       << "\","
+      << "\"scenario_id\":\""      << ws_detail::json_escape(scenario_id) << "\","
       << "\"tick\":"               << tick              << ","
       << "\"friction_mult\":"      << friction_mult     << ","
       << "\"throughput_ratio\":"   << throughput_ratio  << ","

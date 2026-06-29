@@ -21,7 +21,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BINARY = ROOT / "dist" / "caelus_os.exe"
+DEFAULT_BINARY = ROOT / "dist" / ("caelus_os.exe" if os.name == "nt" else "caelus_os")
 SCENARIOS = {
     "BS-01_SAHTE_UFUK": ROOT / "scenarios" / "BS-01_SAHTE_UFUK.json",
     "BS-02_GOLGE_ARSIV": ROOT / "scenarios" / "BS-02_GOLGE_ARSIV.json",
@@ -56,7 +56,7 @@ EXPECTED_SNAPSHOT_HASHES = {
 }
 
 REPL_START_TICK = 3
-JSON_LINE_RE = re.compile(r"\[REPL_JSON\]\s+(\{[^\r\n]*\})")
+JSON_LINE_RE = re.compile(r"(?:\[REPL_JSON\]\s+)?(\{[^\r\n]*\"type\":\"snapshot\"[^\r\n]*\})")
 
 
 def load_hysteresis(scenario_id: str) -> list[dict[str, Any]]:
@@ -85,14 +85,17 @@ def build_commands(hysteresis: list[dict[str, Any]]) -> list[str]:
     return commands
 
 
-def run_repl(binary: Path, scenario_id: str, commands: list[str]) -> str:
+def run_repl(binary: Path, scenario_id: str, commands: list[str], json_stdout: bool = False) -> str:
     # Scenarios carry real ed25519 signatures matching the pinned trust anchor,
     # so the dev bypass is not needed — and must NOT leak in from the ambient
     # environment: this suite is the signed verification path (SIGNED-CI).
     env = os.environ.copy()
     env.pop("CAELUS_ALLOW_DEV_SCENARIOS", None)
+    cmd = [str(binary), "--scenario", scenario_id, "--repl", "--det-mode"]
+    if json_stdout:
+        cmd.append("--json-stdout")
     proc = subprocess.run(
-        [str(binary), "--scenario", scenario_id, "--repl", "--det-mode"],
+        cmd,
         input="\n".join(commands) + "\n",
         text=True,
         encoding="utf-8",
@@ -128,6 +131,7 @@ def normalize_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "outage_active",
         "deadline_missed",
         "hysteresis_flip",
+        "throughput_ratio_fp",
         "throughput_ratio",
     ]
     normalized: dict[str, Any] = {}
@@ -217,6 +221,26 @@ def assert_case(
     return {"normalized": normalized, "snapshot_hash": snapshot_hash}
 
 
+def assert_reference_match(
+    scenario_id: str,
+    actual: list[dict[str, Any]],
+    reference: list[dict[str, Any]],
+) -> None:
+    if len(actual) != len(reference):
+        raise AssertionError(
+            f"{scenario_id}: snapshot count mismatch actual={len(actual)} reference={len(reference)}"
+        )
+    for idx, (a_snap, r_snap) in enumerate(zip(actual, reference)):
+        a_norm = normalize_snapshot(a_snap)
+        r_norm = normalize_snapshot(r_snap)
+        if a_norm != r_norm:
+            raise AssertionError(
+                f"{scenario_id}: live differential mismatch at snapshot #{idx}\n"
+                f"  actual   : {json.dumps(a_norm, sort_keys=True)}\n"
+                f"  reference: {json.dumps(r_norm, sort_keys=True)}"
+            )
+
+
 def selected_scenarios(value: str) -> list[str]:
     if value == "all":
         return list(SCENARIOS.keys())
@@ -232,7 +256,16 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--binary",
         default=str(DEFAULT_BINARY),
-        help=f"caelus_os.exe yolu (varsayılan: {DEFAULT_BINARY})",
+        help=f"CAELUS REPL binary path (default: {DEFAULT_BINARY})",
+    )
+    parser.add_argument(
+        "--reference-binary",
+        help="optional second binary; runs identical commands and compares normalized snapshots live",
+    )
+    parser.add_argument(
+        "--json-stdout",
+        action="store_true",
+        help="ask binaries to emit bare JSON snapshot lines instead of [REPL_JSON] prefix",
     )
     parser.add_argument(
         "--scenario",
@@ -254,6 +287,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     binary = Path(args.binary)
+    reference_binary = Path(args.reference_binary) if args.reference_binary else None
     scenarios = selected_scenarios(args.scenario)
 
     if not args.dry_run and not binary.exists():
@@ -262,6 +296,9 @@ def main(argv: list[str]) -> int:
             "       Önce build.bat çalıştırın veya --binary ile yolu verin.",
             file=sys.stderr,
         )
+        return 2
+    if not args.dry_run and reference_binary and not reference_binary.exists():
+        print(f"[HATA] Reference binary bulunamadi: {reference_binary}", file=sys.stderr)
         return 2
 
     try:
@@ -277,8 +314,12 @@ def main(argv: list[str]) -> int:
                     print(f"         {command}")
                 continue
 
-            output = run_repl(binary, scenario_id, commands)
+        output = run_repl(binary, scenario_id, commands, args.json_stdout)
             snapshots = parse_snapshots(output)
+        if reference_binary:
+            ref_output = run_repl(reference_binary, scenario_id, commands, args.json_stdout)
+            ref_snapshots = parse_snapshots(ref_output)
+            assert_reference_match(scenario_id, snapshots, ref_snapshots)
             result = assert_case(
                 scenario_id, hysteresis, output, snapshots, refresh=args.refresh
             )

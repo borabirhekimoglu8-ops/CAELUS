@@ -199,8 +199,8 @@ static std::string hex_encode(const uint8_t* buf, size_t len) {
 
 // ─── T-18 Üretim Plugin İmza Verifier'ı (pinli güven çapası) ──────────────────
 // Üretim güven çapası: tools/caelus_trusted_pubkey.txt içeriğiyle aynı ed25519
-// pubkey (tools/caelus_signing.key seed'inin public yarısı; anahtar töreni
-// çıktısı). Dinamik eklenti sidecar imzaları (<plugin>.sig) YALNIZ bu anahtarla
+// pubkey (repo DIŞINDA/offline tutulan signing seed'in public yarısı; anahtar
+// töreni çıktısı). Dinamik eklenti sidecar imzaları (<plugin>.sig) YALNIZ bu anahtarla
 // kabul edilir — imza string'ine gömülü rastgele bir pubkey'in matematiksel
 // olarak doğrulanması yeterli DEĞİLDİR (E-3 gömülü-anahtara-güven açığının
 // plugin hattında tekrarlanmaması için).
@@ -406,6 +406,8 @@ static std::string json_escape(const std::string& s) {
     return out;
 }
 
+static bool g_json_stdout = false;
+
 static void audit_repl_event(const std::string& command,
                              const caelus::causal::CausalEngine& engine,
                              const char* result) {
@@ -463,7 +465,8 @@ static void print_repl_snapshot_json(const std::string& scenario_id,
                                      const caelus::causal::CausalEngine& engine,
                                      const caelus::causal::EngineSnapshot& snap) {
     std::cout << std::fixed << std::setprecision(6);
-    std::cout << "[REPL_JSON] {"
+    if (!g_json_stdout) std::cout << "[REPL_JSON] ";
+    std::cout << "{"
               << "\"type\":\"snapshot\","
               << "\"scenario_id\":\"" << json_escape(scenario_id) << "\","
               << "\"current_tick\":" << engine.current_tick() << ","
@@ -475,6 +478,7 @@ static void print_repl_snapshot_json(const std::string& scenario_id,
               << "\"outage_active\":" << (engine.outage_active() ? "true" : "false") << ","
               << "\"deadline_missed\":" << (snap.any_deadline_missed ? "true" : "false") << ","
               << "\"hysteresis_flip\":" << (snap.any_hysteresis_flip ? "true" : "false") << ","
+              << "\"throughput_ratio_fp\":" << snap.throughput_ratio_fp << ","
               << "\"throughput_ratio\":" << snap.throughput_ratio << ","
               << "\"summary\":\"" << json_escape(snap.summary) << "\""
               << "}\n";
@@ -702,6 +706,8 @@ int main(int argc, char* argv[]) {
             sign_key_path = argv[++i];
         } else if (arg == "--interactive" || arg == "--repl") {
             interactive = true;
+        } else if (arg == "--json-stdout") {
+            g_json_stdout = true;
         } else if (arg == "--det-mode") {
             det_mode = true;
         } else if (arg == "--plugin") {
@@ -728,6 +734,7 @@ int main(int argc, char* argv[]) {
                       << "  --sign-scenario <json> --key <seed> Ed25519 signer FFI olmadigi icin blocker raporlar\n"
                       << "  --interactive     Senaryo REPL'i baslatir (geriye uyumlu bayrak)\n"
                       << "  --repl            Senaryo REPL'i baslatir\n"
+                      << "  --json-stdout     snapshot --json icin prefixsiz saf JSON satiri basar\n"
                       << "  --det-mode        Deterministik CI modu: sanal saat + tohumlu PRNG,\n"
                       << "                    CDET: bloku stdout'a basilir, agi atlar.\n";
             return 0;
@@ -1032,8 +1039,8 @@ int main(int argc, char* argv[]) {
         caelus_identity_fingerprint(local_id, fp);
         std::ostringstream ss_start;
         ss_start << std::hex << std::setfill('0');
-        ss_start << "{\"type\":\"SESSION_START\",\"scenario\":\"" << scenario_id
-                 << "\",\"sector\":\"" << profile->region
+        ss_start << "{\"type\":\"SESSION_START\",\"scenario\":\"" << json_escape(scenario_id)
+                 << "\",\"sector\":\"" << json_escape(profile->region)
                  << "\",\"fingerprint\":\"";
         for (int i = 0; i < 32; ++i)
             ss_start << std::setw(2) << static_cast<unsigned>(fp[i]);
@@ -1108,8 +1115,8 @@ int main(int argc, char* argv[]) {
             // Eski yol: FieldMultiplierFromPacket(coeff, level) formülü (KALDIRILDI)
             // Yeni yol: Intel paketi graf düğümlerini günceller; sürtünme
             //           bir sonraki run_ticks() içinde yeniden hesaplanır.
-            causal_engine.inject_intel(
-                field_coeff,
+            causal_engine.inject_intel_fp(
+                pkt.friction_coefficient_fp,
                 static_cast<int>(pkt.crisis_level),
                 reinterpret_cast<const char*>(pkt.memo));
 
@@ -1251,9 +1258,9 @@ int main(int argc, char* argv[]) {
     if (g_audit.is_open()) {
         std::ostringstream ss;
         ss << "{\"type\":\"SESSION_END\","
-           << "\"scenario\":\"" << scenario_id << "\","
+           << "\"scenario\":\"" << json_escape(scenario_id) << "\","
            << "\"audit_entries\":" << g_audit.entries()
-           << ",\"log_path\":\"" << g_audit.path() << "\"}";
+           << ",\"log_path\":\"" << json_escape(g_audit.path()) << "\"}";
         g_audit.append(ss.str());
         g_audit.seal();  // ed25519 imzası + flush
     }

@@ -318,6 +318,7 @@ struct EngineSnapshot {
     bool     any_deadline_missed  = false;
     bool     any_hysteresis_flip  = false;
     bool     outage_active        = false;    ///< throughput = 0 (akış tıkanması)
+    int64_t  throughput_ratio_fp  = FP_ONE;   ///< Fixed-point throughput ratio
     double   throughput_ratio     = 1.0;      ///< 0..1, 1=nominal akış
     char     summary[128]         = {};       ///< İnsan okunur durum
 
@@ -424,12 +425,16 @@ public:
      */
     void inject_intel(double field_coeff, int crisis_level, const char* memo) noexcept {
         field_coeff = std::max(0.0, std::min(1.0, field_coeff));
+        inject_intel_fp(d_to_fp(field_coeff), crisis_level, memo);
+    }
+
+    void inject_intel_fp(int64_t field_coeff_fp, int crisis_level, const char* memo) noexcept {
+        field_coeff_fp = fp_clamp(field_coeff_fp, 0LL, FP_ONE);
         crisis_level = crisis_level < 0 ? 0 : (crisis_level > 3 ? 3 : crisis_level);
 
         // Birincil aktör: kriz sinyalini taşıyan düğüm
         if (Node* actor = get_node("Actor_Alpha")) {
-            int64_t new_fp = d_to_fp(field_coeff);
-            actor->state_fp         = std::max(actor->state_fp, new_fp);
+            actor->state_fp         = std::max(actor->state_fp, field_coeff_fp);
             actor->reported_state_fp= actor->state_fp;  // tam kriz sinyali raporlanır
         }
         if (Node* gate = get_node("Regulatory_Gate")) {
@@ -474,6 +479,7 @@ public:
         propagate_edges();
         apply_feedback_loops();
         update_trust();
+        decay_lever_lockouts();
 
         int64_t raw = aggregate_friction();
         friction_fp_ = fp_add_saturating(raw, permanent_friction_fp_);
@@ -533,9 +539,10 @@ public:
                 fp_add_saturating(permanent_friction_fp_, outcome.friction_delta_fp),
                 -FP_ONE, FRICTION_MAX_FP);
         }
-        if (!success) {
-            lev->remaining_lockout = lev->lockout_ticks;
-        }
+        const int32_t action_cost_lockout = lev->cost_ticks > 1 ? (lev->cost_ticks - 1) : 0;
+        lev->remaining_lockout = success
+            ? action_cost_lockout
+            : std::max(action_cost_lockout, lev->lockout_ticks);
         (void)lever_id;
         CAELUS_CAUSAL_LOG_EVENT(success ? ::caelus::logging::LogLevel::Info
                                         : ::caelus::logging::LogLevel::Warn,
@@ -791,8 +798,11 @@ private:
 
         for (auto& node : nodes_) {
             if (node.capacity_fp == 0LL) continue;
-            int64_t abs_diff = node.reported_state_fp - node.state_fp;
-            if (abs_diff < 0) abs_diff = -abs_diff;
+            const int64_t diff = fp_add_saturating(node.reported_state_fp, -node.state_fp);
+            const uint64_t diff_mag = detail::fp_abs_u64(diff);
+            const int64_t abs_diff = diff_mag > static_cast<uint64_t>(detail::FP_I64_MAX)
+                ? detail::FP_I64_MAX
+                : static_cast<int64_t>(diff_mag);
             int64_t deviation = fp_div(abs_diff, node.capacity_fp);
 
             if (deviation > DEVIATION_THRESHOLD_FP) {
@@ -808,6 +818,13 @@ private:
                                             "observability trust below threshold");
                 }
             }
+        }
+    }
+
+    /** decrement timed lever lockouts once per engine tick. */
+    void decay_lever_lockouts() noexcept {
+        for (auto& lever : levers_) {
+            if (lever.remaining_lockout > 0) --lever.remaining_lockout;
         }
     }
 
@@ -838,7 +855,9 @@ private:
      */
     void check_hysteresis() noexcept {
         for (auto& h : hysts_) {
-            if (h.flipped || (int32_t)tick_ < h.threshold_tick) continue;
+            const uint64_t threshold =
+                h.threshold_tick <= 0 ? 0ULL : static_cast<uint64_t>(h.threshold_tick);
+            if (h.flipped || tick_ < threshold) continue;
             h.flipped = true;
             if (!h.reversible) {
                 permanent_friction_fp_ = fp_add_saturating(
@@ -863,7 +882,7 @@ private:
     void check_deadlines() noexcept {
         for (auto& node : nodes_) {
             if (node.deadline_tick < 0 || node.deadline_missed) continue;
-            if ((int32_t)tick_ >= node.deadline_tick) {
+            if (tick_ >= static_cast<uint64_t>(node.deadline_tick)) {
                 node.deadline_missed = true;
                 CAELUS_CAUSAL_LOG_EVENT(::caelus::logging::LogLevel::Error,
                                         ::caelus::logging::CausalLogCode::DeadlineMissed,
@@ -904,11 +923,13 @@ private:
                                             [](const Node& n){ return n.deadline_missed; });
         s.outage_active      = outage_;
         if (outage_) {
+            s.throughput_ratio_fp = 0LL;
             s.throughput_ratio = 0.0;
             std::snprintf(s.summary, sizeof(s.summary),
                           "OUTAGE: throughput=0, tick=%llu", (unsigned long long)tick_);
         } else {
-            s.throughput_ratio = 1.0 / fp_to_d(s.clamped_friction_fp);
+            s.throughput_ratio_fp = fp_div(FP_ONE, s.clamped_friction_fp);
+            s.throughput_ratio = fp_to_d(s.throughput_ratio_fp);
             std::snprintf(s.summary, sizeof(s.summary),
                           "mu=%.3fx%s",
                           fp_to_d(s.clamped_friction_fp),
