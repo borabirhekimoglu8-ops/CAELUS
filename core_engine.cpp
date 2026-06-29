@@ -729,7 +729,9 @@ int main(int argc, char* argv[]) {
                       << "                    <path>.sig sidecar'i (ed25519, pinli guven capasi,\n"
                       << "                    'caelus_sign_scenario --sign-plugin' ile uretilir)\n"
                       << "                    gecerli degilse eklenti REDDEDILIR (fail-closed).\n"
+#ifndef CAELUS_PRODUCTION
                       << "                    Gelistirme icin CAELUS_PLUGIN_ALLOW_UNVERIFIED=1.\n"
+#endif
                       << "  --print-scenario-payload <json> Imzalanacak canonical payload'u stdout'a basar\n"
                       << "  --sign-scenario <json> --key <seed> Ed25519 signer FFI olmadigi icin blocker raporlar\n"
                       << "  --interactive     Senaryo REPL'i baslatir (geriye uyumlu bayrak)\n"
