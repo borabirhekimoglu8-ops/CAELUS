@@ -50,9 +50,9 @@ EXPECTED_HYSTERESIS_OUTAGE = {
 # Regenerated with `--refresh` against the latched-outage engine build
 # (build.bat, GCC + x86_64-pc-windows-gnu, signed scenarios, no dev bypass).
 EXPECTED_SNAPSHOT_HASHES = {
-    "BS-01_SAHTE_UFUK": "4dc1f03841c3c8f6fb08ce0482d8008ffd9c1966c06aeae80856ac274c286daa",
-    "BS-02_GOLGE_ARSIV": "176cdc02520bebdef92f0319d63ae038a7c65bcd46266ec46cc44ae151cf832e",
-    "BS-03_KUM_SAATI": "c67e43d1d1b96a57813ab49f89172be3220919785c8355e12f2171f72e3012e4",
+    "BS-01_SAHTE_UFUK": "933619724894aa211676775ffe2668c261080d67dcc7b359c60746d2fe49b9b7",
+    "BS-02_GOLGE_ARSIV": "1f71f60e45760879c3ca56990b63dc184fc79685d49899ec1586bc261d1643d8",
+    "BS-03_KUM_SAATI": "63358ef3448af8d252720f3c9f4f9d2ee77eff84ebabcc571447d326cd4e02c3",
 }
 
 REPL_START_TICK = 3
