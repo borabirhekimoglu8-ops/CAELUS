@@ -6,11 +6,58 @@
 #include "plugin/caelus_solver.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <string>
 
 using namespace caelus::causal;
+
+// ── Test-only ed25519 verifier stub ─────────────────────────────────────────
+// The C++ unit-test binary is compiled WITHOUT the Rust FFI object, so the real
+// caelus_verify_scenario_signature symbol is unavailable. We provide a
+// controllable stub so the signature-gate branches (math pass/fail, pin match,
+// dev bypass) can be exercised deterministically. The *real* ed25519 math is
+// covered separately by the Rust suite and by the Python end-to-end tamper test
+// (tests/run_signature_negative.py), which run against the real signing path.
+static int g_stub_ed25519_result = 1;
+
+extern "C" uint8_t caelus_verify_scenario_signature(
+    const uint8_t* /*msg*/, size_t /*msg_len*/,
+    const uint8_t* /*pubkey32*/, const uint8_t* /*sig64*/) {
+    return static_cast<uint8_t>(g_stub_ed25519_result);
+}
+
+namespace {
+void set_env_flag(const char* name, bool on) {
+#if defined(_WIN32)
+    _putenv_s(name, on ? "1" : "");
+#else
+    if (on) setenv(name, "1", 1);
+    else    unsetenv(name);
+#endif
+}
+
+caelus::JsonVal parse_json(const std::string& text) {
+    caelus::JsonVal root;
+    caelus::JsonParser parser(text.data(), text.size());
+    REQUIRE(parser.parse(root));
+    return root;
+}
+
+// Pinned trust anchor (matches CAELUS_TRUSTED_PUBKEY in scenario_pack.h).
+const char* kTrustedPubHex =
+    "9bb1dbd039043670b7bf2c5d7533777866135b92f9b38fe6cd8d9735a04fa802";
+const char* kUntrustedPubHex =
+    "0000000000000000000000000000000000000000000000000000000000000000";
+const std::string kSigHex(128, 'a');
+
+std::string scenario_json(const std::string& sig) {
+    return std::string("{\"signature\":\"") + sig + "\","
+           "\"extended_causal_model\":{\"nodes\":[]},"
+           "\"v1_engine_bridge\":{\"k\":1}}";
+}
+}  // namespace
 
 TEST_CASE("fixed-point arithmetic handles normal values") {
     CHECK(fp_mul(2 * FP_ONE, 3 * FP_ONE) == 6 * FP_ONE);
@@ -187,6 +234,88 @@ TEST_CASE("JsonParser enforces recursion depth") {
     caelus::JsonVal root;
     caelus::JsonParser parser(nested.data(), nested.size());
     CHECK(!parser.parse(root));
+}
+
+TEST_CASE("signature gate reports REJECTED for empty signature") {
+    g_stub_ed25519_result = 1;
+    auto root = parse_json(scenario_json(""));
+    std::string status = "x", scheme = "x";
+    CHECK(!caelus::ScenarioPack::test_verify_signature_gate(root, "", status, scheme));
+    CHECK(status == "REJECTED");
+}
+
+TEST_CASE("signature gate rejects SELF_SIGNED_DEV without dev flag") {
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", false);
+    auto root = parse_json(scenario_json("SELF_SIGNED_DEV"));
+    std::string status, scheme;
+    CHECK(!caelus::ScenarioPack::test_verify_signature_gate(
+        root, "SELF_SIGNED_DEV", status, scheme));
+    CHECK(status == "REJECTED");
+}
+
+TEST_CASE("signature gate accepts SELF_SIGNED_DEV only with dev flag") {
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", true);
+    auto root = parse_json(scenario_json("SELF_SIGNED_DEV"));
+    std::string status, scheme;
+    CHECK(caelus::ScenarioPack::test_verify_signature_gate(
+        root, "SELF_SIGNED_DEV", status, scheme));
+    CHECK(status == "SELF_SIGNED_DEV");
+    CHECK(scheme == "self-signed-dev");
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", false);
+}
+
+TEST_CASE("signature gate rejects a tampered scenario (ed25519 fails)") {
+    // Simulates a payload mutation: the canonical bytes no longer match the
+    // signature, so the ed25519 check returns 0 and the gate must fail closed.
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", false);
+    set_env_flag("CAELUS_TRUST_ANY_PUBKEY", false);
+    g_stub_ed25519_result = 0;
+    const std::string sig =
+        std::string("ed25519:") + kTrustedPubHex + ":" + kSigHex;
+    auto root = parse_json(scenario_json(sig));
+    std::string status, scheme;
+    CHECK(!caelus::ScenarioPack::test_verify_signature_gate(root, sig, status, scheme));
+    CHECK(status == "REJECTED");
+    g_stub_ed25519_result = 1;
+}
+
+TEST_CASE("signature gate VERIFIED only for the pinned trust anchor") {
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", false);
+    set_env_flag("CAELUS_TRUST_ANY_PUBKEY", false);
+    g_stub_ed25519_result = 1;
+    const std::string sig =
+        std::string("ed25519:") + kTrustedPubHex + ":" + kSigHex;
+    auto root = parse_json(scenario_json(sig));
+    std::string status, scheme;
+    CHECK(caelus::ScenarioPack::test_verify_signature_gate(root, sig, status, scheme));
+    CHECK(status == "VERIFIED");
+    CHECK(scheme == "ed25519+pinned");
+}
+
+TEST_CASE("signature gate rejects a valid signature from an untrusted key") {
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", false);
+    set_env_flag("CAELUS_TRUST_ANY_PUBKEY", false);
+    g_stub_ed25519_result = 1;
+    const std::string sig =
+        std::string("ed25519:") + kUntrustedPubHex + ":" + kSigHex;
+    auto root = parse_json(scenario_json(sig));
+    std::string status, scheme;
+    CHECK(!caelus::ScenarioPack::test_verify_signature_gate(root, sig, status, scheme));
+    CHECK(status == "REJECTED");
+}
+
+TEST_CASE("untrusted key is DEV_TRUST_BYPASS, never VERIFIED, under dev bypass") {
+    set_env_flag("CAELUS_TRUST_ANY_PUBKEY", true);
+    g_stub_ed25519_result = 1;
+    const std::string sig =
+        std::string("ed25519:") + kUntrustedPubHex + ":" + kSigHex;
+    auto root = parse_json(scenario_json(sig));
+    std::string status, scheme;
+    CHECK(caelus::ScenarioPack::test_verify_signature_gate(root, sig, status, scheme));
+    CHECK(status == "DEV_TRUST_BYPASS");
+    CHECK(status != "VERIFIED");
+    CHECK(scheme == "ed25519+unpinned");
+    set_env_flag("CAELUS_TRUST_ANY_PUBKEY", false);
 }
 
 TEST_CASE("JsonParser strictly handles unicode escapes") {
