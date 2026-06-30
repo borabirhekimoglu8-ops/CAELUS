@@ -700,12 +700,18 @@ inline std::string handshake_event(const std::string& peer_fp,
     return o.str();
 }
 
-inline std::string scenario_loaded(const std::string& id, const std::string& region) {
+inline std::string scenario_loaded(const std::string& id, const std::string& region,
+                                   const std::string& sig_status,
+                                   const std::string& sig_scheme) {
+    // sig_status / sig_scheme, ScenarioPack imza yolundan gelen GERÇEK sonuçtur;
+    // burada asla sabit "VERIFIED" üretilmez (yanıltıcı forensics önlenir).
+    const std::string status = sig_status.empty() ? std::string("UNKNOWN") : sig_status;
+    const std::string scheme = sig_scheme.empty() ? std::string("none") : sig_scheme;
     return "{\"type\":\"scenario_loaded\","
            "\"scenario_id\":\"" + ws_detail::json_escape(id) + "\","
            "\"sector\":\""      + ws_detail::json_escape(region) + "\","
-           "\"sig_status\":\"VERIFIED\","
-           "\"signature_path\":\"ed25519+pinned\"}";
+           "\"sig_status\":\""  + ws_detail::json_escape(status) + "\","
+           "\"signature_path\":\"" + ws_detail::json_escape(scheme) + "\"}";
 }
 
 inline std::string engine_state(const std::string& state, const std::string& scenario_id,

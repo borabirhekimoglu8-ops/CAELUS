@@ -949,7 +949,8 @@ int main(int argc, char* argv[]) {
         // v1 uyum köprüsü: paket profilini aktif profil olarak kullan
         *profile = scenario_pack.risk_profile;
         g_emitter.emit(caelus::ws_json::scenario_loaded(
-            scenario_pack.id, scenario_pack.region));
+            scenario_pack.id, scenario_pack.region,
+            scenario_pack.sig_status, scenario_pack.sig_scheme));
         std::cout << "[SCENARIO] Domain: " << scenario_pack.sector
                   << " | Ufuk: " << scenario_pack.horizon_hours << " saat"
                   << " | Tick: " << scenario_pack.tick_minutes << " dak\n";

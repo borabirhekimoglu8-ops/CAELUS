@@ -484,6 +484,13 @@ public:
     std::string sector;
     std::string min_caelus_engine;
     std::string signature;
+    // Gerçek doğrulama sonucu (load() sırasında verify_signature_gate doldurur).
+    // Asla sabit "VERIFIED" değildir — imza yolunu olduğu gibi yansıtır:
+    //   VERIFIED          → ed25519 geçti VE pinli güven çapasıyla eşleşti
+    //   DEV_TRUST_BYPASS  → ed25519 geçti ama pin kontrolü dev bypass ile atlandı
+    //   SELF_SIGNED_DEV   → SELF_SIGNED_DEV imza dev flag ile kabul edildi
+    std::string sig_status;
+    std::string sig_scheme;
     std::string title;
     std::string region;
     int         tick_minutes   = 15;
@@ -519,6 +526,8 @@ public:
         sector.clear();
         min_caelus_engine.clear();
         signature.clear();
+        sig_status.clear();
+        sig_scheme.clear();
         title.clear();
         region.clear();
         tick_minutes = 15;
@@ -557,7 +566,7 @@ public:
         min_caelus_engine = root["min_caelus_engine"].as_s();
         signature         = root["signature"].as_s();
 
-        if (!verify_signature_gate(root, signature)) {
+        if (!verify_signature_gate(root, signature, sig_status, sig_scheme)) {
             std::cerr << "[SCENARIO] Paket imzası reddedildi: " << path << "\n";
             return false;
         }
@@ -722,6 +731,16 @@ public:
         buf << f.rdbuf();
         return canonical_signed_payload_from_json(buf.str(), out, error);
     }
+
+#ifdef CAELUS_CPP_UNIT_TEST
+    // Test-only erişim kancası: imza gate'inin tüm dallarını (boş imza,
+    // SELF_SIGNED_DEV, ed25519 başarısız/tamper, pin reddi, dev bypass)
+    // birim testten doğrulanabilir kılar. Üretim derlemesine girmez.
+    static bool test_verify_signature_gate(const JsonVal& root, const std::string& sig,
+                                           std::string& out_status, std::string& out_scheme) {
+        return verify_signature_gate(root, sig, out_status, out_scheme);
+    }
+#endif
 
 private:
     // ─────────────────────────────────────────────────────────────────────────
@@ -894,7 +913,10 @@ private:
                hex_to_bytes(sig_hex, signature, 64);
     }
 
-    static bool verify_signature_gate(const JsonVal& root, const std::string& sig) {
+    static bool verify_signature_gate(const JsonVal& root, const std::string& sig,
+                                      std::string& out_status, std::string& out_scheme) {
+        out_status = "REJECTED";
+        out_scheme = "none";
         if (sig.empty()) {
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: signature alanı eksik veya boş.\n";
             return false;
@@ -910,6 +932,8 @@ private:
 #else
             if (env_flag_enabled("CAELUS_ALLOW_DEV_SCENARIOS")) {
                 std::cout << "[SCENARIO] SELF_SIGNED_DEV yalnızca CAELUS_ALLOW_DEV_SCENARIOS=1 ile kabul edildi; prod doğrulama atlandı.\n";
+                out_status = "SELF_SIGNED_DEV";
+                out_scheme = "self-signed-dev";
                 return true;
             }
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: SELF_SIGNED_DEV varsayılan olarak reddedildi. "
@@ -953,17 +977,25 @@ private:
                       << "(CAELUS_PRODUCTION: bypass yolu yok).\n";
             return false;
         }
+        out_status = "VERIFIED";
+        out_scheme = "ed25519+pinned";
 #else
         if (env_flag_enabled("CAELUS_ALLOW_DEV_SCENARIOS") ||
             env_flag_enabled("CAELUS_TRUST_ANY_PUBKEY")) {
+            // ed25519 matematiksel olarak geçti ama "kim imzaladı?" pin kontrolü
+            // bypass edildi. Bu doğrulanmış güven değildir; durum açıkça ayrılır.
             std::cerr << "[UYARI] TRUSTED_PUBKEY_BYPASS: geliştirme modu — "
                       << "pubkey pin kontrolü atlandı; üretimde bu log asla sessiz olmamalı.\n";
+            out_status = "DEV_TRUST_BYPASS";
+            out_scheme = "ed25519+unpinned";
         } else {
             if (std::memcmp(pubkey, CAELUS_TRUSTED_PUBKEY, 32) != 0) {
                 std::cerr << "[FATAL] SIGNATURE_MISMATCH: pubkey güven çapası reddi — "
                           << "imzadaki pubkey pinlenmiş güven çapasıyla eşleşmiyor.\n";
                 return false;
             }
+            out_status = "VERIFIED";
+            out_scheme = "ed25519+pinned";
         }
 #endif
 
