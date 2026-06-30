@@ -1,5 +1,6 @@
 target/
 caelus_core/target/
+build_tests/
 *.log
 *.tmp
 *.sig.tmp

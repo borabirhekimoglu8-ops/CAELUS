@@ -50,8 +50,17 @@ rg '^CDET:' "$out1" > "$blk1"
 rg '^CDET:' "$out2" > "$blk2"
 cmp -s "$blk1" "$blk2" || die "CDET blocks differ"
 
-log "Audit chain and SEAL verification"
-"$PYTHON" "$ROOT/tools/verify_audit_log.py" "$ROOT/caelus_audit_0000000000000000.log"
+log "Audit chain and SEAL verification (pinned to det-mode signer)"
+# Det-mode uses a fixed identity seed, so the SEAL pubkey is deterministic and
+# can be pinned. Pinning makes the verifier check WHO sealed the log, not just
+# that the chain is self-consistent (closes the 'attacker re-seals' gap).
+DET_SEAL_PUBKEY="acdcc8494d458f44a7aaac1d6a84ec624daee88436db2ae26e67ba645a106228"
+"$PYTHON" "$ROOT/tools/verify_audit_log.py" \
+    "$ROOT/caelus_audit_0000000000000000.log" \
+    --trusted-pubkey-hex "$DET_SEAL_PUBKEY"
+
+log "Negative security suite (tamper / dev-signed / audit forgery must fail closed)"
+"$PYTHON" "$ROOT/tests/run_security_negative.py" --binary "$EXE"
 
 log "Golden runner against C++ binary"
 "$PYTHON" "$ROOT/tests/run_bs_exec_golden.py" --binary "$EXE"
