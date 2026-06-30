@@ -408,20 +408,30 @@ file it records:
 1. **What changed**
    - Updated key ceremony comments.
    - Private seed is now described as offline/repo-external.
+   - `verify_signature_gate` now reports the REAL outcome via out-params
+     (`sig_status`/`sig_scheme`): `VERIFIED` (ed25519 + pinned anchor),
+     `DEV_TRUST_BYPASS` (ed25519 ok, pin bypassed), `SELF_SIGNED_DEV`.
+   - Added `sig_status`/`sig_scheme` members to `ScenarioPack`.
+   - Added test-only `test_verify_signature_gate` hook (guarded by
+     `CAELUS_CPP_UNIT_TEST`) so all gate branches are unit-testable.
 
 2. **Why**
    - Prevent docs/comments from encouraging committed private key usage.
+   - Stop the UI/event surface from claiming a hardcoded "VERIFIED" when the
+     trust anchor was not actually matched.
 
 3. **Affects**
    - Security
+   - Forensics credibility
    - Docs
 
 4. **Covered by**
-   - Local secret/string scan
-   - Scenario signature gate still covered by existing tests/golden.
+   - C++ doctests (empty sig, dev-signed accept/reject, ed25519 tamper-reject,
+     pin-reject, dev-bypass → `DEV_TRUST_BYPASS`).
+   - `tests/run_security_negative.py` (real binary tamper rejection).
 
 5. **Remaining risk**
-   - Actual production key rotation was not performed.
+   - Actual production key rotation was not performed (see report key-rotation chain).
 
 ---
 
@@ -430,22 +440,25 @@ file it records:
 1. **What changed**
    - Added JSON escape helper.
    - Escaped `scenario_loaded` and `engine_state` strings.
-   - Added signature status fields to `scenario_loaded`:
-     - `sig_status`
-     - `signature_path`
+   - `scenario_loaded(...)` now takes `sig_status` + `sig_scheme` params and
+     emits the REAL gate result (no hardcoded "VERIFIED"); empty values render
+     as `UNKNOWN`/`none`.
 
 2. **Why**
    - Prevent invalid JSON from scenario/state strings.
-   - Let UI/consumers distinguish verified scenario loading.
+   - Let UI/consumers distinguish a genuinely verified scenario from a
+     dev-bypassed or self-signed one.
 
 3. **Affects**
    - Security
+   - Forensics credibility
    - JSON readiness
    - Demo readiness
 
 4. **Covered by**
    - Compile through `./ci.sh`
-   - C++ build/golden indirectly.
+   - Runtime check: valid scenario emits `VERIFIED`; tampered scenario emits no
+     `scenario_loaded` (rejected) — `tests/run_security_negative.py`.
 
 5. **Remaining risk**
    - UI visual behavior was not browser-verified.

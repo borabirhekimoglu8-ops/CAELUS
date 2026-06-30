@@ -53,9 +53,11 @@ CAELUS DCE, Palantir-style teknik değerlendirmeye hazırlanmak için güvenlik,
   - İstenirse prefixsiz saf JSON satırı üretilebiliyor.
 - WS JSON escaping düzeltildi.
 - Audit `SESSION_START` ve `SESSION_END` JSON escaping düzeltildi.
-- `scenario_loaded` event’i artık imza bilgisini taşıyor:
-  - `sig_status: VERIFIED`
-  - `signature_path: ed25519+pinned`
+- `scenario_loaded` event’i artık GERÇEK imza doğrulama sonucunu taşıyor (sabit "VERIFIED" değil):
+  - `VERIFIED` → ed25519 geçti VE pinli güven çapasıyla eşleşti (`signature_path: ed25519+pinned`)
+  - `DEV_TRUST_BYPASS` → ed25519 geçti ama pin kontrolü dev bypass ile atlandı (`ed25519+unpinned`)
+  - `SELF_SIGNED_DEV` → dev imza yalnızca dev flag ile kabul edildi (`self-signed-dev`)
+  - Durum `ScenarioPack::verify_signature_gate` çıktısından gelir; yanıltıcı forensics önlenir.
 
 ### 5. Rust/C++ Dual-engine Equivalence
 
@@ -79,12 +81,30 @@ Yeni golden hash’ler:
 
 - `tools/verify_audit_log.py` güçlendirildi.
 - SEAL fingerprint, pubkey üzerinden Blake3 ile doğrulanıyor.
-- Optional `--trusted-pubkey-hex` eklendi.
+- `--trusted-pubkey-hex` pin parametresi eklendi.
+- **Pin artık CI'da varsayılan olarak kullanılıyor:** det-mode imzalayıcı pubkey'i
+  (`acdcc8...106228`) hem `ci.sh` hem `ci.bat` audit adımında pinleniyor. Pin,
+  zincirin yalnızca kendi-içinde-tutarlı olmasını değil "kim mühürledi?"
+  sorusunu da denetler; saldırganın kendi anahtarıyla yeniden mühürlemesini engeller.
 - Appended sealed sessions destekleniyor.
 - CI’da deterministik audit log izolasyonu eklendi.
 - Det-mode audit identity stabilize edildi:
   - sabit test `CAELUS_IDENTITY_KEY_HEX` set ediliyor.
   - `CDET: audit_chain_head` bit-bit deterministik hale geldi.
+
+### 6.b Negatif Güvenlik Süiti (yeni)
+
+Yeni dosya: `tests/run_security_negative.py` — sistemin **fail-closed** olduğunu
+gerçek binary ve gerçek ed25519/Blake3 yollarıyla (stub yok) kanıtlar:
+
+- Kurcalanmış senaryo (imzalı alan değiştirilmiş) → `SIGNATURE_MISMATCH`, yüklenmez.
+- `SELF_SIGNED_DEV` senaryo, dev flag yokken → reddedilir.
+- Kurcalanmış audit log (event hash bozulmuş) → verifier reddeder.
+- Audit SEAL pin: doğru pubkey kabul, yanlış pubkey reddedilir.
+
+Ek olarak C++ `test_causal_engine.cpp` imza gate'inin tüm dallarını birim
+test ediyor (boş imza, SELF_SIGNED_DEV kabul/ret, ed25519 tamper-ret, pin-ret,
+dev-bypass `DEV_TRUST_BYPASS` — asla `VERIFIED` değil).
 
 ### 7. CI / Test Altyapısı
 
@@ -94,17 +114,19 @@ Yeni dosya: `ci.sh`
 
 1. Root Rust testleri
 2. `caelus_core` Rust testleri
-3. C++ doctest
+3. C++ doctest (imza gate negatif/pozitif dalları dahil)
 4. Linux production build
 5. Production bypass string scan
 6. Determinism double-run
-7. Audit chain + SEAL verification
-8. C++ golden snapshots
-9. Rust core REPL ↔ C++ live differential
+7. Audit chain + SEAL verification (**pinli pubkey**)
+8. Negatif güvenlik süiti (tamper / dev-signed / audit forgery fail-closed)
+9. C++ golden snapshots
+10. Rust core REPL ↔ C++ live differential
 
 `ci.bat` da güncellendi:
 
-- Audit verifier adımı eklendi.
+- Audit verifier adımı eklendi (**pinli pubkey**).
+- Negatif güvenlik süiti adımı eklendi.
 - Deterministik audit log izolasyonu eklendi.
 
 ### 8. Demo / Technical Evaluation Dokümanı
@@ -135,12 +157,14 @@ Aşağıdaki kontroller başarıyla geçti:
   - narrowed model geçti
   - 1 büyük exhaustive test intentionally ignored
 - C++ doctest
-  - 12 test case
-  - 69 assertion
+  - 19 test case
+  - 94 assertion
+  - imza gate negatif/pozitif dalları dahil (tamper-ret, pin-ret, dev-bypass)
 - `CAELUS_PRODUCTION=1 ./build.sh`
   - Linux binary yaklaşık 3.7 MB
 - Production bypass string scan
-- Clean audit verification
+- Audit verification (pinli pubkey)
+- Negatif güvenlik süiti (`tests/run_security_negative.py` — 6 kontrol, hepsi fail-closed)
 - C++ golden snapshots
 - Rust core REPL ↔ C++ live differential
 - `./ci.sh`
@@ -150,11 +174,29 @@ Aşağıdaki kontroller başarıyla geçti:
 - Opsera MCP security scan çalıştırılamadı çünkü Opsera MCP server auth istiyor.
 - Yerel secret/string scan ve CI security-relevant kontroller çalıştırıldı.
 - Python audit verifier için cloud ortamına `blake3` modülü kuruldu.
-- Gerçek production key rotation yapılmadı.
-- Private seed repodan çıkarıldı ama public trust anchor mevcut senaryolarla uyumlu bırakıldı.
-- Eski commit history içinde private seed geçmişte bulunmuş olabilir.
-- Gerçek production için Git history temizliği + key rotation gerekir.
+- **C++ property testi yok:** Rust çekirdekte randomize `invariant_sweep` var;
+  C++ motorda yalnız hedefli doctest'ler bulunuyor. C++'a özel UB/overflow
+  modları daha az kapsamlı test ediliyor (bilinen sınır).
+- **Statik glibc uyarıları:** Linux üretim linkinde `getaddrinfo` / `getpwuid_r`
+  / `dlopen` için "statically linked applications require ... glibc" uyarıları
+  çıkıyor. Binary pratikte host glibc'sine bağlıdır; "tek statik binary" iddiası
+  "eşleşen glibc host için tek kendine-yeten binary" olarak okunmalı, tam
+  taşınabilir statik çalıştırılabilir olarak değil.
 - UI görsel doğrulama yapılmadı; değişiklikler ağırlıklı backend/CLI/CI/kernel seviyesinde.
+
+### Anahtar / Git history riski (etki zinciriyle)
+
+- Private seed (`tools/caelus_signing.key`) repodan çıkarıldı ve `.gitignore`'a eklendi.
+- Public trust anchor mevcut senaryolarla uyumlu bırakıldı; gerçek production key rotation YAPILMADI.
+- **Risk:** Eski commit history içinde private seed hâlâ bulunabilir. Eğer öyleyse,
+  o anahtarla imzalanmış HER senaryo/plugin artık güvenilmez kabul edilmelidir.
+- **Zorunlu remediation zinciri (production'a geçişte):**
+  1. Git history temizliği (ör. `git filter-repo`) ile seed'in tüm geçmişten silinmesi.
+  2. Offline anahtar töreni ile YENİ ed25519 çiftinin üretilmesi.
+  3. `CAELUS_TRUSTED_PUBKEY` (include/scenario_pack.h) ve audit pin'inin yeni pubkey'e güncellenmesi.
+  4. Tüm üretim senaryolarının ve plugin'lerin yeni anahtarla yeniden imzalanması.
+  5. Golden hash'lerin (`run_bs_exec_golden.py`) ve audit pin'lerinin (`ci.sh`/`ci.bat`) yenilenmesi.
+- Bu adımlar tamamlanana kadar paket bir demo/teknik değerlendirme başlangıç noktasıdır, production değildir.
 
 ## Sonuç
 
