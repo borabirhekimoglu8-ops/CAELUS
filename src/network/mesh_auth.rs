@@ -367,6 +367,17 @@ impl DeviceIdentity {
             return Self::load_or_generate_with_delegate(path, &delegate);
         }
 
+        // CAELUS_IDENTITY_KEY_HEX wins on EVERY platform (previously POSIX-only).
+        // det-mode relies on it for a stable SESSION fingerprint; the old order
+        // read the DPAPI blob first on Windows, and a blob written by another
+        // machine fails to unprotect there, silently minting a fresh random
+        // identity per run — which broke audit-chain determinism (first caught
+        // by the cross-platform CDET job in CI).
+        if let Ok(hex) = std::env::var("CAELUS_IDENTITY_KEY_HEX") {
+            let seed = seed_from_hex(&hex)?;
+            return Ok(Self::from_seed(&seed));
+        }
+
         #[cfg(windows)]
         {
             if let Ok(bytes) = fs::read(path) {

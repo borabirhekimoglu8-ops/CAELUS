@@ -60,8 +60,12 @@ jobs:
       - name: Set up MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Verus-pinned Rust toolchain
+        run: rustup toolchain install 1.95.0-x86_64-pc-windows-msvc
+
       - name: Install Python verifier dependencies
-        run: python -m pip install --upgrade blake3 cryptography
+        # ci.bat prefers the `py -3` launcher; install into that interpreter.
+        run: py -3 -m pip install --upgrade blake3 cryptography
 
       - name: Toolchain versions
         shell: cmd
@@ -69,12 +73,13 @@ jobs:
           rustc --version
           cargo --version
           cl.exe 2>&1 | findstr /I version
-          python --version
+          py -3 --version
 
       - name: Run full CI pipeline
         shell: cmd
         env:
           CAELUS_CXX: MSVC
+          PYTHONUTF8: "1"
         run: ci.bat
 
       - name: Extract deterministic CDET block

@@ -1102,6 +1102,8 @@ def compile_command(tool: str, compiler: list[str]) -> list[str]:
             "/std:c++17",
             "/O2",
             "/EHsc",
+            "/utf-8",
+            "/DNOMINMAX",
             f"/I{project_root}",
             f"/I{include_root}",
             f"/I{include_src}",
