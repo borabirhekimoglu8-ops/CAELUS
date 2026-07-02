@@ -3,7 +3,8 @@
 #
 # NE YAPAR: Geçmişe gömülü üretilmiş artefact'ları (≈16k satır/4.5k dosya:
 # target/ ağaçları, build_cmake/, build_tests/, __pycache__, 3.3 MB audit log)
-# ve — en önemlisi — bir dönem düz metin commit'lenmiş ESKİ imzalama tohumunu
+# artı bayat dist/ binary'lerini ve — en önemlisi — bir dönem düz metin
+# commit'lenmiş ESKİ imzalama tohumunu
 # (tools/caelus_signing.key) TÜM geçmişten söker. Eski tohumun pubkey'i
 # 2026-07-02 anahtar töreniyle zaten döndürüldü (docs/ANAHTAR_TORENI_*.md);
 # bu temizlik, sızmış tohumun git geçmişinden dahi kazınmasını tamamlar ve
@@ -45,7 +46,8 @@ git filter-repo \
     --path build_cmake/ \
     --path build_tests/ \
     --path tools/__pycache__/ \
-    --path tests/__pycache__/
+    --path tests/__pycache__/ \
+    --path dist/
 
 echo "Yeniden yazım sonrası boyut: $(du -sh .git | cut -f1)"
 echo
