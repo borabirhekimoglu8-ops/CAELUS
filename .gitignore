@@ -5,5 +5,14 @@ caelus_core/target/
 *.sig.tmp
 dist/caelus_os
 
+# Generated build trees and bytecode
+build_cmake/
+build_tests/
+__pycache__/
+*.pyc
+
+# Committed test fixtures are exempt from the *.log rule above.
+!tests/fixtures/*.log
+
 # Private signing material must be generated/stored outside the repository.
 tools/caelus_signing.key

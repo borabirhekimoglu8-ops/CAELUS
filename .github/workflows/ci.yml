@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux full pipeline (ci.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+
+      - name: Install Python verifier dependencies
+        run: python3 -m pip install --upgrade blake3 cryptography
+
+      - name: Toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+          g++ --version | head -1
+          python3 --version
+
+      - name: Run full CI pipeline
+        run: ./ci.sh
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: caelus_os-linux
+          path: dist/caelus_os
+          if-no-files-found: error
