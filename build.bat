@@ -456,7 +456,7 @@ if not "!BUILD_OK!"=="1" if "%CXX_TOOL%"=="GCC" (
 :: Direct MSVC build.
 if not "!BUILD_OK!"=="1" if "%CXX_TOOL%"=="MSVC" (
     echo [3/3] MSVC cl.exe ile derleme...
-    "%CXX_CMD%" /std:c++17 /O2 /GL /EHsc %EMBED_DEFINE:-D=/D% %PROD_DEFINE_MSVC% %INCLUDE_FLAGS% %CPP_SOURCES% /Fe:"%OUT_EXE%" /link /LTCG /INCREMENTAL:NO "%RUST_LIB%" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
+    "%CXX_CMD%" /std:c++17 /O2 /GL /EHsc /utf-8 /DNOMINMAX %EMBED_DEFINE:-D=/D% %PROD_DEFINE_MSVC% %INCLUDE_FLAGS% %CPP_SOURCES% /Fe:"%OUT_EXE%" /link /LTCG /INCREMENTAL:NO "%RUST_LIB%" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
     if errorlevel 1 ( echo [HATA] MSVC cl.exe derleme basarisiz. & exit /b 1 )
     set "BUILD_OK=1"
 )
