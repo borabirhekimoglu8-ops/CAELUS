@@ -11,6 +11,11 @@ build_tests/
 __pycache__/
 *.pyc
 
+# War Room UI extracted at runtime from the embedded binary (deleted on clean
+# exit; source of truth is ui/index.html + ui/app.js).
+caelus_ui.html
+caelus_app.js
+
 # Committed test fixtures are exempt from the *.log rule above.
 !tests/fixtures/*.log
 
