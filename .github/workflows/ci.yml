@@ -90,6 +90,29 @@ jobs:
           PYTHONUTF8: "1"
         run: ci.bat
 
+      - name: Determinism diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Item dist\caelus_os.exe | Format-List Length, LastWriteTime
+          Remove-Item -ErrorAction SilentlyContinue caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Copy-Item caelus_audit_0000000000000000.log run1.log
+          Remove-Item caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Copy-Item caelus_audit_0000000000000000.log run2.log
+          Write-Host '--- RUN1 audit ---'; Get-Content run1.log
+          Write-Host '--- RUN2 audit ---'; Get-Content run2.log
+          Write-Host '--- with external CAELUS_IDENTITY_KEY_HEX ---'
+          $env:CAELUS_IDENTITY_KEY_HEX = 'c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1'
+          Remove-Item caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Copy-Item caelus_audit_0000000000000000.log run3.log
+          Remove-Item caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Write-Host '--- RUN3 audit (env set) ---'; Get-Content run3.log
+          Write-Host '--- RUN4 audit (env set) ---'; Get-Content caelus_audit_0000000000000000.log
+
       - name: Extract deterministic CDET block
         shell: pwsh
         run: |
