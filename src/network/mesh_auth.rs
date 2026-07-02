@@ -535,7 +535,6 @@ fn read_key_blob<'a>(bytes: &'a [u8], scheme: &[u8]) -> Option<&'a [u8]> {
     Some(&bytes[blob_start..blob_end])
 }
 
-#[cfg(not(windows))]
 fn seed_from_hex(hex: &str) -> io::Result<[u8; 32]> {
     let hex = hex.trim();
     if hex.len() != 64 {

@@ -75,6 +75,14 @@ jobs:
           cl.exe 2>&1 | findstr /I version
           py -3 --version
 
+      - name: Build fresh production binary (build.bat)
+        # ci.bat does not build; without this it exercises the stale committed
+        # dist\caelus_os.exe instead of the code under test.
+        shell: cmd
+        env:
+          CAELUS_CXX: MSVC
+        run: build.bat
+
       - name: Run full CI pipeline
         shell: cmd
         env:
