@@ -30,12 +30,25 @@ class VerificationError(Exception):
 def load_blake3() -> Any:
     try:
         import blake3  # type: ignore
+
+        return blake3
+    except ImportError:
+        pass
+    # Air-gapped fallback: bit-identical pure-Python BLAKE3 (plain hash only),
+    # validated against the real package by tests/test_pure_blake3.py.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import pure_blake3  # type: ignore
+
+        print("ed25519 zinciri: pure-Python blake3 fallback aktif (yavaş)",
+              file=sys.stderr)
+        return pure_blake3
     except ImportError as exc:
         raise VerificationError(
-            "Python module 'blake3' is required for chain verification. "
-            "No verification was performed; install/provide it offline, then retry."
+            "Python module 'blake3' is required for chain verification and the "
+            "bundled tools/pure_blake3.py fallback was not found. "
+            "No verification was performed; install/provide either, then retry."
         ) from exc
-    return blake3
 
 
 def load_ed25519_verifier() -> tuple[Callable[[bytes, bytes, bytes], None], str] | None:

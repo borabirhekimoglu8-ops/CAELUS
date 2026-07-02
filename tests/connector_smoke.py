@@ -21,6 +21,14 @@ include/plugin/caelus_connector.h):
         leaks into memo fields.
     (c) token UNSET               -> legacy behaviour (accept without auth),
         verified both before and after the token scenarios.
+    (d) signature pin SET (CAELUS_TRUSTED_INTEL_PUBKEY) + valid #sig= envelope
+        -> accepted with the envelope stripped; graph propagation intact.
+    (e) signature pin SET + unsigned/malformed/wrong-key/tampered payloads
+        -> rejected before parsing (Zapier 401 / gate false); fail-closed when
+        no verifier hook is installed. ed25519 math is exercised by the Rust
+        unit tests; the harness installs a deterministic stub verifier to
+        prove the gate plumbing (envelope, pin match, byte-exact signed
+        region, strip) without linking the Rust staticlib.
 
 This is a NON-deterministic, network-active integration test; it must run
 OUTSIDE ci.bat --det-mode (det-mode skips networking).
@@ -804,6 +812,225 @@ bool run_mqtt_auth_smoke() {
 
 } // namespace
 
+// ─── Signature-layer scenarios (d)+(e) ──────────────────────────────────────
+// Deterministic stub "signature": first 8 bytes = FNV-1a64(msg) little-endian,
+// rest zero. Same shape as the ed25519 hook, so the full gate path (envelope
+// parse, pin memcmp, byte-exact signed region, strip) is exercised without
+// linking the Rust staticlib.
+
+constexpr const char kIntelTestPinHex[] =
+    "1111111111111111111111111111111111111111111111111111111111111111";
+constexpr const char kIntelWrongPinHex[] =
+    "2222222222222222222222222222222222222222222222222222222222222222";
+
+uint64_t fnv1a64(const uint8_t* p, size_t n) {
+    uint64_t h = 1469598103934665603ULL;
+    for (size_t i = 0; i < n; ++i) { h ^= p[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+uint8_t stub_sig_verify(const uint8_t* msg, size_t len,
+                        const uint8_t* pub, const uint8_t* sig) {
+    (void)pub;
+    const uint64_t h = fnv1a64(msg, len);
+    for (int i = 0; i < 8; ++i) {
+        if (sig[i] != static_cast<uint8_t>(h >> (8 * i))) return 0;
+    }
+    for (int i = 8; i < 64; ++i) {
+        if (sig[i] != 0) return 0;
+    }
+    return 1;
+}
+
+std::string stub_sign_envelope(const std::string& body, const char* pub_hex) {
+    std::string msg = std::string("CAELUS_INTEL_V1\n") + body;
+    const uint64_t h = fnv1a64(reinterpret_cast<const uint8_t*>(msg.data()), msg.size());
+    uint8_t sig[64] = {};
+    for (int i = 0; i < 8; ++i) sig[i] = static_cast<uint8_t>(h >> (8 * i));
+    static const char* hexd = "0123456789abcdef";
+    std::string sig_hex;
+    sig_hex.reserve(128);
+    for (int i = 0; i < 64; ++i) {
+        sig_hex.push_back(hexd[sig[i] >> 4]);
+        sig_hex.push_back(hexd[sig[i] & 0x0f]);
+    }
+    return std::string("#sig=ed25519:") + pub_hex + ":" + sig_hex + "\n" + body;
+}
+
+bool gate_check(bool cond, const char* what, bool& ok) {
+    if (!cond) {
+        std::cerr << "[GATE] FAIL: " << what << "\n";
+        ok = false;
+    }
+    return cond;
+}
+
+// Direct IntelAuthGate::admit() semantics, no sockets: deterministic and fast.
+bool run_gate_unit_checks() {
+    using caelus::connector_detail::IntelAuthGate;
+    using caelus::connector_detail::set_intel_sig_verifier;
+    bool ok = true;
+    const std::string body = "0.5,1,gate unit";
+
+    unset_env_var("CAELUS_INTEL_TOKEN");
+    set_env_var("CAELUS_TRUSTED_INTEL_PUBKEY", kIntelTestPinHex);
+
+    {   // (e) pin set + verifier hook NOT installed -> fail closed
+        set_intel_sig_verifier(nullptr);
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = stub_sign_envelope(body, kIntelTestPinHex);
+        gate_check(!gate.admit(raw, false), "no-verifier must reject", ok);
+    }
+
+    set_intel_sig_verifier(&stub_sig_verify);
+    {   // (d) valid envelope -> accepted, envelope stripped byte-exactly
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = stub_sign_envelope(body, kIntelTestPinHex);
+        gate_check(gate.admit(raw, false), "valid signature must pass", ok);
+        gate_check(raw == body, "envelope must be stripped to exact body", ok);
+    }
+    {   // (e) unsigned payload -> rejected while pin set
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = body;
+        gate_check(!gate.admit(raw, false), "unsigned must be rejected", ok);
+    }
+    {   // (e) leading whitespace breaks byte-exact envelope -> unsigned -> reject
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = " " + stub_sign_envelope(body, kIntelTestPinHex);
+        gate_check(!gate.admit(raw, false), "leading-space envelope must reject", ok);
+    }
+    {   // (e) malformed envelope -> reject (never demoted to unsigned)
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = std::string("#sig=ed25519:deadbeef\n") + body;
+        gate_check(!gate.admit(raw, false), "malformed envelope must reject", ok);
+    }
+    {   // (e) wrong pubkey (valid stub sig) -> pin mismatch reject
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = stub_sign_envelope(body, kIntelWrongPinHex);
+        gate_check(!gate.admit(raw, false), "wrong pubkey must reject", ok);
+    }
+    {   // (e) tampered body after signing -> reject
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = stub_sign_envelope(body, kIntelTestPinHex);
+        raw[raw.size() - 1] ^= 1;  // flip last body byte
+        gate_check(!gate.admit(raw, false), "tampered body must reject", ok);
+    }
+    {   // (e) transport auth must NOT bypass the signature layer
+        set_env_var("CAELUS_INTEL_TOKEN", kIntelTestToken);
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = body;
+        gate_check(!gate.admit(raw, true), "header auth must not bypass signature", ok);
+        unset_env_var("CAELUS_INTEL_TOKEN");
+    }
+    {   // (e) present-but-invalid pin env -> reject everything
+        set_env_var("CAELUS_TRUSTED_INTEL_PUBKEY", "not-hex-at-all");
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = stub_sign_envelope(body, kIntelTestPinHex);
+        gate_check(!gate.admit(raw, false), "invalid pin must reject", ok);
+        set_env_var("CAELUS_TRUSTED_INTEL_PUBKEY", kIntelTestPinHex);
+    }
+
+    unset_env_var("CAELUS_TRUSTED_INTEL_PUBKEY");
+    {   // pin unset: stray valid envelope is stripped, payload accepted (legacy)
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = stub_sign_envelope(body, kIntelTestPinHex);
+        gate_check(gate.admit(raw, false), "pin unset must accept legacy", ok);
+        gate_check(raw == body, "stray envelope must still be stripped", ok);
+    }
+    {   // pin unset: malformed envelope is still rejected (hygiene)
+        IntelAuthGate gate;
+        gate.init("gate-unit");
+        std::string raw = std::string("#sig=bogus\n") + body;
+        gate_check(!gate.admit(raw, false), "malformed envelope rejects even unpinned", ok);
+    }
+
+    std::cout << "[SMOKE] gate unit checks " << (ok ? "OK" : "FAILED") << "\n";
+    return ok;
+}
+
+// (d)+(e) end-to-end over the Zapier HTTP path: signed accept propagates to the
+// graph, unsigned/tampered answer 401 and never reach pull/inject.
+bool run_zapier_sig_smoke() {
+    const uint16_t port = reserve_loopback_port();
+    if (port == 0) {
+        std::cerr << "could not reserve loopback port for Zapier sig smoke\n";
+        return false;
+    }
+    set_env_var("CAELUS_ZAPIER_WEBHOOK_PORT", std::to_string(port));
+    unset_env_var("CAELUS_INTEL_TOKEN");
+    set_env_var("CAELUS_TRUSTED_INTEL_PUBKEY", kIntelTestPinHex);
+    caelus::connector_detail::set_intel_sig_verifier(&stub_sig_verify);
+
+    EngineState state{};
+    CaelusEngineFns fns = make_engine_fns(state);
+    caelus::ZapierWebhookConnector connector;
+    const CaelusPluginVTable* vtbl = caelus::ZapierWebhookConnector::make_vtable();
+    if (!vtbl || !vtbl->init || !vtbl->pull_intel || !vtbl->cleanup) return false;
+    if (!vtbl->init(&connector, &fns)) {
+        std::cerr << "ZapierWebhookConnector init failed (sig smoke)\n";
+        unset_env_var("CAELUS_TRUSTED_INTEL_PUBKEY");
+        return false;
+    }
+
+    bool ok = true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    {   // (e) imzasiz govde -> 401
+        std::string resp;
+        if (post_loopback(port, "0.82,2,zapier imzasiz", resp) ||
+            resp.find("401") == std::string::npos) {
+            std::cerr << "unsigned POST was not rejected: " << resp << "\n";
+            ok = false;
+        }
+    }
+    {   // (e) imza sonrasi kurcalanan govde -> 401
+        std::string signed_body = stub_sign_envelope("0.9,3,zapier tamper", kIntelTestPinHex);
+        signed_body[signed_body.size() - 1] ^= 1;
+        std::string resp;
+        if (post_loopback(port, signed_body, resp) ||
+            resp.find("401") == std::string::npos) {
+            std::cerr << "tampered POST was not rejected: " << resp << "\n";
+            ok = false;
+        }
+    }
+
+    // Rejects must never surface: no pull event, no inject, untouched graph.
+    if (!expect_no_intel(connector, vtbl, 300)) ok = false;
+    if (!state.injected.empty()) {
+        std::cerr << "rejected signed intel reached inject_intel callback\n";
+        ok = false;
+    }
+
+    if (ok) {  // (d) gecerli imzali CSV -> kabul + graf propagasyonu
+        std::string resp;
+        const std::string body =
+            stub_sign_envelope("0.82,2,zapier sig ok", kIntelTestPinHex);
+        if (!post_loopback(port, body, resp)) {
+            std::cerr << "signed POST rejected: " << resp << "\n";
+            ok = false;
+        } else {
+            ok = drain_through_registry(connector, vtbl, fns, state,
+                                        0.82, 2, "zapier sig ok") && ok;
+        }
+    }
+
+    vtbl->cleanup(&connector);
+    unset_env_var("CAELUS_TRUSTED_INTEL_PUBKEY");
+    unset_env_var("CAELUS_ZAPIER_WEBHOOK_PORT");
+    std::cout << "[SMOKE] zapier signature smoke " << (ok ? "OK" : "FAILED") << "\n";
+    return ok;
+}
+
 int main(int argc, char** argv) {
     std::string mode = "all";
     for (int i = 1; i < argc; ++i) {
@@ -813,8 +1040,10 @@ int main(int argc, char** argv) {
 
     bool ok = true;
     if (mode == "all" || mode == "zapier") {
+        ok = run_gate_unit_checks() && ok;   // (d)+(e) imza kapisi semantigi
         ok = run_zapier_smoke() && ok;       // (c) token UNSET → legacy
         ok = run_zapier_auth_smoke() && ok;  // (a)+(b) token SET kabul/ret
+        ok = run_zapier_sig_smoke() && ok;   // (d)+(e) imza uctan uca
     }
     if (mode == "all" || mode == "mqtt") {
         ok = run_mqtt_smoke() && ok;         // (c) token UNSET → legacy

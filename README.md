@@ -57,14 +57,16 @@ REPL komutları: `status/snapshot [--json]`, `list`, `tick <n>`, `lever <id>`, `
 | Adım | İçerik |
 |---|---|
 | Rust testleri | `cargo test` (ağ/kripto/audit) + `caelus_core` çekirdek testleri |
-| C++ birim testleri | doctest harness (`tests/test_causal_engine.cpp`) |
+| C++ birim testleri | doctest harness (`tests/test_causal_engine.cpp`, JSON parser sınır vakaları dahil) |
+| Connector smoke | Intel veri düzlemi token + ed25519 imza kapısı (kabul/ret/graf propagasyonu) |
+| blake3 eşdeğerliği | `tools/pure_blake3.py` fallback'inin gerçek pakete bit-bit eşitliği |
 | Üretim build | `CAELUS_PRODUCTION=1 ./build.sh` + <50 MB boyut kapısı |
 | Bypass taraması | Üretim binary'sinde dev-bypass string'i olmadığı doğrulanır |
 | Determinizm | Çift koşu, CDET bloklarının bit-bit karşılaştırması |
 | Audit doğrulama | Blake3 zinciri + ed25519 SEAL (`tools/verify_audit_log.py`) |
 | Golden + diferansiyel | REPL snapshot'ları C++ ve Rust çekirdeklerinde karşılaştırılır |
 
-Aynı hat GitHub Actions üzerinde otomatik koşar: [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Windows karşılığı `ci.bat`'tır. Doğrulayıcı için Python bağımlılıkları: `pip install blake3 cryptography`.
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) her push'ta üç job koşar: **Linux** (`ci.sh`), **Windows/MSVC** (`ci.bat`) ve **çapraz platform determinizm** — iki platformun `--det-mode` CDET blokları bit-bit karşılaştırılır ("aynı girdi her platformda aynı çıktı" iddiasının sürekli kanıtı). `v*` tag'i push'lamak [`release.yml`](.github/workflows/release.yml) ile SHA-256'lı release binary'si yayımlar. Doğrulayıcı için Python bağımlılıkları: `pip install blake3 cryptography` (blake3 yoksa saf-Python fallback devreye girer).
 
 ## Güven zinciri
 
@@ -75,7 +77,7 @@ imzalama tohumu (repo DIŞI, offline)
             (CAELUS_TRUSTED_PUBKEY = tools/caelus_trusted_pubkey.txt)
 ```
 
-Paralel zincirler: eklentiler (`<plugin>.sig` sidecar + pin), mesh (imzalı beacon + fingerprint + anti-replay), kimlik (Windows DPAPI blob / KEYMGMT eklentisi), audit mührü (`--trusted-pubkey-hex` pini). Özel imzalama tohumları **hiçbir zaman** repoya girmez; rotasyon offline anahtar töreni gerektirir (`docs/PALANTIR_DCE_DEMO.md#signing-key-policy`).
+Paralel zincirler: eklentiler (`<plugin>.sig` sidecar + pin), mesh (imzalı beacon + fingerprint + anti-replay), kimlik (Windows DPAPI blob / KEYMGMT eklentisi), audit mührü (`--trusted-pubkey-hex` pini), **intel veri düzlemi** (`CAELUS_TRUSTED_INTEL_PUBKEY` pini + `#sig=ed25519:` payload zarfı — bkz. [`docs/INTEL_IMZA_SOZLESMESI.md`](docs/INTEL_IMZA_SOZLESMESI.md)). Özel imzalama tohumları **hiçbir zaman** repoya girmez; rotasyon offline anahtar töreni gerektirir (`docs/PALANTIR_DCE_DEMO.md#signing-key-policy`).
 
 ## Depo düzeni
 
@@ -93,6 +95,5 @@ docs/                  Geliştirme raporları (v1–v5), geçiş/UI/golden rapor
 
 ## Bilinen sınırlar
 
-- MQTT/Zapier intel veri düzlemi henüz payload imzası taşımıyor (tasarım `docs/GERCEK_DUNYA_GECIS_RAPORU.md` §5'te).
 - POSIX kimlik yolu TPM/HSM yerine `CAELUS_IDENTITY_KEY_HEX` env değişkenini kullanır.
 - War Room telemetrisi bilinçli olarak yalnız loopback'tir; uzak izleme kapsam dışıdır.

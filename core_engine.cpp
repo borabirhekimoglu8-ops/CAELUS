@@ -212,10 +212,10 @@ static std::string hex_encode(const uint8_t* buf, size_t len) {
 // scenario_pack.h şu an aktif düzenlendiği için burada kasıtlı olarak ayrı
 // ve farklı isimli bir sabit tanımlandı.
 static constexpr uint8_t CAELUS_TRUSTED_PLUGIN_PUBKEY[32] = {
-    0x9b, 0xb1, 0xdb, 0xd0, 0x39, 0x04, 0x36, 0x70,
-    0xb7, 0xbf, 0x2c, 0x5d, 0x75, 0x33, 0x77, 0x78,
-    0x66, 0x13, 0x5b, 0x92, 0xf9, 0xb3, 0x8f, 0xe6,
-    0xcd, 0x8d, 0x97, 0x35, 0xa0, 0x4f, 0xa8, 0x02,
+    0xa1, 0x1b, 0x52, 0x8e, 0x53, 0x44, 0xd9, 0xaa,
+    0x71, 0x47, 0x47, 0x3b, 0xf1, 0x6c, 0xe9, 0xe9,
+    0xc9, 0x77, 0xf8, 0x96, 0x08, 0x95, 0x8b, 0x58,
+    0x63, 0x59, 0x41, 0x4c, 0xc7, 0xe9, 0x7e, 0x7f,
 };
 
 /// DynamicPluginLoader::CaelusPluginSignatureVerifier imzasına uygun üretim
@@ -424,6 +424,22 @@ static void audit_repl_event(const std::string& command,
     g_audit.append(ss.str());
 }
 
+// Intel veri düzlemi retlerini (imza/token kapısı, okuyucu thread'lerdeki
+// atomik sayaç) motor thread'inde adli zincire işler; her
+// dispatch_connectors() geçişinden sonra çağrılır. Audit henüz açık değilse
+// delta birikir ve açıldığında tek olayda raporlanır.
+static void audit_intel_rejections() {
+    static uint64_t last_seen = 0;
+    const uint64_t total = caelus::connector_detail::intel_rejected_total()
+                               .load(std::memory_order_relaxed);
+    if (total == last_seen || !g_audit.is_open()) return;
+    std::ostringstream ss;
+    ss << "{\"type\":\"INTEL_REJECTED\",\"delta\":" << (total - last_seen)
+       << ",\"total\":" << total << "}";
+    g_audit.append(ss.str());
+    last_seen = total;
+}
+
 static const caelus::causal::Lever* find_pack_lever(const caelus::ScenarioPack& pack,
                                                     const std::string& id) {
     for (const auto& lever : pack.levers)
@@ -509,6 +525,7 @@ static caelus::causal::EngineSnapshot run_repl_tick(
         std::cout << "[CONNECTOR] Tick " << tick_before << ": "
                   << delivered << " intel olayi enjekte edildi.\n";
     }
+    audit_intel_rejections();
 
     caelus::causal::EngineSnapshot snap = engine.run_ticks(1);
     g_emitter.emit(caelus::ws_json::friction(
@@ -915,6 +932,12 @@ int main(int argc, char* argv[]) {
     ConnectorIntelBridge connector_bridge{&causal_engine};
     g_registry.bind_intel_injector(&connector_bridge, &InjectConnectorIntel);
 
+    // Intel veri düzlemi imza doğrulayıcısı: Rust ed25519 FFI'si kancaya
+    // kurulur. Pin (CAELUS_TRUSTED_INTEL_PUBKEY) set iken kapı bu doğrulayıcı
+    // olmadan hiçbir payload kabul etmez (fail-closed); kurulum connector
+    // do_init'lerinden ÖNCE olmalıdır.
+    caelus::connector_detail::set_intel_sig_verifier(&caelus_verify_scenario_signature);
+
     // Live connectors are opt-in and registered only after the concrete engine
     // intel sink is bound. Their reader threads enqueue events; engine ticks
     // drain them through dispatch_connectors() on the main causal path.
@@ -988,6 +1011,7 @@ int main(int argc, char* argv[]) {
             std::cout << "[CONNECTOR] Tick " << tick << ": "
                       << delivered << " intel olayi enjekte edildi.\n";
         }
+        audit_intel_rejections();
         return causal_engine.tick();
     };
 

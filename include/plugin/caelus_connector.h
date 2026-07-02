@@ -663,8 +663,35 @@ inline std::string json_string(const std::string& obj, const char* key) {
 // Token comparison is constant-time (volatile XOR accumulator). Presented
 // auth material is ALWAYS stripped from the payload before parsing so the
 // token can never leak into engine memo fields or the causal graph.
-// Full signature-based data-plane identity (per-source keys) remains a
-// design item in docs/GERCEK_DUNYA_GECIS_RAPORU.md.
+//
+// ── Signature layer (CAELUS_TRUSTED_INTEL_PUBKEY) ────────────────────────────
+//
+// On top of the transport token, the data plane supports asymmetric source
+// authenticity (docs/INTEL_IMZA_SOZLESMESI.md — the FIELD-IDENTITY item from
+// docs/GERCEK_DUNYA_GECIS_RAPORU.md §5):
+//
+//   CAELUS_TRUSTED_INTEL_PUBKEY set (64 hex = pinned ed25519 pubkey):
+//     every intel message MUST start with the envelope line
+//       #sig=ed25519:<64hex-pubkey>:<128hex-signature>\n
+//     The signature covers the byte string
+//       "CAELUS_INTEL_V1\n" || <every byte after that first newline>
+//     (domain separation: an intel signature can never double as a scenario,
+//     plugin, or mesh signature). The presented pubkey must match the pin
+//     byte-for-byte BEFORE the signature is checked. Unsigned, malformed,
+//     wrong-key, or bad-signature messages are rejected before parsing and
+//     counted into intel_rejected_total() for the engine-thread audit trail.
+//   CAELUS_TRUSTED_INTEL_PUBKEY unset:
+//     legacy behaviour (token-only) with a single process-wide dev warning;
+//     a stray #sig= line is still stripped so it cannot reach the graph.
+//     CAELUS_PRODUCTION builds refuse to start live connectors without the
+//     pin (do_init FATAL) — same fail-closed rule as the token.
+//
+// ed25519 math itself lives in the Rust staticlib. To preserve this header's
+// "no Rust FFI linkage" property for header-only consumers (the connector
+// smoke harness), verification goes through the intel_sig_verifier() hook:
+// core_engine installs the real Rust verifier at bootstrap; test harnesses
+// may install a stub. Pin set + no verifier installed = reject everything
+// (fail-closed), never accept-by-default.
 
 inline bool is_ws_char(char c) noexcept {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -739,8 +766,97 @@ inline bool csv_strip_auth_line(std::string& raw, std::string& value_out) noexce
     return true;
 }
 
+// ── Intel signature-layer primitives ─────────────────────────────────────────
+
+/** Domain-separation prefix for intel payload signatures (includes '\n'). */
+static constexpr const char kIntelSigDomain[] = "CAELUS_INTEL_V1\n";
+/** Mandatory first-line envelope prefix when the signature pin is active. */
+static constexpr const char kIntelSigPrefix[] = "#sig=ed25519:";
+
+/**
+ * ed25519 verify hook. Matches the Rust caelus_verify_scenario_signature ABI:
+ * returns 1 when sig64 is a valid signature of msg under pubkey32.
+ * Installed once at bootstrap (engine thread) before any reader thread
+ * starts; read-only afterwards, hence a plain atomic without further locking.
+ */
+using IntelSigVerifyFn = uint8_t (*)(const uint8_t* msg, size_t msg_len,
+                                     const uint8_t* pubkey32, const uint8_t* sig64);
+
+inline std::atomic<IntelSigVerifyFn>& intel_sig_verifier_slot() noexcept {
+    static std::atomic<IntelSigVerifyFn> fn{nullptr};
+    return fn;
+}
+
+inline void set_intel_sig_verifier(IntelSigVerifyFn fn) noexcept {
+    intel_sig_verifier_slot().store(fn, std::memory_order_release);
+}
+
+/** Process-wide count of rejected intel messages (auth OR signature layer).
+ *  Reader threads increment; the engine thread drains the delta into the
+ *  audit chain after each dispatch_connectors() pass. */
+inline std::atomic<uint64_t>& intel_rejected_total() noexcept {
+    static std::atomic<uint64_t> total{0};
+    return total;
+}
+
+inline int intel_hex_nibble(char c) noexcept {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+inline bool intel_hex_to_bytes(const char* hex, size_t hex_len,
+                               uint8_t* out, size_t out_len) noexcept {
+    if (!hex || !out || hex_len != out_len * 2u) return false;
+    for (size_t i = 0; i < out_len; ++i) {
+        const int hi = intel_hex_nibble(hex[i * 2u]);
+        const int lo = intel_hex_nibble(hex[i * 2u + 1u]);
+        if (hi < 0 || lo < 0) return false;
+        out[i] = static_cast<uint8_t>((hi << 4) | lo);
+    }
+    return true;
+}
+
+enum class IntelSigLine : uint8_t { kAbsent, kOk, kMalformed };
+
+/**
+ * Parse and strip the `#sig=ed25519:<pub>:<sig>` envelope line.
+ *
+ * The envelope must occupy the exact first bytes of the payload (no leading
+ * whitespace — the signed region is byte-exact) and end with '\n'. On kOk the
+ * line is removed from `raw`, leaving precisely the signed body bytes.
+ * A payload that starts with "#sig" but does not parse is kMalformed and must
+ * be rejected (never demoted to "unsigned").
+ */
+inline IntelSigLine extract_intel_sig_line(std::string& raw,
+                                           uint8_t pub_out[32],
+                                           uint8_t sig_out[64]) noexcept {
+    static constexpr size_t kPrefixLen = sizeof(kIntelSigPrefix) - 1u;
+    static constexpr size_t kPubHex = 64u;
+    static constexpr size_t kSigHex = 128u;
+    if (raw.compare(0, 4u, "#sig") != 0) return IntelSigLine::kAbsent;
+    if (raw.compare(0, kPrefixLen, kIntelSigPrefix) != 0) return IntelSigLine::kMalformed;
+    const size_t pub_at = kPrefixLen;
+    const size_t colon_at = pub_at + kPubHex;
+    const size_t sig_at = colon_at + 1u;
+    const size_t nl_at = sig_at + kSigHex;
+    if (raw.size() <= nl_at || raw[colon_at] != ':' || raw[nl_at] != '\n') {
+        return IntelSigLine::kMalformed;
+    }
+    if (!intel_hex_to_bytes(raw.data() + pub_at, kPubHex, pub_out, 32u) ||
+        !intel_hex_to_bytes(raw.data() + sig_at, kSigHex, sig_out, 64u)) {
+        return IntelSigLine::kMalformed;
+    }
+    raw.erase(0, nl_at + 1u);
+    return IntelSigLine::kOk;
+}
+
 /**
  * IntelAuthGate — per-connector intel data-plane auth policy.
+ *
+ * Layer 1: ed25519 source signature (CAELUS_TRUSTED_INTEL_PUBKEY pin).
+ * Layer 2: shared transport token (CAELUS_INTEL_TOKEN).
  *
  * Thread model: init() runs on the engine thread before the connector's
  * reader thread starts; admit()/header_matches() run on that single reader
@@ -756,13 +872,35 @@ struct IntelAuthGate {
         token_ = (v && v[0]) ? v : "";
         rejected_total_ = 0;
         rejected_logged_ = 0;
+
+        pin_state_ = PinState::kUnset;
+        const char* pin_hex = std::getenv("CAELUS_TRUSTED_INTEL_PUBKEY");
+        if (pin_hex && pin_hex[0]) {
+            // A present-but-unparseable pin is a configuration error, never a
+            // downgrade to unsigned: the gate stays fail-closed (kInvalid).
+            pin_state_ = intel_hex_to_bytes(pin_hex, std::strlen(pin_hex), pin_, 32u)
+                             ? PinState::kPinned
+                             : PinState::kInvalid;
+            if (pin_state_ == PinState::kInvalid) {
+                std::cerr << "[CONN-AUTH] HATA: CAELUS_TRUSTED_INTEL_PUBKEY 64 hex "
+                             "degil; tum intel payload'lari reddedilecek (kanal="
+                          << channel_ << ")\n";
+            }
+        }
 #ifndef CAELUS_PRODUCTION
-        // CAELUS_PRODUCTION'da derleme-dışı: token'sız "uyar ve kabul et" miras yolu üretimde yoktur; eksik token'ı connector do_init FATAL'e çevirir.
+        // CAELUS_PRODUCTION'da derleme-dışı: token'sız/pin'siz "uyar ve kabul et"
+        // miras yolu üretimde yoktur; eksikliği connector do_init FATAL'e çevirir.
         if (token_.empty()) warn_unauthenticated_once();
+        if (pin_state_ == PinState::kUnset) warn_unsigned_once();
 #endif
     }
 
     [[nodiscard]] bool enabled() const noexcept { return !token_.empty(); }
+
+    /** True when the ed25519 signature layer is active (pin configured). */
+    [[nodiscard]] bool sig_enabled() const noexcept {
+        return pin_state_ != PinState::kUnset;
+    }
 
     /** Constant-time check for transport-level auth (Zapier X-Caelus-Auth). */
     [[nodiscard]] bool header_matches(const std::string& presented) const noexcept {
@@ -777,6 +915,51 @@ struct IntelAuthGate {
      * material is still stripped so it cannot flow further.
      */
     [[nodiscard]] bool admit(std::string& raw, bool transport_authenticated) noexcept {
+        // Layer 1 — source signature. Independent of the transport token:
+        // a valid X-Caelus-Auth header proves link access, not authorship.
+        if (sig_enabled()) {
+            if (pin_state_ == PinState::kInvalid) { note_rejected(); return false; }
+            uint8_t pub[32];
+            uint8_t sig[64];
+            if (extract_intel_sig_line(raw, pub, sig) != IntelSigLine::kOk) {
+                note_rejected();
+                return false;
+            }
+            if (std::memcmp(pub, pin_, 32u) != 0) {
+                note_rejected();
+                return false;
+            }
+            const IntelSigVerifyFn verify =
+                intel_sig_verifier_slot().load(std::memory_order_acquire);
+            if (!verify) {
+                // Pin configured but no verifier wired: fail closed, loudly.
+                note_rejected();
+                std::cerr << "[CONN-AUTH] HATA: imza dogrulayicisi kurulmamis "
+                             "(set_intel_sig_verifier); payload reddedildi (kanal="
+                          << channel_ << ")\n";
+                return false;
+            }
+            std::string msg;
+            msg.reserve(sizeof(kIntelSigDomain) - 1u + raw.size());
+            msg.append(kIntelSigDomain, sizeof(kIntelSigDomain) - 1u);
+            msg.append(raw);
+            if (verify(reinterpret_cast<const uint8_t*>(msg.data()), msg.size(),
+                       pub, sig) != 1u) {
+                note_rejected();
+                return false;
+            }
+        } else {
+            // Hygiene: a stray envelope on an unsigned channel must not flow
+            // into memo fields; malformed envelopes are still rejected.
+            uint8_t pub[32];
+            uint8_t sig[64];
+            if (extract_intel_sig_line(raw, pub, sig) == IntelSigLine::kMalformed) {
+                note_rejected();
+                return false;
+            }
+        }
+
+        // Layer 2 — shared transport token (unchanged legacy behaviour).
         const size_t first = raw.find_first_not_of(" \t\r\n");
         const bool is_json = (first != std::string::npos && raw[first] == '{');
 
@@ -808,7 +991,11 @@ struct IntelAuthGate {
     }
 
 private:
+    enum class PinState : uint8_t { kUnset, kPinned, kInvalid };
+
     std::string token_;
+    uint8_t pin_[32] = {};
+    PinState pin_state_ = PinState::kUnset;
     const char* channel_ = "?";
     uint64_t rejected_total_ = 0;
     unsigned rejected_logged_ = 0;
@@ -824,6 +1011,17 @@ private:
                          "payload'lari dogrulanmadan kabul ediliyor.\n";
         }
     }
+
+    // CAELUS_PRODUCTION'da derleme-dışı: imzasız-kabul uyarısı yalnız dev/demo build'inde anlamlıdır.
+    static void warn_unsigned_once() noexcept {
+        static std::atomic<bool> warned{false};
+        bool expected = false;
+        if (warned.compare_exchange_strong(expected, true)) {
+            std::cerr << "[CONN-AUTH] UYARI: intel imza pini yok "
+                         "(CAELUS_TRUSTED_INTEL_PUBKEY set degil); payload "
+                         "kaynak imzasi dogrulanmiyor.\n";
+        }
+    }
 #endif
 
     static void strip_payload_auth(std::string& raw, bool is_json) noexcept {
@@ -837,6 +1035,7 @@ private:
 
     void note_rejected() noexcept {
         ++rejected_total_;
+        intel_rejected_total().fetch_add(1u, std::memory_order_relaxed);
         if (rejected_logged_ < kMaxRejectLogs) {
             ++rejected_logged_;
             std::cerr << "[CONN-AUTH] INTEL_REJECTED: auth eksik/gecersiz (kanal="
@@ -1046,7 +1245,9 @@ inline void append_remaining_length(std::string& out, size_t len) {
  * pull_intel(), keeping causal engine mutation on the main engine path.
  *
  * Data-plane auth: when CAELUS_INTEL_TOKEN is set, each payload must carry the
- * token ("auth" JSON member or "#auth=" CSV first line); see IntelAuthGate.
+ * token ("auth" JSON member or "#auth=" CSV first line); when
+ * CAELUS_TRUSTED_INTEL_PUBKEY is set, each payload must additionally open with
+ * a valid pinned "#sig=ed25519:..." envelope line. See IntelAuthGate.
  */
 struct MqttConnector : ConnectorBase<MqttConnector> {
     static constexpr const char* kName    = "MqttConnector";
@@ -1070,6 +1271,12 @@ struct MqttConnector : ConnectorBase<MqttConnector> {
             std::cerr << "[CONN-AUTH] FATAL: CAELUS_INTEL_TOKEN set degil — "
                          "MqttConnector uretim derlemesinde (CAELUS_PRODUCTION) "
                          "baslatilmiyor.\n";
+            return false;
+        }
+        if (!auth_.sig_enabled()) {
+            std::cerr << "[CONN-AUTH] FATAL: CAELUS_TRUSTED_INTEL_PUBKEY set degil — "
+                         "MqttConnector uretim derlemesinde (CAELUS_PRODUCTION) "
+                         "imzasiz intel veri duzlemiyle baslatilmiyor.\n";
             return false;
         }
 #endif
@@ -1315,7 +1522,9 @@ private:
  *
  * Data-plane auth: when CAELUS_INTEL_TOKEN is set, each POST must carry the
  * token via the "X-Caelus-Auth" header OR in-payload ("auth" JSON member /
- * "#auth=" CSV first line); failures answer 401. See IntelAuthGate.
+ * "#auth=" CSV first line); failures answer 401. When
+ * CAELUS_TRUSTED_INTEL_PUBKEY is set, each body must additionally open with a
+ * valid pinned "#sig=ed25519:..." envelope line. See IntelAuthGate.
  */
 struct ZapierWebhookConnector : ConnectorBase<ZapierWebhookConnector> {
     static constexpr const char* kName    = "ZapierWebhookConnector";
@@ -1331,6 +1540,12 @@ struct ZapierWebhookConnector : ConnectorBase<ZapierWebhookConnector> {
             std::cerr << "[CONN-AUTH] FATAL: CAELUS_INTEL_TOKEN set degil — "
                          "ZapierWebhookConnector uretim derlemesinde (CAELUS_PRODUCTION) "
                          "baslatilmiyor.\n";
+            return false;
+        }
+        if (!auth_.sig_enabled()) {
+            std::cerr << "[CONN-AUTH] FATAL: CAELUS_TRUSTED_INTEL_PUBKEY set degil — "
+                         "ZapierWebhookConnector uretim derlemesinde (CAELUS_PRODUCTION) "
+                         "imzasiz intel veri duzlemiyle baslatilmiyor.\n";
             return false;
         }
 #endif
