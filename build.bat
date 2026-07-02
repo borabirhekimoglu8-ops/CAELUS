@@ -436,7 +436,7 @@ if "%USE_CMAKE%"=="1" (
         :: Multi-config generatorler (Visual Studio) CMakeLists'in dist/ hedefini
         :: dist\Release\ altina yazar; bu kopya olmadan eski dist exe sessizce
         :: "build ciktisi" saniliyordu (Windows CI'da bayat-binary olarak yakalandi).
-        if exist "%OUT_DIR%\Release\caelus_os.exe" copy /Y "%OUT_DIR%\Release\caelus_os.exe" "%OUT_EXE%" > nul
+        if exist "%ROOT%\dist\Release\caelus_os.exe" copy /Y "%ROOT%\dist\Release\caelus_os.exe" "%OUT_EXE%" > nul
     ) else (
         echo [UYARI] CMake kullanilamadi ^(generator/make yok?^) — dogrudan derlemeye geciliyor.
     )
