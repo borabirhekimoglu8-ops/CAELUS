@@ -19,6 +19,10 @@
 #include <cstdlib>      // getenv, strtoull
 #include <cctype>
 #include <ctime>
+#include <thread>
+#include <mutex>
+#include <deque>
+#include <condition_variable>
 #include "src/intel_core.h"
 #include "ws_emitter.h"
 #include "det_rng.h"
@@ -65,6 +69,47 @@ static caelus::WsEmitter g_emitter;
 // g_tick_ctr is accessible to plugins via CaelusEngineFns::current_tick().
 static caelus::PluginRegistry  g_registry;
 static std::atomic<uint64_t>   g_tick_ctr{0};
+
+// Aktif senaryo kimliği — War Room canlı snapshot yayını için (REPL tick
+// döngüsü scenario_id parametresi taşımadığından burada tutulur).
+static std::string             g_scenario_id;
+
+// ─── Birleşik REPL komut kuyruğu ──────────────────────────────────────────────
+// İki üretici: (1) stdin okuyucu thread (terminal kullanıcısı), (2) WsEmitter
+// komut sink'i (War Room tarayıcısı). Tek tüketici: ana REPL döngüsü. Motor
+// yalnız ana thread'de mutasyona uğrar; her iki girdi kaynağı da komutu buraya
+// koyar, motoru asla doğrudan çağırmaz.
+struct CommandQueue {
+    std::mutex               m;
+    std::condition_variable  cv;
+    std::deque<std::string>  q;
+    bool                     closed = false;
+
+    void push(std::string s) {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            q.push_back(std::move(s));
+        }
+        cv.notify_one();
+    }
+    // Bir komut için bloke olur. false → kuyruk kapandı ve boşaldı (çıkış).
+    bool pop(std::string& out) {
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait(lk, [&]{ return !q.empty() || closed; });
+        if (q.empty()) return false;
+        out = std::move(q.front());
+        q.pop_front();
+        return true;
+    }
+    void close() {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            closed = true;
+        }
+        cv.notify_all();
+    }
+};
+static CommandQueue g_repl_cmds;
 
 // ─── Denetim Günlüğü (R6) ────────────────────────────────────────────────────
 // Blake3-zincirli, ed25519-mühürlü, append-only adli kayıt.
@@ -446,6 +491,63 @@ static void audit_intel_rejections() {
     last_seen = total;
 }
 
+// NodeKind → War Room etiketi (UI causal graph düğüm tipleri).
+static const char* node_kind_label(caelus::causal::NodeKind k) noexcept {
+    switch (k) {
+        case caelus::causal::NodeKind::Service:    return "Service";
+        case caelus::causal::NodeKind::Buffer:     return "Buffer";
+        case caelus::causal::NodeKind::Queue:      return "Queue";
+        case caelus::causal::NodeKind::Perishable: return "Perishable";
+        case caelus::causal::NodeKind::Gate:       return "Gate";
+        case caelus::causal::NodeKind::Adversary:  return "Adversary";
+    }
+    return "Service";
+}
+
+// Motorun GERÇEK graf durumunu War Room'a yayınlar (UI'ın `snapshot` olayı:
+// causal graph + düğüm sinyalleri + analiz paneli bundan beslenir). Demo/sahte
+// veri değildir — doğrudan CausalEngine'in canlı düğüm/kenar vektörlerinden
+// serileştirilir.
+static void emit_ws_snapshot(const caelus::causal::CausalEngine& engine,
+                             const std::string& scenario_id) {
+    using caelus::causal::fp_to_d;
+    std::ostringstream o;
+    o << std::fixed << std::setprecision(6);
+    o << "{\"type\":\"snapshot\","
+      << "\"scenario_id\":\"" << json_escape(scenario_id) << "\","
+      << "\"tick\":" << engine.current_tick() << ","
+      << "\"clamped_friction\":" << engine.friction_multiplier() << ","
+      << "\"regime_exceeded\":" << (engine.regime_exceeded() ? "true" : "false") << ","
+      << "\"outage_active\":" << (engine.outage_active() ? "true" : "false") << ","
+      << "\"nodes\":[";
+    bool first = true;
+    for (const auto& n : engine.nodes()) {
+        if (!first) o << ",";
+        first = false;
+        o << "{\"id\":\"" << json_escape(n.id) << "\","
+          << "\"type\":\"" << node_kind_label(n.kind) << "\","
+          << "\"state\":" << fp_to_d(n.state_fp) << ","
+          << "\"reported\":" << fp_to_d(n.reported_state_fp) << ","
+          << "\"trust\":" << fp_to_d(n.trust_fp) << ","
+          << "\"friction\":" << fp_to_d(n.weight_fp) << ","
+          << "\"capacity\":" << fp_to_d(n.capacity_fp) << ","
+          << "\"irrecoverable\":" << (n.irrecoverable ? "true" : "false") << "}";
+    }
+    o << "],\"edges\":[";
+    first = true;
+    for (const auto& e : engine.edges()) {
+        if (e.to.empty()) continue;  // sürtünme-toplama kenarı (görselleştirilmez)
+        if (!first) o << ",";
+        first = false;
+        o << "{\"from\":\"" << json_escape(e.from) << "\","
+          << "\"to\":\"" << json_escape(e.to) << "\","
+          << "\"weight\":" << fp_to_d(e.multiplier_fp) << ","
+          << "\"lag_ticks\":" << e.lag_ticks << "}";
+    }
+    o << "]}";
+    g_emitter.emit(o.str());
+}
+
 static const caelus::causal::Lever* find_pack_lever(const caelus::ScenarioPack& pack,
                                                     const std::string& id) {
     for (const auto& lever : pack.levers)
@@ -555,6 +657,16 @@ static caelus::causal::EngineSnapshot run_repl_tick(
         g_audit.append(ss.str());
     }
 
+    // War Room canlı yayını: throughput göstergesi + gerçek graf snapshot'ı.
+    // Yalnız bir tarayıcı bağlıyken serileştirme maliyetine gireriz.
+    if (g_emitter.connected()) {
+        g_emitter.emit(caelus::ws_json::engine_state(
+            g_scenario_id.empty() ? "LIVE" : g_scenario_id, g_scenario_id,
+            engine.current_tick(), snap.clamped_friction_d(),
+            snap.throughput_ratio, snap.outage_active, snap.any_hysteresis_flip));
+        emit_ws_snapshot(engine, g_scenario_id);
+    }
+
     return snap;
 }
 
@@ -567,10 +679,24 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
     std::cout << "\n[REPL] Senaryo REPL basladi. Yardim icin 'help', cikis icin 'quit'.\n";
     print_repl_snapshot(engine, last_snap);
 
+    // War Room tarayıcısından gelen komutları (WS text frame) da bu REPL'e
+    // yönlendir: gerçek motor sürülür, snapshot geri yayınlanır. Handler
+    // emitter thread'inde koşar, sadece kuyruğa iter (motora dokunmaz).
+    g_emitter.on_command([](std::string c){ g_repl_cmds.push(std::move(c)); });
+
+    // stdin ayrı bir thread'de okunup aynı kuyruğa beslenir; ana döngü tek
+    // tüketici olarak terminal + tarayıcı komutlarını sırayla işler.
+    std::thread stdin_thread([]{
+        std::string in;
+        while (std::getline(std::cin, in)) g_repl_cmds.push(in);
+        g_repl_cmds.close();
+    });
+    stdin_thread.detach();
+
     std::string line;
     while (true) {
         std::cout << "\ncaelus:" << scenario_id << " t=" << engine.current_tick() << "> ";
-        if (!std::getline(std::cin, line)) {
+        if (!g_repl_cmds.pop(line)) {
             std::cout << "\n[REPL] stdin kapandi, cikiliyor.\n";
             break;
         }
@@ -604,6 +730,9 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
             } else {
                 print_repl_snapshot(engine, last_snap);
             }
+            // War Room "ANALİZ ET" bu komutu gönderir: gerçek graf snapshot'ını
+            // WS üzerinden geri yayınla (analiz paneli motorun canlı verisiyle dolar).
+            if (g_emitter.connected()) emit_ws_snapshot(engine, g_scenario_id);
             audit_repl_event(command_line, engine, "ok");
             continue;
         }
@@ -614,6 +743,28 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
                            [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
             if (what == "levers") {
                 print_repl_levers(pack, pack_loaded);
+                // War Room lever konsolu: gerçek kaldıraç listesini WS'e yayınla
+                // (UI'daki hardcoded ipuçları yerine motorun paketinden gelir).
+                if (g_emitter.connected()) {
+                    std::ostringstream lo;
+                    lo << "{\"type\":\"levers\",\"scenario_id\":\""
+                       << json_escape(g_scenario_id) << "\",\"levers\":[";
+                    bool lf = true;
+                    if (pack_loaded) {
+                        for (const auto& lv : pack.levers) {
+                            if (!lf) lo << ",";
+                            lf = false;
+                            lo << "{\"id\":\"" << json_escape(lv.id) << "\","
+                               << "\"target\":\"" << json_escape(lv.target) << "\","
+                               << "\"success_p\":" << std::fixed << std::setprecision(2)
+                               << caelus::causal::fp_to_d(lv.success_p_fp) << ","
+                               << "\"cost_ticks\":" << lv.cost_ticks << ","
+                               << "\"lockout_ticks\":" << lv.lockout_ticks << "}";
+                        }
+                    }
+                    lo << "]}";
+                    g_emitter.emit(lo.str());
+                }
                 audit_repl_event(command_line, engine, "ok");
             } else {
                 std::cout << "[REPL] Bilinmeyen liste. Ornek: list levers\n";
@@ -972,6 +1123,9 @@ int main(int argc, char* argv[]) {
     const bool awaiting_scenario = !pack_loaded;
     std::string awaiting_state_json;
 
+    // War Room canlı snapshot yayınının kullandığı aktif senaryo kimliği.
+    g_scenario_id = pack_loaded ? scenario_pack.id : scenario_id;
+
     if (pack_loaded) {
         // Paket grafını motora uygula (reset() + tüm düğüm/kenar/döngü yükle)
         scenario_pack.apply_to_engine(causal_engine);
@@ -979,6 +1133,9 @@ int main(int argc, char* argv[]) {
         *profile = scenario_pack.risk_profile;
         g_emitter.emit(caelus::ws_json::scenario_loaded(
             scenario_pack.id, scenario_pack.region));
+        // Gerçek graf durumunu (düğüm/kenar) hemen yayınla: UI'ın causal graph
+        // ve analiz paneli yüklenir yüklenmez motorun canlı verisiyle dolar.
+        emit_ws_snapshot(causal_engine, g_scenario_id);
         std::cout << "[SCENARIO] Domain: " << scenario_pack.sector
                   << " | Ufuk: " << scenario_pack.horizon_hours << " saat"
                   << " | Tick: " << scenario_pack.tick_minutes << " dak\n";

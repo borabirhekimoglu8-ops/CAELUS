@@ -361,6 +361,10 @@ public:
     void add_lever     (Lever l)        { levers_.push_back(std::move(l));  }
     void add_hysteresis(Hysteresis h)   { hysts_.push_back(std::move(h));   }
 
+    // ── Salt-okunur graf erişimi (War Room canlı snapshot yayını için) ──────
+    const std::vector<Node>& nodes() const noexcept { return nodes_; }
+    const std::vector<Edge>& edges() const noexcept { return edges_; }
+
     /** Deterministik lever olasılık hesabı için PRNG tohumu (0 = gerçek CSPRNG). */
     void set_prng_seed(uint64_t seed) noexcept { prng_seed_ = seed; }
 

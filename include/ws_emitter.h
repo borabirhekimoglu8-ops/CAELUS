@@ -32,6 +32,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <functional>
 #include <sstream>
 #include <iomanip>
 #include <vector>
@@ -387,6 +388,22 @@ public:
         return client_count_.load(std::memory_order_relaxed) > 0u;
     }
 
+    /**
+     * Install a handler for inbound War Room commands (browser → engine).
+     *
+     * The handler is invoked on the emitter's background thread when a client
+     * sends a WebSocket text frame; the frame payload (a single command line
+     * such as "tick 24" or "lever DENIZ_TAHLIYE") is passed through. The
+     * engine mutates only on its own thread, so the handler MUST NOT touch the
+     * engine directly — it should enqueue the command for the main loop.
+     *
+     * Set this BEFORE start(); it is read on the background thread with no
+     * further synchronisation, so post-start mutation is not supported.
+     */
+    void on_command(std::function<void(std::string)> handler) {
+        cmd_handler_ = std::move(handler);
+    }
+
 private:
     struct BufferedEvent {
         uint64_t    seq{0};
@@ -514,11 +531,11 @@ private:
     }
 
     bool handle_client_read(SocketFd cl) {
-        uint8_t buf[512];
+        uint8_t buf[1024];
         int n = (int)::recv(cl, (char*)buf, sizeof(buf), 0);
         if (n <= 0) return false; // closed or error
 
-        // RFC 6455 opcode: 0x8=close, 0x9=ping, 0xA=pong
+        // RFC 6455 opcode: 0x1=text, 0x8=close, 0x9=ping, 0xA=pong
         uint8_t opcode = buf[0] & 0x0Fu;
         if (opcode == 0x08u) {
             uint8_t cf[] = {0x88u, 0x00u};
@@ -528,8 +545,52 @@ private:
         if (opcode == 0x09u && n >= 2) {
             buf[0] = 0x8Au;
             ws_detail::send_all(cl, buf, n);
+            return true;
         }
-        return true; // Other frames silently ignored.
+        if (opcode == 0x01u) {
+            handle_text_frame(buf, static_cast<size_t>(n));
+        }
+        return true; // Non-text / oversized frames silently ignored.
+    }
+
+    /**
+     * RFC 6455 §5 — decode a single client text frame and forward its payload
+     * to the command handler. Client→server frames are ALWAYS masked (§5.1);
+     * we unmask in place. Bounded to a single recv() buffer, which is more than
+     * enough for a command line — larger/fragmented frames are dropped rather
+     * than reassembled (the War Room only sends short commands).
+     */
+    void handle_text_frame(uint8_t* buf, size_t n) {
+        if (!cmd_handler_ || n < 2) return;
+        const bool masked = (buf[1] & 0x80u) != 0u;
+        uint64_t len = buf[1] & 0x7Fu;
+        size_t pos = 2;
+        if (len == 126u) {
+            if (n < 4) return;
+            len = (static_cast<uint64_t>(buf[2]) << 8) | buf[3];
+            pos = 4;
+        } else if (len == 127u) {
+            return; // 64-bit lengths never occur for a command line.
+        }
+        uint8_t mask[4] = {0, 0, 0, 0};
+        if (masked) {
+            if (n < pos + 4) return;
+            std::memcpy(mask, buf + pos, 4);
+            pos += 4;
+        }
+        if (pos > n) return;
+        if (len > n - pos) len = n - pos; // clamp to what we actually read
+        std::string payload;
+        payload.resize(static_cast<size_t>(len));
+        for (uint64_t i = 0; i < len; ++i) {
+            payload[i] = static_cast<char>(buf[pos + i] ^ (masked ? mask[i & 3u] : 0u));
+        }
+        // Strip trailing CR/LF/NUL a browser or proxy might append.
+        while (!payload.empty() &&
+               (payload.back() == '\r' || payload.back() == '\n' || payload.back() == '\0')) {
+            payload.pop_back();
+        }
+        if (!payload.empty()) cmd_handler_(payload);
     }
 
     bool client_has_pending(const ClientSlot& c) {
@@ -637,6 +698,10 @@ private:
     std::deque<BufferedEvent> buffer_;
     uint64_t                next_event_seq_{0};
     size_t                  buffer_limit_{4096u};
+
+    // Inbound War Room command sink (browser → engine). Set before start();
+    // invoked only on the background thread thereafter.
+    std::function<void(std::string)> cmd_handler_;
 };
 
 
