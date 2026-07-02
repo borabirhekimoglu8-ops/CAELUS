@@ -30,7 +30,13 @@
 // ─── Cross-platform env-var setter (for --det-mode seed injection) ───────────
 static inline void caelus_setenv(const char* name, const char* value) {
 #ifdef _WIN32
+    // _putenv_s updates only the CRT environment (std::getenv); the Rust
+    // staticlib reads the Win32 block via GetEnvironmentVariableW and the two
+    // stores are NOT synced. Without the Win32 write, det-mode's fixed
+    // identity/enclave seeds never reach the Rust layer — the audit chain
+    // head then varies per run on Windows (caught by the CDET CI job).
     _putenv_s(name, value);
+    SetEnvironmentVariableA(name, value);
 #else
     setenv(name, value, /*overwrite=*/1);
 #endif
