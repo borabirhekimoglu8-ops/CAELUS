@@ -556,7 +556,6 @@ fn seed_from_hex(hex: &str) -> io::Result<[u8; 32]> {
     Ok(seed)
 }
 
-#[cfg(not(windows))]
 fn hex_nibble(b: u8) -> Option<u8> {
     match b {
         b'0'..=b'9' => Some(b - b'0'),
