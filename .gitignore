@@ -3,7 +3,7 @@ caelus_core/target/
 *.log
 *.tmp
 *.sig.tmp
-dist/caelus_os
+dist/
 
 # Generated build trees and bytecode
 build_cmake/

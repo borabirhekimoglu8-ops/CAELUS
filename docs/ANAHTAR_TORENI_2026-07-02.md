@@ -38,10 +38,10 @@ geçmiş varsayıldı** ve döndürüldü.
 
 ## Bilinen etkiler / takip
 
-- **`dist/caelus_os.exe` (Windows) rotasyon ÖNCESİ derlemedir** — eski pini
-  taşır ve yeni imzalı senaryoları reddeder. Windows'ta `build.bat` ile yeniden
-  derlenmesi gerekir. (Linux binary'si CI'da her koşuda taze üretilir ve
-  artifact olarak yayımlanır.)
+- ~~`dist/caelus_os.exe` (Windows) rotasyon öncesi derlemeydi~~ → **Çözüldü:**
+  bayat binary depodan çıkarıldı; `dist/` artık tümüyle gitignore'da. Her iki
+  platformun binary'si CI'da her koşuda taze üretilip artifact olarak
+  yayımlanıyor; yerelde `build.bat` / `CAELUS_CALISTIR.bat` üretir.
 - Intel veri düzlemi anahtarı bu çapadan **ayrıdır** ve zaten depo dışıdır
   (görev ayrılığı — bkz. `docs/INTEL_IMZA_SOZLESMESI.md`).
 - Sonraki tören önerisi: senaryo ve eklenti pinlerinin ayrı anahtarlara
