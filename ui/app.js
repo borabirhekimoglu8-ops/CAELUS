@@ -1985,7 +1985,13 @@ function resolveWsUrl() {
   const params = new URLSearchParams(window.location.search || '');
   const rawPort = params.get('ws_port') || params.get('wsPort') || window.CAELUS_WS_PORT || '47809';
   const port = String(rawPort).match(/^\d{1,5}$/) ? Math.max(1, Math.min(65535, Number(rawPort))) : 47809;
-  return `ws://127.0.0.1:${port}`;
+  // HTTP'den sunulduğunda (uzak War Room) sayfanın host'una geri bağlan ve
+  // URL'deki token'ı taşı; yerel dosya (file://) olarak açıldığında loopback.
+  const servedOverHttp = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+  const host = servedOverHttp && window.location.hostname ? window.location.hostname : '127.0.0.1';
+  const token = params.get('token');
+  const query = token ? ('/?token=' + encodeURIComponent(token)) : '';
+  return `ws://${host}:${port}${query}`;
 }
 
 const WS_URL          = resolveWsUrl();

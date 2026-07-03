@@ -46,7 +46,27 @@ dist/caelus_os --scenario BS-01_SAHTE_UFUK --repl   # etkileşimli REPL
 dist/caelus_os --scenario UNIVERSAL_BASELINE --det-mode  # deterministik CI koşusu
 ```
 
-REPL komutları: `status/snapshot [--json]`, `list`, `tick <n>`, `lever <id>`, `help`, `quit`. Windows'ta son kullanıcı başlatıcısı `CAELUS_CALISTIR.bat`'tır; gömülü War Room arayüzü geçici dizine açılır ve çıkışta silinir.
+REPL komutları: `status/snapshot [--json]`, `list`, `tick <n>`, `lever <id>`, `help`, `quit`. Windows'ta son kullanıcı başlatıcısı `CAELUS_CALISTIR.bat`'tır; gömülü War Room arayüzü geçici dizine açılır ve çıkışta silinir. Arayüz komutları (lever/tick/status) canlı WebSocket köprüsü üzerinden gerçek motoru sürer; paneller motorun canlı snapshot'ından beslenir (uydurma telemetri yoktur).
+
+### Uzak War Room (telefon/tablet — opsiyonel, varsayılan KAPALI)
+
+Varsayılan güvenli davranış loopback'tir (arayüz yalnız kendi makinende). Aynı WiFi'daki bir telefondan **canlı** motoru açmak için opt-in uzak mod:
+
+```bash
+# Zorunlu: uzun, gizli bir token belirle (kimlik doğrulaması budur)
+CAELUS_WARROOM_REMOTE=1 CAELUS_WARROOM_TOKEN=<uzun-gizli-dize> \
+  dist/caelus_os --scenario BS-01_SAHTE_UFUK --repl
+```
+
+Motor `0.0.0.0:47809`'a bağlanır ve gömülü UI'ı aynı portta HTTP ile sunar. Telefonda aç:
+
+```
+http://<bilgisayarın-LAN-IP>:47809/?token=<uzun-gizli-dize>
+```
+
+- **Fail-closed:** `CAELUS_WARROOM_TOKEN` yoksa uzak moda **hiç geçilmez**, loopback'te kalır.
+- **Güvenlik sınırı WebSocket'tir:** statik sayfa/JS herkese açıktır ama token olmadan hiçbir canlı veri akmaz ve hiçbir komut kabul edilmez (yanlış/eksik token → WS reddedilir). Token karşılaştırması sabit-zamanlıdır.
+- **TLS yok:** token LAN'da düz metin gider; yalnızca güvendiğin yerel ağda kullan. Bu, "sıfır internet" aksiyomunun bilinçli, opt-in bir gevşetilmesidir — internete değil, yalnız yerel ağa açılır.
 
 ## Test ve CI
 

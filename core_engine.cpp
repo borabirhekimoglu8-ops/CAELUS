@@ -954,10 +954,55 @@ int main(int argc, char* argv[]) {
         std::cout << "[DET] Deterministik mod aktif — tohumlu PRNG + sanal saat(0)\n";
     }
 
-    // ── Start War Room WebSocket emitter (127.0.0.1:47809, loopback only) ──
-    // Skipped in --det-mode (not needed for CI; avoids port contention).
+    // ── Start War Room WebSocket emitter ───────────────────────────────────
+    // Varsayılan: 127.0.0.1 (air-gapped, loopback). Opsiyonel UZAK MOD:
+    // CAELUS_WARROOM_REMOTE=1 → LAN'a (0.0.0.0) bağlanır ve embedded UI'ı aynı
+    // portta HTTP ile sunar; böylece aynı WiFi'daki telefon canlı motoru açar.
+    // FAIL-CLOSED: CAELUS_WARROOM_TOKEN yoksa uzak moda GEÇİLMEZ (loopback'te
+    // kalır). Token, HTTP sayfası ve WS bağlantısının ikisinde de zorunludur.
+    // Uyarı: TLS yok — token LAN'da düz metin gider; yalnız güvendiğiniz yerel
+    // ağda kullanın. --det-mode'da tümü atlanır (CI/port çakışması yok).
     if (!det_mode) {
+        const char* remote_env = std::getenv("CAELUS_WARROOM_REMOTE");
+        const bool want_remote = remote_env && (remote_env[0] == '1' ||
+            std::strcmp(remote_env, "true") == 0 || std::strcmp(remote_env, "yes") == 0);
+        const char* token_env = std::getenv("CAELUS_WARROOM_TOKEN");
+        const std::string token = (token_env && token_env[0]) ? token_env : "";
+
+        bool remote = false;
+        if (want_remote) {
+#ifndef CAELUS_EMBEDDED_UI
+            std::cerr << "[WS-EMITTER] UZAK MOD reddedildi: bu derlemede gomulu UI yok "
+                         "(CAELUS_EMBEDDED_UI). Loopback'te devam ediliyor.\n";
+#else
+            if (token.empty()) {
+                std::cerr << "[WS-EMITTER] UZAK MOD reddedildi (FAIL-CLOSED): "
+                             "CAELUS_WARROOM_TOKEN ayarli degil. Kimlik dogrulamasi "
+                             "olmadan LAN'a acilmaz. Loopback'te devam ediliyor.\n"
+                             "  Ornek: set CAELUS_WARROOM_TOKEN=<uzun-gizli-dize>\n";
+            } else {
+                caelus::WsEmitter::Config cfg;
+                cfg.bind_all = true;
+                cfg.token    = token;
+                g_emitter.configure(cfg);
+                g_emitter.add_http_route("/", "text/html; charset=utf-8",
+                    CAELUS_UI_HTML, CAELUS_UI_HTML_LEN);
+                g_emitter.add_http_route("/app.js", "application/javascript; charset=utf-8",
+                    CAELUS_UI_JS, CAELUS_UI_JS_LEN);
+                remote = true;
+            }
+#endif
+        }
+
         g_emitter.start(47809);
+
+        if (remote) {
+            std::cout << "\n[UZAK WAR ROOM] Telefon/tablet ayni WiFi'dan acsin:\n"
+                      << "  http://<BU-BILGISAYARIN-LAN-IP>:47809/?token=" << token << "\n"
+                      << "  (LAN IP'yi bul: Windows 'ipconfig', Linux/mac 'ip addr'/'ifconfig')\n"
+                      << "  Token, sayfa VE WS baglantisi icin zorunlu; yanlis/eksik token reddedilir.\n"
+                      << "  NOT: TLS yok — yalnizca guvendiginiz yerel agda kullanin.\n\n";
+        }
     }
 
     // ── Bootstrap Plugin Registry ──────────────────────────────────────────

@@ -270,6 +270,20 @@ public:
     struct Config {
         size_t   max_clients{8u};
         size_t   buffer_events{4096u};
+        // ── Uzak War Room (opsiyonel, varsayılan KAPALI = air-gapped) ─────────
+        // bind_all=true → 0.0.0.0'a bağlanır (LAN'dan erişilebilir); aksi hâlde
+        // yalnız 127.0.0.1. bind_all iken token ZORUNLUDUR (core_engine bunu
+        // fail-closed zorlar): token boşken uzak moda hiç geçilmez.
+        bool        bind_all{false};
+        std::string token;   // boş → kimlik kontrolü yok (yalnız loopback modu)
+    };
+
+    // Tek portta sunulan statik HTTP varlığı (embedded War Room UI).
+    struct HttpRoute {
+        std::string    path;          // "/" veya "/app.js"
+        std::string    content_type;  // "text/html; charset=utf-8" vb.
+        const uint8_t* data{nullptr};
+        size_t         len{0};
     };
 
     WsEmitter()
@@ -328,17 +342,21 @@ public:
         ::setsockopt(listen_sock_, SOL_SOCKET, SO_REUSEADDR,
                      (const char*)&yes, (int)sizeof(yes));
 
+        const bool remote = resolved.bind_all;
+        const char* bind_ip = remote ? "0.0.0.0" : "127.0.0.1";
+
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_port   = htons(port);
-        // Loopback ONLY — packets never leave the machine.
-        ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+        // Varsayılan: loopback (paketler makineyi terk etmez). Uzak modda
+        // (bind_all) 0.0.0.0 → LAN erişimi; token zorunlu (core_engine zorlar).
+        ::inet_pton(AF_INET, bind_ip, &addr.sin_addr);
 
         if (::bind(listen_sock_, (sockaddr*)&addr, sizeof(addr)) != 0 ||
             ::listen(listen_sock_, listen_backlog(resolved.max_clients)) != 0) {
             close_socket(listen_sock_);
             listen_sock_ = kInvalidSocket;
-            std::cerr << "[WS-EMITTER] HATA: 127.0.0.1:" << port
+            std::cerr << "[WS-EMITTER] HATA: " << bind_ip << ":" << port
                       << " portuna bagilanamadi. War Room koprusu baslatilmadi.\n";
             wsa_cleanup();
             return false;
@@ -348,10 +366,21 @@ public:
         running_.store(true, std::memory_order_release);
         thread_  = std::thread(&WsEmitter::run_loop, this);
         std::cout << "[WS-EMITTER] War Room koprusu baslatildi"
-                  << " → ws://127.0.0.1:" << port
+                  << " → ws://" << bind_ip << ":" << port
+                  << (remote ? " (UZAK MOD: LAN + token)" : " (loopback)")
                   << " (istemci siniri: " << resolved.max_clients
                   << ", ring: " << resolved.buffer_events << " olay)\n";
         return true;
+    }
+
+    /**
+     * Register a static HTTP asset served on the SAME port (plain GET).
+     * Used to serve the embedded War Room UI to a remote browser. Set BEFORE
+     * start(); routes are read on the background thread with no further sync.
+     */
+    void add_http_route(std::string path, std::string content_type,
+                        const uint8_t* data, size_t len) {
+        routes_.push_back(HttpRoute{std::move(path), std::move(content_type), data, len});
     }
 
     /**
@@ -481,13 +510,102 @@ private:
         client_count_.store(0u, std::memory_order_release);
     }
 
+    // İstek satırından hedefi (path?query) çıkar: "GET /?token=x HTTP/1.1".
+    static std::string request_target(const std::string& req) {
+        const size_t sp1 = req.find(' ');
+        if (sp1 == std::string::npos) return "/";
+        const size_t sp2 = req.find(' ', sp1 + 1);
+        if (sp2 == std::string::npos) return "/";
+        return req.substr(sp1 + 1, sp2 - sp1 - 1);
+    }
+
+    // Hedeften bir sorgu parametresini çıkarır (URL-decode YOK — token hex/base).
+    static std::string query_param(const std::string& target, const std::string& key) {
+        const size_t q = target.find('?');
+        if (q == std::string::npos) return {};
+        const std::string qs = target.substr(q + 1);
+        const std::string needle = key + "=";
+        size_t pos = 0;
+        while (pos < qs.size()) {
+            size_t amp = qs.find('&', pos);
+            std::string kv = qs.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+            if (kv.compare(0, needle.size(), needle) == 0)
+                return kv.substr(needle.size());
+            if (amp == std::string::npos) break;
+            pos = amp + 1;
+        }
+        return {};
+    }
+
+    // Sabit-zaman string eşitliği (token karşılaştırması timing sızdırmasın).
+    static bool ct_equal(const std::string& a, const std::string& b) {
+        const size_t n = a.size() > b.size() ? a.size() : b.size();
+        volatile unsigned char acc = (a.size() == b.size()) ? 0u : 1u;
+        for (size_t i = 0; i < n; ++i) {
+            const unsigned char ca = i < a.size() ? (unsigned char)a[i] : 0u;
+            const unsigned char cb = i < b.size() ? (unsigned char)b[i] : 0u;
+            acc = (unsigned char)(acc | (unsigned char)(ca ^ cb));
+        }
+        return acc == 0u;
+    }
+
+    // token_ boşsa (loopback modu) her istek geçer; doluysa query token şart.
+    bool token_ok(const std::string& target) const {
+        if (config_.token.empty()) return true;
+        return ct_equal(query_param(target, "token"), config_.token);
+    }
+
+    // Plain HTTP GET → embedded War Room varlığını sun (uzak tarayıcı için).
+    // Statik varlıklar (HTML/JS) herkese açıktır — sır içermez ve <script
+    // src="app.js"> isteği token taşıyamaz. Güvenlik sınırı WS upgrade'dedir:
+    // token olmadan hiçbir canlı veri akmaz ve hiçbir komut kabul edilmez.
+    void serve_http(SocketFd cl, const std::string& target) {
+        std::string path = target;
+        const size_t q = path.find('?');
+        if (q != std::string::npos) path.erase(q);
+        if (path.empty()) path = "/";
+
+        for (const auto& rt : routes_) {
+            if (rt.path == path) {
+                std::ostringstream hdr;
+                hdr << "HTTP/1.1 200 OK\r\nContent-Type: " << rt.content_type
+                    << "\r\nContent-Length: " << rt.len
+                    << "\r\nConnection: close\r\n\r\n";
+                const std::string h = hdr.str();
+                ws_detail::send_all(cl, (const uint8_t*)h.data(), (int)h.size());
+                ws_detail::send_all(cl, rt.data, (int)rt.len);
+                return;
+            }
+        }
+        static const char* nf =
+            "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n"
+            "Connection: close\r\n\r\nbulunamdi";
+        ws_detail::send_all(cl, (const uint8_t*)nf, (int)std::strlen(nf));
+    }
+
     // ── RFC 6455 §4 — server handshake ───────────────────────────────────────
-    bool perform_handshake(SocketFd cl) {
+    // WS upgrade → true (istemci olur). Plain GET → varlık sunulur, false.
+    bool perform_handshake(SocketFd cl, bool& served_http) {
+        served_http = false;
         std::string req;
         if (!ws_detail::recv_http_header(cl, req)) return false;
 
+        const std::string target = request_target(req);
         std::string ws_key = ws_detail::get_header(req, "Sec-WebSocket-Key");
-        if (ws_key.empty()) return false;
+        if (ws_key.empty()) {
+            // WebSocket değil → statik HTTP isteği (UI sayfası/asset).
+            serve_http(cl, target);
+            served_http = true;
+            return false;
+        }
+        // WS upgrade: token kapısı (tarayıcı WS'i header set edemez → query token).
+        if (!token_ok(target)) {
+            static const char* r =
+                "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n";
+            ws_detail::send_all(cl, (const uint8_t*)r, (int)std::strlen(r));
+            std::cerr << "[WS-EMITTER] UZAK: gecersiz/eksik token — WS reddedildi.\n";
+            return false;
+        }
 
         std::string accept = ws_detail::ws_accept_key(ws_key);
         std::string resp =
@@ -511,7 +629,8 @@ private:
             return;
         }
 
-        if (!perform_handshake(cl) || !set_nonblocking(cl)) {
+        bool served_http = false;
+        if (!perform_handshake(cl, served_http) || !set_nonblocking(cl)) {
             close_socket(cl);
             return;
         }
@@ -702,6 +821,9 @@ private:
     // Inbound War Room command sink (browser → engine). Set before start();
     // invoked only on the background thread thereafter.
     std::function<void(std::string)> cmd_handler_;
+
+    // Statik HTTP rotaları (embedded UI). Set before start(); read-only after.
+    std::vector<HttpRoute> routes_;
 };
 
 
