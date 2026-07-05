@@ -1746,15 +1746,13 @@ function handleLcCommand(cmd) {
 
   // status: canlıysa motordan gerçek snapshot iste; değilse son bilinen state.
   if (lower === 'status') {
-    if (liveWs && liveWs.readyState === WebSocket.OPEN) {
-      sendReplCommand('status');
-    }
+    if (engineLive()) sendReplCommand('status');
     addLcOutput(`tick=${state.currentTick} friction=${state.metrics.friction.toFixed(2)}μ throughput=${(state.throughputRatio*100).toFixed(1)}% outage=${state.outageActive}`, 'info');
     return;
   }
   // list levers: motora yönlendir — gerçek kaldıraç listesi 'levers' olayıyla döner.
   if (lower === 'list levers' || lower === 'list') {
-    if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+    if (engineLive()) {
       sendReplCommand('list levers');
       addLcOutput('Kaldıraç listesi motordan isteniyor...', 'info');
     } else {
@@ -1771,9 +1769,18 @@ function sendReplCommand(cmd) {
   if (liveWs && liveWs.readyState === WebSocket.OPEN) {
     liveWs.send(cmd);
     addLcOutput('→ motora iletildi', 'ok');
+  } else if (LocalEngine.ready) {
+    // Bilgisayardan bağımsız: komutu tarayıcı-içi WASM motoruna uygula.
+    LocalEngine.command(cmd);
   } else {
     addLcOutput('⚠ Motor çevrimdışı — komut gönderilemedi', 'err');
   }
+}
+
+// runAnalysis/lever konsolu "canlı" için liveWs.OPEN'e bakar; yerel WASM motoru
+// da canlıdır. Tek noktadan kontrol.
+function engineLive() {
+  return (liveWs && liveWs.readyState === WebSocket.OPEN) || LocalEngine.ready;
 }
 
 function addLcOutput(line, cls) {
@@ -2264,6 +2271,109 @@ function handleEngineEvent(ev) {
 }
 
 /* ── WebSocket lifecycle ── */
+/* ═══════════════════════════════════════════════════════════════
+   LOCAL ENGINE (WebAssembly)  — bilgisayardan/sunucudan BAĞIMSIZ
+   caelus_core (C++ ile bit-bit eşdeğer no_std çekirdek) tarayıcının içinde
+   koşar. WS köprüsü yoksa (standalone sayfa) gerçek motor buradan sürülür;
+   olaylar handleEngineEvent'e beslenir → UI aynı hattı kullanır (demo YOK).
+   ═══════════════════════════════════════════════════════════════ */
+const LocalEngine = (function () {
+  let ex = null;                 // wasm exports
+  let scenarioId = null;
+  const feed = (obj) => handleEngineEvent({ data: JSON.stringify(obj) });
+
+  function u8() { return new Uint8Array(ex.memory.buffer); } // her çağrıda YENİDEN al (detach güvenliği)
+  function writeBuf(str) {
+    const b = new TextEncoder().encode(str);
+    const cap = ex.cae_buf_cap();
+    const n = Math.min(b.length, cap);
+    u8().set(b.subarray(0, n), ex.cae_buf());
+    return n;
+  }
+  function readBuf(len) {
+    const p = ex.cae_buf();
+    return new TextDecoder().decode(u8().slice(p, p + len));
+  }
+  function snapshot() { return JSON.parse(readBuf(ex.cae_snapshot())); }
+
+  function emitStateFrom(snap) {
+    feed({ type:'engine_state', state: scenarioId, scenario_id: scenarioId,
+           tick: snap.tick, friction_mult: snap.clamped_friction,
+           throughput_ratio: snap.throughput_ratio, outage_active: snap.outage_active,
+           any_hysteresis_flip: snap.any_hysteresis_flip,
+           any_deadline_missed: snap.any_deadline_missed });
+  }
+  function pushSnapshotAndState() {
+    const snap = snapshot();
+    emitStateFrom(snap);
+    feed(snap);              // nodes/edges → causal graph + analiz paneli
+    return snap;
+  }
+  function pushLevers() { feed(JSON.parse(readBuf(ex.cae_levers()))); }
+
+  return {
+    get ready() { return !!ex; },
+    async init() {
+      if (ex) return true;
+      if (!window.CAELUS_WASM_B64 || !window.CAELUS_SCENARIOS) return false;
+      const bin = Uint8Array.from(atob(window.CAELUS_WASM_B64), c => c.charCodeAt(0));
+      const { instance } = await WebAssembly.instantiate(bin, {});
+      ex = instance.exports;
+      return true;
+    },
+    scenarios() { return Object.keys(window.CAELUS_SCENARIOS || {}); },
+    load(id) {
+      const json = (window.CAELUS_SCENARIOS || {})[id];
+      if (!json || !ex) return false;
+      scenarioId = id;
+      const rc = ex.cae_load(writeBuf(json));
+      if (rc !== 0) { addLcOutput('WASM motor: senaryo yüklenemedi', 'err'); return false; }
+      let sector = 'UNIVERSAL';
+      try { sector = (JSON.parse(json).sector) || sector; } catch(_) {}
+      feed({ type:'scenario_loaded', scenario_id: id, sector, sig_status:'BUNDLED' });
+      pushSnapshotAndState();
+      pushLevers();
+      setLiveStatus('live');
+      addCryptoLog('ok', `YEREL MOTOR (WASM): ${id} yüklendi — sunucusuz canlı simülasyon`);
+      return true;
+    },
+    // WS komut arayüzüyle aynı: "tick N" | "lever X" | "status" | "list levers"
+    command(cmd) {
+      if (!ex) return false;
+      const parts = cmd.trim().split(/\s+/);
+      const c = (parts[0] || '').toLowerCase();
+      if (c === 'tick') {
+        let n = parseInt(parts[1] || '1', 10); if (!(n > 0)) n = 1; n = Math.min(n, 100000);
+        ex.cae_tick(n);
+        const snap = pushSnapshotAndState();
+        addLcOutput(`→ yerel motor: ${n} tick (t=${snap.tick}, sürtünme=${snap.clamped_friction.toFixed(2)}×)`, 'ok');
+      } else if (c === 'lever') {
+        const id = parts[1] || '';
+        const ok = ex.cae_lever(writeBuf(id)) === 1;
+        pushSnapshotAndState();
+        addLcOutput(`→ yerel motor: lever ${id} → ${ok ? 'BAŞARILI' : 'BAŞARISIZ/KİLİTLİ'}`, ok ? 'ok' : 'err');
+      } else if (c === 'status' || c === 'snapshot') {
+        pushSnapshotAndState();
+      } else if (cmd.trim().toLowerCase() === 'list levers' || c === 'list') {
+        pushLevers();
+      } else {
+        addLcOutput(`yerel motor: bilinmeyen komut "${cmd}"`, 'err');
+      }
+      return true;
+    }
+  };
+})();
+
+async function startLocalEngine() {
+  const ok = await LocalEngine.init();
+  if (!ok) return false;
+  const ids = LocalEngine.scenarios();
+  const preferred = ids.find(x => /BS-01/i.test(x)) || ids[0];
+  addLcOutput(`Yerel WASM motoru hazır — sunucu/ağ gerekmez. Senaryolar: ${ids.join(', ')}`, 'ok');
+  LocalEngine.load(preferred);
+  return true;
+}
+
 function connectLiveBridge() {
   if (liveWs && liveWs.readyState <= WebSocket.OPEN) return;
 
@@ -2462,7 +2572,7 @@ el.cmdInput.addEventListener('keydown', e => {
 // ve raporu motorun CANLI verisinden üretir. Math.random / sahte CP-SAT yok.
 // Motor çevrimdışıysa uydurma yapmaz, dürüstçe bunu söyler.
 function runAnalysis() {
-  const live = liveWs && liveWs.readyState === WebSocket.OPEN;
+  const live = engineLive();
   if (!live) {
     setFeedback('Motor çevrimdışı — canlı analiz için CAELUS motorunu başlatın (dist/caelus_os --scenario <id> --repl).', 'var(--crisis)');
     addLcOutput('ANALİZ ET: motor çevrimdışı; uydurma rapor üretilmez.', 'err');
@@ -2609,7 +2719,14 @@ function initUI() {
   setInterval(updateSessionBadge, 5000);
 
   setLiveStatus('offline');
-  connectLiveBridge();
+  // Bilgisayardan bağımsız mod: gömülü WASM motoru varsa onu başlat (sunucu/ağ
+  // gerekmez); yoksa canlı WS köprüsüne bağlan (masaüstü/uzak motor).
+  if (window.CAELUS_WASM_B64 && window.CAELUS_SCENARIOS) {
+    if (state.fluctuateInterval) { clearInterval(state.fluctuateInterval); state.fluctuateInterval = null; }
+    startLocalEngine().then(ok => { if (!ok) connectLiveBridge(); });
+  } else {
+    connectLiveBridge();
+  }
 
   setInterval(() => {
     const ev = CRYPTO_EVENTS[Math.floor(Math.random()*CRYPTO_EVENTS.length)];

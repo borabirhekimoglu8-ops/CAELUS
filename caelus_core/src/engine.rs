@@ -454,6 +454,9 @@ impl CausalEngine {
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
+    pub fn edges(&self) -> &[Edge] {
+        &self.edges
+    }
     pub fn hysteresis_list(&self) -> &[Hysteresis] {
         &self.hysts
     }

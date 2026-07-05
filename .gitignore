@@ -21,3 +21,6 @@ caelus_app.js
 
 # Private signing material must be generated/stored outside the repository.
 tools/caelus_signing.key
+
+# WASM build çıktısı (üretilmiş)
+caelus_wasm/target/
