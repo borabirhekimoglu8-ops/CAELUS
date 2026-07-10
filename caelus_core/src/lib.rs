@@ -23,6 +23,9 @@ pub mod det_rng;
 pub mod engine;
 pub mod fp;
 pub mod neural_contract;
+pub mod neural_gate;
+pub mod neural_hash;
+pub mod neural_runtime;
 
 pub use det_rng::DetRng;
 pub use engine::{

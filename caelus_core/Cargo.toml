@@ -19,6 +19,11 @@ std = []
 [lib]
 name = "caelus_core"
 
+[dependencies]
+# Exact version: neural input/output commitments are security-relevant persisted
+# values and must remain MSRV/no_std compatible.
+blake3 = { version = "=1.8.2", default-features = false }
+
 [[bin]]
 name = "caelus_core_repl"
 path = "src/bin/caelus_core_repl.rs"

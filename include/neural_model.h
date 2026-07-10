@@ -22,6 +22,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "neural_contract.h"
@@ -52,6 +53,21 @@ static constexpr uint32_t kExpectedWeightCountV1 = 4'899u;
 static constexpr uint32_t kExpectedBiasCountV1 = 105u;
 static constexpr uint32_t kEngineVersionCode = 20'000u; // 2.0.0
 static constexpr uint32_t kScenarioSchemaCode = 200u;   // 2.0
+
+inline bool compute_neural_package_hash(
+    const std::array<uint8_t, 32>& manifest_hash,
+    const std::array<uint8_t, 32>& weights_hash,
+    std::array<uint8_t, 32>& package_hash) noexcept {
+    static constexpr uint8_t kDomain[] = "CAELUS_NEURAL_PACKAGE_ID_V1";
+    std::array<uint8_t, sizeof(kDomain) + 64u> payload{};
+    std::memcpy(payload.data(), kDomain, sizeof(kDomain));
+    std::memcpy(payload.data() + sizeof(kDomain),
+                manifest_hash.data(), manifest_hash.size());
+    std::memcpy(payload.data() + sizeof(kDomain) + manifest_hash.size(),
+                weights_hash.data(), weights_hash.size());
+    return caelus_blake3_hash(
+        payload.data(), payload.size(), package_hash.data()) == 1u;
+}
 
 enum class ModelLoadStatus : uint32_t {
     Loaded = 0,
@@ -133,16 +149,57 @@ struct NeuralModelManifestV1 {
     std::vector<std::string> operators;
 };
 
-struct NeuralModelPackage {
-    ModelLoadStatus status = ModelLoadStatus::Unavailable;
-    std::string error;
-    NeuralModelManifestV1 manifest;
-    std::vector<uint8_t> weights;
-    std::array<uint8_t, 32> manifest_hash{};
-    std::array<uint8_t, 32> weights_hash{};
-    std::array<uint8_t, 32> signer_pubkey{};
+class NeuralModelLoader;
 
-    bool trusted() const noexcept { return status == ModelLoadStatus::Loaded; }
+class NeuralModelPackage final {
+public:
+    bool trusted() const noexcept { return status_ == ModelLoadStatus::Loaded; }
+    ModelLoadStatus status() const noexcept { return status_; }
+    const std::string& error() const noexcept { return error_; }
+    const NeuralModelManifestV1& manifest() const noexcept { return manifest_; }
+    const std::vector<uint8_t>& weights() const noexcept { return weights_; }
+    const std::array<uint8_t, 32>& manifest_hash() const noexcept {
+        return manifest_hash_;
+    }
+    const std::array<uint8_t, 32>& weights_hash() const noexcept {
+        return weights_hash_;
+    }
+    const std::array<uint8_t, 32>& package_hash() const noexcept {
+        return package_hash_;
+    }
+    const std::array<uint8_t, 32>& signer_pubkey() const noexcept {
+        return signer_pubkey_;
+    }
+
+#ifdef CAELUS_CPP_UNIT_TEST
+    static NeuralModelPackage test_trusted(
+        NeuralModelManifestV1 manifest, std::vector<uint8_t> weights,
+        std::array<uint8_t, 32> manifest_hash,
+        std::array<uint8_t, 32> weights_hash) {
+        NeuralModelPackage package;
+        package.manifest_ = std::move(manifest);
+        package.weights_ = std::move(weights);
+        package.manifest_hash_ = manifest_hash;
+        package.weights_hash_ = weights_hash;
+        if (compute_neural_package_hash(
+                package.manifest_hash_, package.weights_hash_,
+                package.package_hash_)) {
+            package.status_ = ModelLoadStatus::Loaded;
+        }
+        return package;
+    }
+#endif
+
+private:
+    friend class NeuralModelLoader;
+    ModelLoadStatus status_ = ModelLoadStatus::Unavailable;
+    std::string error_;
+    NeuralModelManifestV1 manifest_;
+    std::vector<uint8_t> weights_;
+    std::array<uint8_t, 32> manifest_hash_{};
+    std::array<uint8_t, 32> weights_hash_{};
+    std::array<uint8_t, 32> package_hash_{};
+    std::array<uint8_t, 32> signer_pubkey_{};
 };
 
 namespace model_detail {
@@ -546,58 +603,61 @@ inline NeuralModelPackage NeuralModelLoader::load_with_key(
         if (!model_detail::read_file_bounded(directory + separator + "manifest.json",
                                               kMaxManifestBytesV1, manifest_bytes) ||
             !model_detail::read_file_bounded(directory + separator + "weights.bin",
-                                              kMaxWeightsBytesV1, package.weights) ||
+                                              kMaxWeightsBytesV1, package.weights_) ||
             !model_detail::read_file_bounded(directory + separator + "model.sig",
                                               512u, signature_bytes)) {
-            package.status = ModelLoadStatus::Unavailable;
-            package.error = "model package files unavailable, empty, or over size limit";
+            package.status_ = ModelLoadStatus::Unavailable;
+            package.error_ = "model package files unavailable, empty, or over size limit";
             return package;
         }
         // Authenticate the exact raw bytes before invoking the JSON parser.
         // This keeps unauthenticated manifests off the recursive parser path.
         std::array<uint8_t, 64> signature{};
         if (!model_detail::parse_signature(
-                signature_bytes, package.signer_pubkey, signature)) {
-            package.status = ModelLoadStatus::SignatureMalformed;
-            package.error = "model.sig format is malformed";
+                signature_bytes, package.signer_pubkey_, signature)) {
+            package.status_ = ModelLoadStatus::SignatureMalformed;
+            package.error_ = "model.sig format is malformed";
             return package;
         }
         if (!model_detail::constant_time_equal(
-                package.signer_pubkey.data(), trusted_public_key.data(), 32u)) {
-            package.status = ModelLoadStatus::SignerUntrusted;
-            package.error = "model signer does not match dedicated neural trust anchor";
+                package.signer_pubkey_.data(), trusted_public_key.data(), 32u)) {
+            package.status_ = ModelLoadStatus::SignerUntrusted;
+            package.error_ = "model signer does not match dedicated neural trust anchor";
             return package;
         }
         if (caelus_blake3_hash(manifest_bytes.data(), manifest_bytes.size(),
-                               package.manifest_hash.data()) != 1u ||
-            caelus_blake3_hash(package.weights.data(), package.weights.size(),
-                               package.weights_hash.data()) != 1u) {
-            package.status = ModelLoadStatus::IoError;
-            package.error = "Blake3 hash service failed";
+                               package.manifest_hash_.data()) != 1u ||
+            caelus_blake3_hash(package.weights_.data(), package.weights_.size(),
+                               package.weights_hash_.data()) != 1u ||
+            !compute_neural_package_hash(
+                package.manifest_hash_, package.weights_hash_,
+                package.package_hash_)) {
+            package.status_ = ModelLoadStatus::IoError;
+            package.error_ = "Blake3 model/package hash service failed";
             return package;
         }
         if (caelus_verify_neural_model_signature(
-                package.manifest_hash.data(), package.weights_hash.data(),
-                package.signer_pubkey.data(), signature.data()) != 1u) {
-            package.status = ModelLoadStatus::SignatureInvalid;
-            package.error = "neural model Ed25519 signature is invalid";
+                package.manifest_hash_.data(), package.weights_hash_.data(),
+                package.signer_pubkey_.data(), signature.data()) != 1u) {
+            package.status_ = ModelLoadStatus::SignatureInvalid;
+            package.error_ = "neural model Ed25519 signature is invalid";
             return package;
         }
         if (!model_detail::valid_utf8(manifest_bytes)) {
-            package.status = ModelLoadStatus::ManifestMalformed;
-            package.error = "manifest is not valid UTF-8";
+            package.status_ = ModelLoadStatus::ManifestMalformed;
+            package.error_ = "manifest is not valid UTF-8";
             return package;
         }
         if (!model_detail::parse_manifest(
-                manifest_bytes, package.manifest, package.status, package.error)) {
+                manifest_bytes, package.manifest_, package.status_, package.error_)) {
             return package;
         }
-        const auto& m = package.manifest;
+        const auto& m = package.manifest_;
         if (m.signer_identity !=
             model_detail::hex_encode(
                 trusted_public_key.data(), trusted_public_key.size())) {
-            package.status = ModelLoadStatus::SignerUntrusted;
-            package.error = "manifest signer_identity does not match neural trust anchor";
+            package.status_ = ModelLoadStatus::SignerUntrusted;
+            package.error_ = "manifest signer_identity does not match neural trust anchor";
             return package;
         }
         if (m.manifest_version != CAELUS_NN_MANIFEST_V1 ||
@@ -613,8 +673,8 @@ inline NeuralModelPackage NeuralModelLoader::load_with_key(
             m.weight_scale_denominator == 0u ||
             m.activation_min_fp != 0 ||
             m.activation_max_fp != CAELUS_NEURAL_FP_SCALE) {
-            package.status = ModelLoadStatus::UnsupportedManifest;
-            package.error = "manifest ABI, architecture, arithmetic, or activation is unsupported";
+            package.status_ = ModelLoadStatus::UnsupportedManifest;
+            package.error_ = "manifest ABI, architecture, arithmetic, or activation is unsupported";
             return package;
         }
         if (m.history_ticks != CAELUS_NEURAL_HISTORY_TICKS_V1 ||
@@ -623,8 +683,8 @@ inline NeuralModelPackage NeuralModelLoader::load_with_key(
             m.message_passing_layers != 2u ||
             m.weight_count != kExpectedWeightCountV1 ||
             m.bias_count != kExpectedBiasCountV1) {
-            package.status = ModelLoadStatus::DimensionMismatch;
-            package.error = "manifest tensor dimensions do not match V1 runtime";
+            package.status_ = ModelLoadStatus::DimensionMismatch;
+            package.error_ = "manifest tensor dimensions do not match V1 runtime";
             return package;
         }
         if (m.engine_version_min > m.engine_version_max ||
@@ -632,36 +692,36 @@ inline NeuralModelPackage NeuralModelLoader::load_with_key(
             m.engine_version_min > engine_version || m.engine_version_max < engine_version ||
             m.scenario_schema_min > scenario_schema ||
             m.scenario_schema_max < scenario_schema) {
-            package.status = ModelLoadStatus::UnsupportedSchema;
-            package.error = "model does not support this engine/scenario schema";
+            package.status_ = ModelLoadStatus::UnsupportedSchema;
+            package.error_ = "model does not support this engine/scenario schema";
             return package;
         }
-        if (!model_detail::validate_weights_header(package.weights, m, package.error)) {
-            package.status = ModelLoadStatus::WeightsMalformed;
+        if (!model_detail::validate_weights_header(package.weights_, m, package.error_)) {
+            package.status_ = ModelLoadStatus::WeightsMalformed;
             return package;
         }
         const std::string actual_weights_hash =
             model_detail::hex_encode(
-                package.weights_hash.data(), package.weights_hash.size());
+                package.weights_hash_.data(), package.weights_hash_.size());
         if (m.weights_hash != actual_weights_hash || m.model_hash != actual_weights_hash) {
-            package.status = ModelLoadStatus::HashMismatch;
-            package.error = "manifest model/weights hash does not match weights.bin";
+            package.status_ = ModelLoadStatus::HashMismatch;
+            package.error_ = "manifest model/weights hash does not match weights.bin";
             return package;
         }
         std::array<uint8_t, 32> training_hash{};
         std::array<uint8_t, 32> config_hash{};
         if (!model_detail::decode_hex(m.training_dataset_hash, training_hash) ||
             !model_detail::decode_hex(m.training_config_hash, config_hash)) {
-            package.status = ModelLoadStatus::ManifestMalformed;
-            package.error = "training provenance hashes are malformed";
+            package.status_ = ModelLoadStatus::ManifestMalformed;
+            package.error_ = "training provenance hashes are malformed";
             return package;
         }
-        package.status = ModelLoadStatus::Loaded;
-        package.error.clear();
+        package.status_ = ModelLoadStatus::Loaded;
+        package.error_.clear();
         return package;
     } catch (...) {
-        package.status = ModelLoadStatus::IoError;
-        package.error = "exception while loading model package";
+        package.status_ = ModelLoadStatus::IoError;
+        package.error_ = "exception while loading model package";
         return package;
     }
 }
@@ -673,8 +733,8 @@ inline NeuralModelPackage NeuralModelLoader::load(
     std::array<uint8_t, 32> trusted_public_key{};
     if (!default_trusted_neural_pubkey(trusted_public_key)) {
         NeuralModelPackage package;
-        package.status = ModelLoadStatus::UnsupportedManifest;
-        package.error = "compiled neural trust anchor is malformed";
+        package.status_ = ModelLoadStatus::UnsupportedManifest;
+        package.error_ = "compiled neural trust anchor is malformed";
         return package;
     }
     return load_with_key(

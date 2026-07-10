@@ -22,6 +22,7 @@ pub const MAX_EDGES_V1: usize = 256;
 pub const MAX_LEVERS_V1: usize = 64;
 pub const FP_SCALE: i64 = 1_000_000;
 pub const MAX_ABS_TRUST_DELTA_V1: i64 = 50_000;
+pub const MAX_ABS_FLOW_V1: i64 = 4 * FP_SCALE;
 
 pub const MISSING_REPORTED_STATE: u32 = 1 << 0;
 pub const MISSING_STATE_HISTORY: u32 = 1 << 1;
@@ -30,6 +31,13 @@ pub const MISSING_FLOW: u32 = 1 << 3;
 pub const MISSING_DEADLINE: u32 = 1 << 4;
 pub const MISSING_HYSTERESIS: u32 = 1 << 5;
 pub const MISSING_INTEL: u32 = 1 << 6;
+pub const KNOWN_MISSING_MASK_V1: u32 = MISSING_REPORTED_STATE
+    | MISSING_STATE_HISTORY
+    | MISSING_REPORTED_HISTORY
+    | MISSING_FLOW
+    | MISSING_DEADLINE
+    | MISSING_HYSTERESIS
+    | MISSING_INTEL;
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +200,11 @@ pub struct NeuralOutput {
     pub output_schema_version: u32,
     pub runtime_status: RuntimeStatus,
     pub saturation_count: u32,
+    pub tick: u64,
+    pub feature_schema_version: u32,
+    pub model_hash: [u8; 32],
+    pub scenario_hash: [u8; 32],
+    pub input_hash: [u8; 32],
     pub nodes: Vec<NodeOutput>,
     pub proposals: Vec<ParameterProposal>,
     pub lever_scores: Vec<LeverScore>,
@@ -230,8 +243,18 @@ pub fn probability_in_range(value: i64) -> bool {
     (0..=FP_SCALE).contains(&value)
 }
 
+fn neural_identifier_valid(value: &str, capacity: usize) -> bool {
+    !value.is_empty()
+        && value.len() < capacity
+        && value
+            .as_bytes()
+            .iter()
+            .all(|byte| (0x21..=0x7e).contains(byte))
+}
+
 pub fn node_input_ranges_valid(node: &NodeInput) -> bool {
-    node.node_index < MAX_NODES_V1 as u32
+    (node.missing_mask & !KNOWN_MISSING_MASK_V1) == 0
+        && node.node_index < MAX_NODES_V1 as u32
         && node.node_kind <= 5
         && node.capacity_fp > 0
         && (0..=node.capacity_fp).contains(&node.authoritative_state_fp)
@@ -241,6 +264,20 @@ pub fn node_input_ranges_valid(node: &NodeInput) -> bool {
         && probability_in_range(node.queue_utilization_fp)
         && probability_in_range(node.outage_latched_fp)
         && probability_in_range(node.intel_risk_fp)
+        && (-MAX_ABS_FLOW_V1..=MAX_ABS_FLOW_V1).contains(&node.incoming_flow_fp)
+        && (-MAX_ABS_FLOW_V1..=MAX_ABS_FLOW_V1).contains(&node.outgoing_flow_fp)
+        && (-FP_SCALE..=FP_SCALE).contains(&node.deadline_distance_fp)
+        && (-FP_SCALE..=FP_SCALE).contains(&node.hysteresis_distance_fp)
+        && ((node.missing_mask & MISSING_STATE_HISTORY) != 0
+            || node
+                .state_history_fp
+                .iter()
+                .all(|value| (0..=node.capacity_fp).contains(value)))
+        && ((node.missing_mask & MISSING_REPORTED_HISTORY) != 0
+            || node
+                .reported_history_fp
+                .iter()
+                .all(|value| (0..=node.capacity_fp).contains(value)))
 }
 
 pub fn policy_ranges_valid(policy: &NeuralPolicy) -> bool {
@@ -260,29 +297,38 @@ pub fn input_ranges_valid(input: &NeuralInput) -> bool {
         || input.nodes.len() > MAX_NODES_V1
         || input.edges.len() > MAX_EDGES_V1
         || input.levers.len() > MAX_LEVERS_V1
+        || !neural_identifier_valid(&input.scenario_id, 64)
+        || !neural_identifier_valid(&input.engine_version, 32)
     {
         return false;
     }
     if input.nodes.iter().enumerate().any(|(index, node)| {
         node.node_index as usize != index
-            || node.node_id.is_empty()
-            || node.node_id.len() >= 64
+            || !neural_identifier_valid(&node.node_id, 64)
             || !node_input_ranges_valid(node)
     }) {
+        return false;
+    }
+    let actual_missing_count: u32 = input
+        .nodes
+        .iter()
+        .map(|node| (node.missing_mask & KNOWN_MISSING_MASK_V1).count_ones())
+        .sum();
+    if input.missing_value_count != actual_missing_count {
         return false;
     }
     if input.edges.iter().any(|edge| {
         edge.source_index as usize >= input.nodes.len()
             || edge.destination_index as usize >= input.nodes.len()
             || edge.delay_ticks < 0
-            || edge.multiplier_fp < 0
+            || edge.delay_ticks > 1_000_000
+            || !(0..=MAX_ABS_FLOW_V1).contains(&edge.multiplier_fp)
     }) {
         return false;
     }
     !input.levers.iter().enumerate().any(|(index, lever)| {
         lever.lever_index as usize != index
-            || lever.lever_id.is_empty()
-            || lever.lever_id.len() >= 64
+            || !neural_identifier_valid(&lever.lever_id, 64)
             || !probability_in_range(lever.success_probability_fp)
             || lever.cost_ticks < 0
             || lever.remaining_lockout < 0
@@ -298,10 +344,14 @@ pub fn output_ranges_valid_with_policy(
         || !policy_ranges_valid(policy)
         || output.output_schema_version != NEURAL_OUTPUT_V1
         || output.runtime_status != RuntimeStatus::Ok
+        || output.tick != input.tick
+        || output.feature_schema_version != input.feature_schema_version
+        || output.scenario_hash != input.scenario_hash
         || output.nodes.len() != input.nodes.len()
         || output.nodes.len() > MAX_NODES_V1
-        || output.proposals.len() > output.nodes.len()
-        || output.lever_scores.len() > input.levers.len()
+        || (!output.proposals.is_empty() && output.proposals.len() != output.nodes.len())
+        || (policy.mode != NeuralMode::Assurance && !output.proposals.is_empty())
+        || output.lever_scores.len() != input.levers.len()
         || output.lever_scores.len() > MAX_LEVERS_V1
     {
         return false;
@@ -319,14 +369,22 @@ pub fn output_ranges_valid_with_policy(
         return false;
     }
     let mut seen = [false; MAX_NODES_V1];
-    for proposal in &output.proposals {
+    for (proposal_index, proposal) in output.proposals.iter().enumerate() {
         let node_index = proposal.node_index as usize;
-        if node_index >= input.nodes.len() || seen[node_index] {
+        if node_index != proposal_index || seen[node_index] {
             return false;
         }
         seen[node_index] = true;
         let current_trust = input.nodes[node_index].trust_fp;
         let Some(resulting_trust) = current_trust.checked_add(proposal.proposed_delta_fp) else {
+            return false;
+        };
+        let Some(authorized_min_trust) = current_trust.checked_add(proposal.authorized_min_fp)
+        else {
+            return false;
+        };
+        let Some(authorized_max_trust) = current_trust.checked_add(proposal.authorized_max_fp)
+        else {
             return false;
         };
         let limit = policy.maximum_abs_trust_delta_fp;
@@ -339,14 +397,20 @@ pub fn output_ranges_valid_with_policy(
             || proposal.authorized_max_fp > limit
             || proposal.proposed_delta_fp < -limit
             || proposal.proposed_delta_fp > limit
+            || !probability_in_range(authorized_min_trust)
+            || !probability_in_range(authorized_max_trust)
             || !probability_in_range(resulting_trust)
         {
             return false;
         }
     }
-    !output.lever_scores.iter().any(|score| {
-        score.lever_index as usize >= input.levers.len() || !probability_in_range(score.score_fp)
-    })
+    !output
+        .lever_scores
+        .iter()
+        .enumerate()
+        .any(|(index, score)| {
+            score.lever_index as usize != index || !probability_in_range(score.score_fp)
+        })
 }
 
 pub fn output_ranges_valid(input: &NeuralInput, output: &NeuralOutput) -> bool {
@@ -393,6 +457,11 @@ mod tests {
             output_schema_version: NEURAL_OUTPUT_V1,
             runtime_status: RuntimeStatus::Ok,
             saturation_count: 0,
+            tick: input.tick,
+            feature_schema_version: input.feature_schema_version,
+            model_hash: [0; 32],
+            scenario_hash: input.scenario_hash,
+            input_hash: crate::neural_hash::input_hash(&input),
             nodes: alloc::vec![NodeOutput {
                 node_index: 0,
                 estimated_true_state_fp: 500_000,
@@ -424,12 +493,17 @@ mod tests {
             node_index: 0,
             proposed_delta_fp: -20_000,
             authorized_min_fp: -50_000,
-            authorized_max_fp: 50_000,
+            authorized_max_fp: 20_000,
         };
         let mut output = NeuralOutput {
             output_schema_version: NEURAL_OUTPUT_V1,
             runtime_status: RuntimeStatus::Ok,
             saturation_count: 0,
+            tick: input.tick,
+            feature_schema_version: input.feature_schema_version,
+            model_hash: [0; 32],
+            scenario_hash: input.scenario_hash,
+            input_hash: crate::neural_hash::input_hash(&input),
             nodes: alloc::vec![
                 NodeOutput {
                     node_index: 0,
@@ -447,11 +521,20 @@ mod tests {
         };
         assert!(!output_ranges_valid(&input, &output));
 
-        output.proposals.truncate(1);
+        output.proposals[1].node_index = 1;
         output.proposals[0].proposed_delta_fp = 30_000;
         assert!(!output_ranges_valid(&input, &output));
 
         output.proposals[0].proposed_delta_fp = i64::MIN;
         assert!(!output_ranges_valid(&input, &output));
+
+        output.proposals[0].proposed_delta_fp = -20_000;
+        let mut advisory_policy = NeuralPolicy::assurance_default();
+        advisory_policy.mode = NeuralMode::Advisory;
+        assert!(!output_ranges_valid_with_policy(
+            &input,
+            &output,
+            &advisory_policy
+        ));
     }
 }

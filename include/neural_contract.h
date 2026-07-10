@@ -16,6 +16,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+#include <utility>
+#include <vector>
 
 // Public format identifiers.  These values are persisted in manifests and
 // audit events; changing semantics requires a new version, not reinterpretation.
@@ -183,6 +186,12 @@ struct CaelusNeuralOutputBufferV1 {
     uint32_t proposal_count;
     uint32_t lever_score_count;
     uint32_t reserved;
+    uint64_t tick;
+    uint32_t feature_schema_version;
+    uint32_t identity_reserved;
+    uint8_t model_hash[CAELUS_NEURAL_HASH_BYTES_V1];
+    uint8_t scenario_hash[CAELUS_NEURAL_HASH_BYTES_V1];
+    uint8_t input_hash[CAELUS_NEURAL_HASH_BYTES_V1];
     CaelusNeuralNodeOutputV1 nodes[CAELUS_NEURAL_MAX_NODES_V1];
     CaelusNeuralParameterProposalV1 proposals[CAELUS_NEURAL_MAX_NODES_V1];
     CaelusNeuralLeverScoreV1 lever_scores[CAELUS_NEURAL_MAX_LEVERS_V1];
@@ -206,6 +215,10 @@ struct CaelusNeuralGateResultV1 {
     uint32_t runtime_status;
     uint32_t accepted_proposal_count;
     uint32_t reserved;
+    uint8_t model_hash[CAELUS_NEURAL_HASH_BYTES_V1];
+    uint8_t input_hash[CAELUS_NEURAL_HASH_BYTES_V1];
+    uint8_t output_hash[CAELUS_NEURAL_HASH_BYTES_V1];
+    uint8_t policy_hash[CAELUS_NEURAL_HASH_BYTES_V1];
     char reason[96];
 };
 
@@ -216,13 +229,43 @@ namespace caelus::neural {
 static constexpr int64_t kFpZero = 0;
 static constexpr int64_t kFpOne = CAELUS_NEURAL_FP_SCALE;
 static constexpr int64_t kMaxAbsTrustDeltaV1 = 50'000;
+static constexpr int64_t kMaxAbsFlowV1 = 4 * kFpOne;
+static constexpr uint32_t kKnownMissingMaskV1 =
+    CAELUS_NEURAL_MISSING_REPORTED_STATE |
+    CAELUS_NEURAL_MISSING_STATE_HISTORY |
+    CAELUS_NEURAL_MISSING_REPORTED_HISTORY |
+    CAELUS_NEURAL_MISSING_FLOW |
+    CAELUS_NEURAL_MISSING_DEADLINE |
+    CAELUS_NEURAL_MISSING_HYSTERESIS |
+    CAELUS_NEURAL_MISSING_INTEL;
 
 inline bool probability_in_range(int64_t value) noexcept {
     return value >= kFpZero && value <= kFpOne;
 }
 
+inline uint32_t contract_bit_count(uint32_t value) noexcept {
+    uint32_t count = 0;
+    while (value != 0u) {
+        count += value & 1u;
+        value >>= 1u;
+    }
+    return count;
+}
+
+inline bool neural_identifier_valid(const char* value, size_t capacity) noexcept {
+    if (value == nullptr || capacity == 0u || value[0] == '\0') return false;
+    size_t length = 0;
+    while (length < capacity && value[length] != '\0') {
+        const uint8_t byte = static_cast<uint8_t>(value[length]);
+        if (byte < 0x21u || byte > 0x7eu) return false;
+        ++length;
+    }
+    return length > 0u && length < capacity;
+}
+
 inline bool node_input_ranges_valid(const CaelusNeuralNodeInputV1& node) noexcept {
     if (node.struct_size != sizeof(CaelusNeuralNodeInputV1)) return false;
+    if ((node.missing_mask & ~kKnownMissingMaskV1) != 0u) return false;
     if (node.node_index >= CAELUS_NEURAL_MAX_NODES_V1) return false;
     if (node.node_kind > 5u) return false;
     if (node.capacity_fp <= 0) return false;
@@ -234,6 +277,22 @@ inline bool node_input_ranges_valid(const CaelusNeuralNodeInputV1& node) noexcep
         !probability_in_range(node.queue_utilization_fp) ||
         !probability_in_range(node.outage_latched_fp) ||
         !probability_in_range(node.intel_risk_fp)) return false;
+    if (node.incoming_flow_fp < -kMaxAbsFlowV1 ||
+        node.incoming_flow_fp > kMaxAbsFlowV1 ||
+        node.outgoing_flow_fp < -kMaxAbsFlowV1 ||
+        node.outgoing_flow_fp > kMaxAbsFlowV1 ||
+        node.deadline_distance_fp < -kFpOne ||
+        node.deadline_distance_fp > kFpOne ||
+        node.hysteresis_distance_fp < -kFpOne ||
+        node.hysteresis_distance_fp > kFpOne) return false;
+    if ((node.missing_mask & CAELUS_NEURAL_MISSING_STATE_HISTORY) == 0u) {
+        for (int64_t value : node.state_history_fp)
+            if (value < 0 || value > node.capacity_fp) return false;
+    }
+    if ((node.missing_mask & CAELUS_NEURAL_MISSING_REPORTED_HISTORY) == 0u) {
+        for (int64_t value : node.reported_history_fp)
+            if (value < 0 || value > node.capacity_fp) return false;
+    }
     return true;
 }
 
@@ -256,6 +315,8 @@ inline bool policy_ranges_valid(const CaelusNeuralPolicyV1& policy) noexcept {
     return policy.struct_size == sizeof(CaelusNeuralPolicyV1) &&
            policy.policy_version == CAELUS_NEURAL_POLICY_V1 &&
            policy.mode <= CAELUS_NEURAL_MODE_ASSURANCE &&
+           policy.require_trusted_model <= 1u &&
+           policy.allow_bounded_trust_adjustment <= 1u &&
            policy.max_inference_steps > 0 &&
            probability_in_range(policy.minimum_confidence_fp) &&
            probability_in_range(policy.maximum_ood_fp) &&
@@ -272,27 +333,37 @@ inline bool input_ranges_valid(const CaelusNeuralInputV1& input) noexcept {
         input.node_count > CAELUS_NEURAL_MAX_NODES_V1 ||
         input.edge_count > CAELUS_NEURAL_MAX_EDGES_V1 ||
         input.lever_count > CAELUS_NEURAL_MAX_LEVERS_V1 ||
+        !neural_identifier_valid(
+            input.scenario_id, CAELUS_NEURAL_ID_BYTES_V1) ||
+        !neural_identifier_valid(
+            input.engine_version, sizeof(input.engine_version)) ||
         (input.node_count != 0 && input.nodes == nullptr) ||
         (input.edge_count != 0 && input.edges == nullptr) ||
         (input.lever_count != 0 && input.levers == nullptr)) {
         return false;
     }
+    uint32_t actual_missing_count = 0;
     for (uint32_t i = 0; i < input.node_count; ++i) {
         if (!node_input_ranges_valid(input.nodes[i]) ||
             input.nodes[i].node_index != i ||
-            std::memchr(input.nodes[i].node_id, '\0',
-                        CAELUS_NEURAL_ID_BYTES_V1) == nullptr) {
+            !neural_identifier_valid(
+                input.nodes[i].node_id, CAELUS_NEURAL_ID_BYTES_V1)) {
             return false;
         }
+        actual_missing_count += contract_bit_count(input.nodes[i].missing_mask);
     }
+    if (actual_missing_count != input.missing_value_count) return false;
     for (uint32_t i = 0; i < input.edge_count; ++i) {
         const auto& edge = input.edges[i];
         if (edge.struct_size != sizeof(CaelusNeuralEdgeInputV1) ||
             edge.source_index >= input.node_count ||
             edge.destination_index >= input.node_count ||
             edge.active > 1u ||
+            edge.reserved != 0u ||
             edge.delay_ticks < 0 ||
-            edge.multiplier_fp < 0) {
+            edge.delay_ticks > 1'000'000 ||
+            edge.multiplier_fp < 0 ||
+            edge.multiplier_fp > kMaxAbsFlowV1) {
             return false;
         }
     }
@@ -300,17 +371,104 @@ inline bool input_ranges_valid(const CaelusNeuralInputV1& input) noexcept {
         const auto& lever = input.levers[i];
         if (lever.struct_size != sizeof(CaelusNeuralLeverInputV1) ||
             lever.lever_index != i ||
-            std::memchr(lever.lever_id, '\0',
-                        CAELUS_NEURAL_ID_BYTES_V1) == nullptr ||
+            !neural_identifier_valid(
+                lever.lever_id, CAELUS_NEURAL_ID_BYTES_V1) ||
             !probability_in_range(lever.success_probability_fp) ||
             lever.cost_ticks < 0 ||
             lever.remaining_lockout < 0 ||
-            lever.available > 1u) {
+            lever.available > 1u ||
+            lever.reserved != 0u) {
             return false;
         }
     }
     return true;
 }
+
+/**
+ * Immutable, owned inference snapshot.
+ *
+ * The pointer-bearing C struct above is only a same-process view.  Production
+ * inference and gating consume this owner so a caller-provided count cannot
+ * outlive or exceed its allocation.  The factory copies/moves all spans,
+ * discards caller pointers/counts, validates the resulting bounded view, and
+ * exposes no mutable access after construction.
+ */
+class DeterministicNeuralRuntimeV1;
+class NeuralGateV1;
+
+class NeuralInputSnapshotV1 final {
+public:
+    NeuralInputSnapshotV1(const NeuralInputSnapshotV1&) = default;
+    NeuralInputSnapshotV1(NeuralInputSnapshotV1&&) noexcept = default;
+    NeuralInputSnapshotV1& operator=(const NeuralInputSnapshotV1&) = delete;
+    NeuralInputSnapshotV1& operator=(NeuralInputSnapshotV1&&) = delete;
+
+    static std::optional<NeuralInputSnapshotV1> create(
+        const CaelusNeuralInputV1& metadata,
+        const std::vector<CaelusNeuralNodeInputV1>& nodes,
+        const std::vector<CaelusNeuralEdgeInputV1>& edges,
+        const std::vector<CaelusNeuralLeverInputV1>& levers) {
+        if (nodes.size() > CAELUS_NEURAL_MAX_NODES_V1 ||
+            edges.size() > CAELUS_NEURAL_MAX_EDGES_V1 ||
+            levers.size() > CAELUS_NEURAL_MAX_LEVERS_V1) {
+            return std::nullopt;
+        }
+        NeuralInputSnapshotV1 snapshot(metadata, nodes, edges, levers);
+        const CaelusNeuralInputV1 input = snapshot.view();
+        if (!input_ranges_valid(input)) return std::nullopt;
+        return snapshot;
+    }
+
+    size_t node_count() const noexcept { return nodes_.size(); }
+    size_t edge_count() const noexcept { return edges_.size(); }
+    size_t lever_count() const noexcept { return levers_.size(); }
+
+private:
+    CaelusNeuralInputV1 view() const noexcept {
+        CaelusNeuralInputV1 input = metadata_;
+        input.node_count = static_cast<uint32_t>(nodes_.size());
+        input.edge_count = static_cast<uint32_t>(edges_.size());
+        input.lever_count = static_cast<uint32_t>(levers_.size());
+        input.nodes = nodes_.empty() ? nullptr : nodes_.data();
+        input.edges = edges_.empty() ? nullptr : edges_.data();
+        input.levers = levers_.empty() ? nullptr : levers_.data();
+        return input;
+    }
+
+    NeuralInputSnapshotV1(
+        const CaelusNeuralInputV1& metadata,
+        const std::vector<CaelusNeuralNodeInputV1>& nodes,
+        const std::vector<CaelusNeuralEdgeInputV1>& edges,
+        const std::vector<CaelusNeuralLeverInputV1>& levers)
+        : metadata_(metadata),
+          nodes_(nodes),
+          edges_(edges),
+          levers_(levers) {
+        metadata_.node_count = 0;
+        metadata_.edge_count = 0;
+        metadata_.lever_count = 0;
+        metadata_.nodes = nullptr;
+        metadata_.edges = nullptr;
+        metadata_.levers = nullptr;
+    }
+
+    friend class DeterministicNeuralRuntimeV1;
+    friend class NeuralGateV1;
+    friend bool input_ranges_valid(
+        const NeuralInputSnapshotV1& snapshot) noexcept;
+    friend bool output_ranges_valid(
+        const NeuralInputSnapshotV1& snapshot,
+        const CaelusNeuralOutputBufferV1& output,
+        const CaelusNeuralPolicyV1& policy) noexcept;
+    friend bool output_ranges_valid(
+        const NeuralInputSnapshotV1& snapshot,
+        const CaelusNeuralOutputBufferV1& output) noexcept;
+
+    CaelusNeuralInputV1 metadata_{};
+    std::vector<CaelusNeuralNodeInputV1> nodes_;
+    std::vector<CaelusNeuralEdgeInputV1> edges_;
+    std::vector<CaelusNeuralLeverInputV1> levers_;
+};
 
 inline bool output_ranges_valid(const CaelusNeuralInputV1& input,
                                 const CaelusNeuralOutputBufferV1& output,
@@ -319,16 +477,26 @@ inline bool output_ranges_valid(const CaelusNeuralInputV1& input,
         output.struct_size != sizeof(CaelusNeuralOutputBufferV1) ||
         output.output_schema_version != CAELUS_NEURAL_OUTPUT_V1 ||
         output.runtime_status != CAELUS_NEURAL_STATUS_OK ||
+        output.reserved != 0u ||
+        output.identity_reserved != 0u ||
+        output.tick != input.tick ||
+        output.feature_schema_version != input.feature_schema_version ||
+        std::memcmp(output.scenario_hash, input.scenario_hash,
+                    CAELUS_NEURAL_HASH_BYTES_V1) != 0 ||
         output.node_count != input.node_count ||
         output.node_count > CAELUS_NEURAL_MAX_NODES_V1 ||
-        output.proposal_count > output.node_count ||
-        output.lever_score_count > input.lever_count ||
+        (output.proposal_count != 0u &&
+         output.proposal_count != output.node_count) ||
+        (policy.mode != CAELUS_NEURAL_MODE_ASSURANCE &&
+         output.proposal_count != 0u) ||
+        output.lever_score_count != input.lever_count ||
         output.lever_score_count > CAELUS_NEURAL_MAX_LEVERS_V1) {
         return false;
     }
     for (uint32_t i = 0; i < output.node_count; ++i) {
         const auto& n = output.nodes[i];
-        if (n.node_index != i || n.estimated_true_state_fp < 0 ||
+        if (n.node_index != i || n.reserved != 0u ||
+            n.estimated_true_state_fp < 0 ||
             n.estimated_true_state_fp > input.nodes[i].capacity_fp ||
             !probability_in_range(n.telemetry_anomaly_score_fp) ||
             !probability_in_range(n.confidence_fp) ||
@@ -342,7 +510,7 @@ inline bool output_ranges_valid(const CaelusNeuralInputV1& input,
     bool proposal_seen[CAELUS_NEURAL_MAX_NODES_V1] = {};
     for (uint32_t i = 0; i < output.proposal_count; ++i) {
         const auto& p = output.proposals[i];
-        if (p.node_index >= input.node_count || proposal_seen[p.node_index]) {
+        if (p.node_index != i || proposal_seen[p.node_index]) {
             return false;
         }
         proposal_seen[p.node_index] = true;
@@ -366,6 +534,8 @@ inline bool output_ranges_valid(const CaelusNeuralInputV1& input,
             (p.proposed_delta_fp > 0 && current_trust > kFpOne - p.proposed_delta_fp) ||
             (p.proposed_delta_fp < 0 && current_trust < -p.proposed_delta_fp);
         if (post_add_overflow ||
+            current_trust + p.authorized_min_fp < kFpZero ||
+            current_trust + p.authorized_max_fp > kFpOne ||
             current_trust + p.proposed_delta_fp < kFpZero ||
             current_trust + p.proposed_delta_fp > kFpOne) {
             return false;
@@ -373,7 +543,8 @@ inline bool output_ranges_valid(const CaelusNeuralInputV1& input,
     }
     for (uint32_t i = 0; i < output.lever_score_count; ++i) {
         const auto& score = output.lever_scores[i];
-        if (score.lever_index >= input.lever_count ||
+        if (score.lever_index != i ||
+            score.reserved != 0u ||
             !probability_in_range(score.score_fp)) {
             return false;
         }
@@ -385,6 +556,25 @@ inline bool output_ranges_valid(const CaelusNeuralInputV1& input,
                                 const CaelusNeuralOutputBufferV1& output) noexcept {
     const auto policy = default_assurance_policy();
     return output_ranges_valid(input, output, policy);
+}
+
+inline bool input_ranges_valid(
+    const NeuralInputSnapshotV1& snapshot) noexcept {
+    return input_ranges_valid(snapshot.view());
+}
+
+inline bool output_ranges_valid(
+    const NeuralInputSnapshotV1& snapshot,
+    const CaelusNeuralOutputBufferV1& output,
+    const CaelusNeuralPolicyV1& policy) noexcept {
+    return output_ranges_valid(snapshot.view(), output, policy);
+}
+
+inline bool output_ranges_valid(
+    const NeuralInputSnapshotV1& snapshot,
+    const CaelusNeuralOutputBufferV1& output) noexcept {
+    const auto policy = default_assurance_policy();
+    return output_ranges_valid(snapshot.view(), output, policy);
 }
 
 static_assert(sizeof(int64_t) == 8, "neural contract requires 64-bit int64_t");
