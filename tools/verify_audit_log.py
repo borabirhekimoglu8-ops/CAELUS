@@ -12,10 +12,12 @@ segments and each rotated GENESIS must reference the previous segment head.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import stat
 import sys
+import types
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,6 +33,7 @@ NEURAL_MAXIMUM_OOD_FP = 500_000
 NEURAL_POLICY_V1_HASH = "3ba5fa3cea21e9b52e36944661e039765a559cc5e653847d788d7e60544641e2"
 MAX_NEURAL_ARTIFACT_BYTES = 16 * 1024 * 1024
 MAX_NEURAL_EVENTS_PER_SESSION = 100_000
+BUNDLED_BLAKE3_SHA256 = "ef2ecb671e425e564efee725c317b2fb38e9cc7d1eb903b623a6763964da8c56"
 
 NEURAL_ACCEPTED_DECISIONS = {
     "ACCEPTED_ADVISORY",
@@ -67,13 +70,64 @@ class VerificationError(Exception):
 
 def load_blake3() -> Any:
     try:
-        import blake3  # type: ignore
-    except ImportError as exc:
+        verifier_path = Path(__file__).resolve(strict=True)
+    except OSError as exc:
+        raise VerificationError(f"cannot resolve audit verifier path: {exc}") from exc
+    backend_path = verifier_path.with_name("caelus_blake3.py")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(backend_path, flags)
+    except OSError as exc:
         raise VerificationError(
-            "Python module 'blake3' is required for chain verification. "
-            "No verification was performed; install/provide it offline, then retry."
+            f"cannot open bundled Blake3 backend: {exc}"
         ) from exc
-    return blake3
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 256 * 1024:
+            raise VerificationError(
+                "bundled Blake3 backend must be a bounded regular file"
+            )
+        source_parts: list[bytes] = []
+        total = 0
+        while True:
+            part = os.read(descriptor, min(64 * 1024, 256 * 1024 - total + 1))
+            if not part:
+                break
+            total += len(part)
+            if total > 256 * 1024:
+                raise VerificationError("bundled Blake3 backend exceeds size limit")
+            source_parts.append(part)
+        final_metadata = os.fstat(descriptor)
+        if (
+            total != metadata.st_size
+            or final_metadata.st_dev != metadata.st_dev
+            or final_metadata.st_ino != metadata.st_ino
+            or final_metadata.st_size != metadata.st_size
+            or final_metadata.st_mtime_ns != metadata.st_mtime_ns
+        ):
+            raise VerificationError(
+                "bundled Blake3 backend changed while being read"
+            )
+        source = b"".join(source_parts)
+    finally:
+        os.close(descriptor)
+    if hashlib.sha256(source).hexdigest() != BUNDLED_BLAKE3_SHA256:
+        raise VerificationError("bundled Blake3 backend integrity pin mismatch")
+
+    module_name = "_caelus_bundled_blake3"
+    module = types.ModuleType(module_name)
+    module.__file__ = str(backend_path)
+    sys.modules[module_name] = module
+    try:
+        code = compile(source, str(backend_path), "exec")
+        exec(code, module.__dict__)
+    except Exception as exc:
+        sys.modules.pop(module_name, None)
+        raise VerificationError(
+            f"bundled Blake3 backend failed to load: {exc}"
+        ) from exc
+    return module
 
 
 def load_ed25519_verifier() -> tuple[Callable[[bytes, bytes, bytes], None], str] | None:
