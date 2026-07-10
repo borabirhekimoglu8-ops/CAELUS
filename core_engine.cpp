@@ -628,6 +628,8 @@ static void print_repl_levers(const caelus::ScenarioPack& pack, bool pack_loaded
 
 static caelus::causal::EngineSnapshot run_repl_tick(
     caelus::causal::CausalEngine& engine,
+    const std::string& scenario_id,
+    bool scenario_active,
     caelus::neural::NeuralControllerV1* neural_controller,
     uint64_t audit_session_id,
     bool det_mode) {
@@ -654,6 +656,11 @@ static caelus::causal::EngineSnapshot run_repl_tick(
         snap.clamped_friction_d(),
         snap.outage_active ? 3 : (snap.regime_exceeded ? 2 : 0),
         engine.current_tick()));
+    g_emitter.emit(caelus::ws_json::engine_state(
+        scenario_active ? "SCENARIO_ACTIVE" : "AWAITING_SCENARIO_INJECTION",
+        scenario_id, engine.current_tick(),
+        snap.clamped_friction_d(), snap.throughput_ratio,
+        snap.outage_active, snap.any_hysteresis_flip));
 
     if (g_audit.is_open()) {
         std::ostringstream ss;
@@ -752,7 +759,8 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
 
             for (uint64_t i = 0; i < n; ++i) {
                 last_snap = run_repl_tick(
-                    engine, neural_controller, audit_session_id, det_mode);
+                    engine, scenario_id, pack_loaded, neural_controller,
+                    audit_session_id, det_mode);
             }
             std::cout << "[REPL] " << n << " tick tamamlandi.\n";
             print_repl_snapshot(engine, last_snap);
@@ -783,7 +791,8 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
                       << " | cost_ticks=" << meta->cost_ticks
                       << " (tam maliyet icin ek tick: " << remaining_cost << ")\n";
             last_snap = run_repl_tick(
-                engine, neural_controller, audit_session_id, det_mode);
+                engine, scenario_id, pack_loaded, neural_controller,
+                audit_session_id, det_mode);
             print_repl_snapshot(engine, last_snap);
             audit_repl_event(command_line, engine, success ? "success" : "failed_or_locked");
             continue;
@@ -1337,6 +1346,12 @@ int main(int argc, char* argv[]) {
         ProcessNeuralTick(
             neural_controller, causal_engine, audit_session_id, det_mode);
     }
+    if (pack_loaded) {
+        g_emitter.emit(caelus::ws_json::engine_state(
+            "SCENARIO_ACTIVE", scenario_id, causal_engine.current_tick(),
+            causal_snap.clamped_friction_d(), causal_snap.throughput_ratio,
+            causal_snap.outage_active, causal_snap.any_hysteresis_flip));
+    }
 
     // Phase 1.7: Shadow-Mesh discovery + Intel Feed bridge.
     constexpr uint64_t LOCAL_SLOT = 0x202606070099ULL;
@@ -1439,6 +1454,12 @@ int main(int argc, char* argv[]) {
             causal_snap.outage_active ? 3 : (regime_exceeded ? 2 : 0),
             causal_engine.current_tick());
         g_emitter.emit(fr_json);
+        if (pack_loaded) {
+            g_emitter.emit(caelus::ws_json::engine_state(
+                "SCENARIO_ACTIVE", scenario_id, causal_engine.current_tick(),
+                friction_mult, causal_snap.throughput_ratio,
+                causal_snap.outage_active, causal_snap.any_hysteresis_flip));
+        }
         // Post-intel sürtünme denetim günlüğüne (friction JSON yeterli)
         {
             std::ostringstream ss;

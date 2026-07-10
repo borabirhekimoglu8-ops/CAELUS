@@ -8,6 +8,7 @@
 #include "neural_model.h"
 #include "neural_runtime.h"
 #include "scenario_pack.h"
+#include "ws_emitter.h"
 #include "plugin/caelus_solver.h"
 
 #include <algorithm>
@@ -861,8 +862,33 @@ TEST_CASE("neural host consumes graph history and safely rejects unavailable mod
 
     const std::string telemetry =
         caelus::neural::neural_war_room_event(controller, evidence);
+    (void)parse_json(telemetry);
+    CHECK(telemetry.find("\"scenario_id\":\"TEST_SCENARIO\"") != std::string::npos);
+    CHECK(telemetry.find("\"feature_schema_version\":1") != std::string::npos);
+    CHECK(telemetry.find("\"model_trusted\":false") != std::string::npos);
     CHECK(telemetry.find("\"reported_state_fp\":\"") != std::string::npos);
     CHECK(telemetry.find("\"authoritative_state_fp\":\"") != std::string::npos);
+    CHECK(telemetry.find("\"session_id\"") == std::string::npos);
+    CHECK(telemetry.find("\"scenario_hash\"") == std::string::npos);
+    CHECK(telemetry.find("\"model_hash\"") == std::string::npos);
+    CHECK(telemetry.find("\"manifest_hash\"") == std::string::npos);
+    CHECK(telemetry.find("\"input_hash\"") == std::string::npos);
+    CHECK(telemetry.find("\"output_hash\"") == std::string::npos);
+    CHECK(telemetry.find("\"evidence_id\"") == std::string::npos);
+    CHECK(telemetry.find("\"policy_hash\"") == std::string::npos);
+}
+
+TEST_CASE("War Room engine state includes outage and throughput evidence") {
+    const std::string event = caelus::ws_json::engine_state(
+        "SCENARIO_ACTIVE", "BS-01_SAHTE_UFUK", 384u,
+        3.0, 0.0, true, true);
+    (void)parse_json(event);
+    CHECK(event.find("\"type\":\"engine_state\"") != std::string::npos);
+    CHECK(event.find("\"scenario_id\":\"BS-01_SAHTE_UFUK\"") != std::string::npos);
+    CHECK(event.find("\"tick\":384") != std::string::npos);
+    CHECK(event.find("\"throughput_ratio\":0.000000") != std::string::npos);
+    CHECK(event.find("\"outage_active\":true") != std::string::npos);
+    CHECK(event.find("\"any_hysteresis_flip\":true") != std::string::npos);
 }
 
 TEST_CASE("solver C ABI structs round-trip through plugin vtable") {

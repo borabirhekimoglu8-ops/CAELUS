@@ -119,7 +119,7 @@ embed_file() {
         printf "0x00};\n" >> "$PAYLOAD_H"
     fi
 
-    printf "static const std::size_t   %s = %d;\n\n" "$len_name" "$byte_count" \
+    printf "static const std::size_t   %s = %d;\n" "$len_name" "$byte_count" \
         >> "$PAYLOAD_H"
 }
 

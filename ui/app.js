@@ -1,9 +1,9 @@
 /**
  * CAELUS OS — Universal Causal Interface v3.0 (Vanilla JS, Zero Dependencies)
  *
- * SIMULATION NOTE: All metrics, telemetry and analysis reports are illustrative
- * demo data generated locally. This interface is NOT connected live to the
- * C++/Rust CAELUS engine binary. All figures are sample data.
+ * DATA MODE: When the loopback WebSocket is connected, engine, neural, and
+ * audit-linked telemetry comes from the local C++/Rust runtime. When it is not
+ * connected, the visible watermark marks illustrative local demo data.
  *
  * Security: user scenario text is read only via .toLowerCase()/.includes()
  * for keyword routing — it is NEVER interpolated into innerHTML.
@@ -82,6 +82,8 @@ const state = {
   causalEdges:       [],
   activeLeftTab:     'mesh',
   ctScrollOffset:    0,     // crisis timeline horizontal scroll offset
+  neuralObservation: null,
+  lastNeuralDecision:'',
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -173,6 +175,16 @@ const el = {
 
   pluginList:     $('plugin-list'),
   pluginNoneMsg:  $('plugin-none-msg'),
+
+  neuralCard:     $('neural-card'),
+  neuralGate:     $('neural-gate'),
+  neuralMode:     $('neural-mode'),
+  neuralModel:    $('neural-model'),
+  neuralTick:     $('neural-tick'),
+  neuralFallback: $('neural-fallback'),
+  neuralReason:   $('neural-reason'),
+  neuralNodeList: $('neural-node-list'),
+  neuralLevers:   $('neural-levers'),
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -287,6 +299,42 @@ function safeLabel(value, maxLen = 48) {
     return safeLabel(value.label || value.name || value.title || value.id, maxLen);
   }
   return String(value).replace(/\s+/g, ' ').trim().slice(0, maxLen);
+}
+
+function fixedPointBigInt(value) {
+  const text = String(value ?? '').trim();
+  if (!/^-?\d{1,20}$/.test(text)) return null;
+  try { return BigInt(text); } catch (_) { return null; }
+}
+
+function formatFixedPoint(value, digits = 3) {
+  const parsed = fixedPointBigInt(value);
+  if (parsed === null) return '—';
+  const scale = 1000000n;
+  const negative = parsed < 0n;
+  const absolute = negative ? -parsed : parsed;
+  const whole = absolute / scale;
+  const fraction = String(absolute % scale).padStart(6, '0').slice(0, digits);
+  return `${negative ? '-' : ''}${whole}${digits ? '.' + fraction : ''}`;
+}
+
+function formatFixedPercent(value) {
+  const parsed = fixedPointBigInt(value);
+  if (parsed === null) return '—';
+  const tenths = (parsed * 1000n) / 1000000n;
+  const negative = tenths < 0n;
+  const absolute = negative ? -tenths : tenths;
+  return `${negative ? '-' : ''}${absolute / 10n}.${absolute % 10n}%`;
+}
+
+function fixedPointDifferenceAtLeast(left, right, threshold = 50000n) {
+  const leftValue = fixedPointBigInt(left);
+  const rightValue = fixedPointBigInt(right);
+  if (leftValue === null || rightValue === null) return false;
+  const difference = leftValue >= rightValue
+    ? leftValue - rightValue
+    : rightValue - leftValue;
+  return difference >= threshold;
 }
 
 function normalizeLabelKey(key) {
@@ -1726,6 +1774,195 @@ function applySnapshotEvent(data) {
   }
 }
 
+function appendNeuralValue(container, label, value, className = '') {
+  const entry = document.createElement('span');
+  if (className) entry.className = className;
+  const labelNode = document.createTextNode(`${label}: `);
+  const valueNode = document.createElement('b');
+  valueNode.textContent = value;
+  entry.append(labelNode, valueNode);
+  container.appendChild(entry);
+}
+
+function applyNeuralObservation(data) {
+  if (!isRecord(data) || data.schema_ver !== 1 || !el.neuralCard) return;
+  state.neuralObservation = data;
+
+  const gateDecision = safeLabel(data.gate_decision || 'UNKNOWN', 48);
+  const mode = safeLabel(data.mode || 'SYMBOLIC_ONLY', 24);
+  const runtimeStatus = safeLabel(data.runtime_status || 'UNKNOWN', 32);
+  const gateAccepted = data.gate_accepted === true;
+  const modelTrusted = data.model_trusted === true;
+  const authorityExpected = data.authority_expected === true;
+  const authorityCommitted = data.authority_committed === true;
+  const rollbackApplied = data.rollback_applied === true;
+  const rollbackFailed = data.rollback_failed === true;
+  const booleanFieldsValid = [
+    'gate_accepted',
+    'fallback',
+    'model_trusted',
+    'authority_expected',
+    'authority_committed',
+    'rollback_applied',
+    'rollback_failed',
+  ].every(field => typeof data[field] === 'boolean');
+  const acceptedBounded =
+    gateDecision === 'ACCEPTED_BOUNDED' &&
+    mode === 'ASSURANCE' &&
+    authorityExpected &&
+    authorityCommitted;
+  const acceptedAdvisory =
+    gateDecision === 'ACCEPTED_ADVISORY' &&
+    mode === 'ADVISORY' &&
+    !authorityExpected &&
+    !authorityCommitted;
+  const accepted =
+    booleanFieldsValid &&
+    gateAccepted &&
+    modelTrusted &&
+    runtimeStatus === 'OK' &&
+    data.fallback === false &&
+    !rollbackApplied &&
+    !rollbackFailed &&
+    (acceptedBounded || acceptedAdvisory);
+  const unsafe =
+    rollbackFailed ||
+    (!accepted && (
+      gateAccepted ||
+      data.fallback === false ||
+      authorityCommitted ||
+      rollbackApplied
+    ));
+  const fallback = !accepted;
+
+  el.neuralCard.classList.remove(
+    'neural--accepted', 'neural--rejected', 'neural--unsafe'
+  );
+  el.neuralCard.classList.add(
+    unsafe ? 'neural--unsafe' : (accepted ? 'neural--accepted' : 'neural--rejected')
+  );
+  if (el.neuralGate) el.neuralGate.textContent = gateDecision || 'UNKNOWN';
+  if (el.neuralMode) el.neuralMode.textContent = mode;
+
+  const modelId = safeLabel(data.model_id || 'not loaded', 48);
+  const modelVersion = safeLabel(data.model_version || '', 24);
+  const trustLabel = modelTrusted ? 'trusted' : 'untrusted';
+  if (el.neuralModel) {
+    el.neuralModel.textContent =
+      `${modelId}${modelVersion ? '@' + modelVersion : ''} · ${trustLabel}`;
+    el.neuralModel.title =
+      `load=${safeLabel(data.model_load_status || 'UNKNOWN', 32)} · ` +
+      `runtime=${runtimeStatus} · schema=${safeLabel(data.feature_schema_version, 8)}`;
+  }
+  if (el.neuralTick) {
+    el.neuralTick.textContent =
+      `${safeLabel(data.tick, 24) || '—'} / ${safeLabel(data.observed_history_ticks, 8) || '0'} of 8`;
+  }
+  if (el.neuralFallback) {
+    el.neuralFallback.textContent =
+      unsafe ? 'UNSAFE CLAIM · IGNORED' : (fallback ? 'ACTIVE · SYMBOLIC' : 'NO');
+  }
+  if (el.neuralReason) {
+    const authority = acceptedBounded && accepted
+      ? 'Bounded proposal committed by symbolic authority.'
+      : 'No neural mutation committed; symbolic state remains authoritative.';
+    const safety = unsafe
+      ? ' Inconsistent telemetry claims were ignored.'
+      : '';
+    el.neuralReason.textContent =
+      `${safeLabel(data.gate_reason || 'No gate reason supplied.', 180)} ${authority}${safety}`;
+  }
+
+  if (el.neuralNodeList) {
+    el.neuralNodeList.replaceChildren();
+    const nodes = Array.isArray(data.nodes) ? data.nodes.slice(0, 64) : [];
+    nodes.forEach(rawNode => {
+      if (!isRecord(rawNode)) return;
+      const node = document.createElement('div');
+      node.className = 'neural-node';
+      const divergent = fixedPointDifferenceAtLeast(
+        rawNode.reported_state_fp, rawNode.authoritative_state_fp
+      );
+      if (divergent) node.classList.add('neural-node--divergent');
+
+      const heading = document.createElement('div');
+      heading.className = 'neural-node-name';
+      const name = document.createElement('span');
+      name.textContent = safeLabel(rawNode.node_id || 'UNKNOWN_NODE', 40);
+      const flag = document.createElement('span');
+      flag.className = 'neural-node-flag';
+      flag.textContent = divergent ? 'TELEMETRY DIVERGENCE' : 'CONSISTENT';
+      heading.append(name, flag);
+      node.appendChild(heading);
+
+      const values = document.createElement('div');
+      values.className = 'neural-values';
+      appendNeuralValue(values, 'Reported', formatFixedPoint(rawNode.reported_state_fp));
+      appendNeuralValue(
+        values,
+        accepted ? 'Neural estimate' : 'Neural estimate (rejected)',
+        rawNode.neural_output_available === true
+          ? formatFixedPoint(rawNode.estimated_true_state_fp)
+          : 'unavailable',
+        'neural-estimate'
+      );
+      appendNeuralValue(
+        values, 'Authoritative symbolic', formatFixedPoint(rawNode.authoritative_state_fp)
+      );
+      appendNeuralValue(values, 'Trust', formatFixedPercent(rawNode.trust_fp));
+      node.appendChild(values);
+
+      if (rawNode.neural_output_available === true) {
+        const risks = document.createElement('div');
+        risks.className = 'neural-risks';
+        risks.textContent =
+          `Anomaly ${formatFixedPercent(rawNode.anomaly_score_fp)} · ` +
+          `Confidence ${formatFixedPercent(rawNode.confidence_fp)} · ` +
+          `OOD ${formatFixedPercent(rawNode.ood_score_fp)} · ` +
+          `Outage S/M/L ${formatFixedPercent(rawNode.outage_short_fp)} / ` +
+          `${formatFixedPercent(rawNode.outage_medium_fp)} / ` +
+          `${formatFixedPercent(rawNode.outage_long_fp)}`;
+        node.appendChild(risks);
+      }
+      el.neuralNodeList.appendChild(node);
+    });
+  }
+
+  if (el.neuralLevers) {
+    el.neuralLevers.replaceChildren();
+    const title = document.createElement('strong');
+    title.textContent = 'Symbolically evaluated lever candidates: ';
+    el.neuralLevers.appendChild(title);
+    const levers = Array.isArray(data.lever_candidates)
+      ? data.lever_candidates.filter(isRecord).slice(0, 3)
+      : [];
+    if (!levers.length) {
+      el.neuralLevers.appendChild(document.createTextNode('none'));
+    } else {
+      const summary = levers.map(lever => {
+        const marker = lever.selected === true ? 'SELECTED ' : '';
+        return `${marker}${safeLabel(lever.lever_id || 'unknown', 40)} ` +
+          `(neural ${formatFixedPercent(lever.neural_score_fp)}, ` +
+          `symbolic ${formatFixedPercent(lever.symbolic_score_fp)})`;
+      }).join(' · ');
+      el.neuralLevers.appendChild(document.createTextNode(summary));
+    }
+  }
+
+  const disposition = unsafe
+    ? 'UNSAFE PAYLOAD IGNORED'
+    : (accepted ? (acceptedBounded ? 'BOUNDED ACCEPT' : 'ADVISORY ACCEPT') : 'SYMBOLIC FALLBACK');
+  const decisionKey = `${gateDecision}:${disposition}`;
+  if (state.lastNeuralDecision !== decisionKey) {
+    addCryptoLog(
+      unsafe ? 'err' : (accepted ? 'ok' : 'warn'),
+      `NEURAL GATE: ${gateDecision} · ${disposition}`
+    );
+    state.lastNeuralDecision = decisionKey;
+  }
+  if (unsafe) SFX.alarm();
+}
+
 /* ═══════════════════════════════════════════════════════════════
    LEFT TAB SWITCHER
    ═══════════════════════════════════════════════════════════════ */
@@ -2289,6 +2526,10 @@ function handleEngineEvent(ev) {
 
     case 'engine_state':
       applyEngineStateEvent(data);
+      break;
+
+    case 'neural_observation':
+      applyNeuralObservation(data);
       break;
 
     case 'snapshot':

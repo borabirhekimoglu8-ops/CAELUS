@@ -946,21 +946,16 @@ inline std::string neural_war_room_event(
         << ",\"schema_ver\":1"
         << ",\"mode\":\"" << neural_mode_name(controller.mode()) << "\""
         << ",\"tick\":\"" << evidence.tick << "\""
+        << ",\"scenario_id\":\""
+        << host_detail::json_escape(controller.scenario_id()) << "\""
+        << ",\"engine_version\":\"2.0.0\""
+        << ",\"feature_schema_version\":" << CAELUS_FEATURE_SCHEMA_V1
         << ",\"model_id\":\""
         << host_detail::json_escape(model.manifest().model_id) << "\""
         << ",\"model_version\":\""
         << host_detail::json_escape(model.manifest().model_version) << "\""
         << ",\"model_load_status\":\"" << model_load_status_name(model.status()) << "\""
         << ",\"model_trusted\":" << (model.trusted() ? "true" : "false")
-        << ",\"model_hash\":\""
-        << host_detail::hex(evidence.gate.model_hash, sizeof(evidence.gate.model_hash))
-        << "\""
-        << ",\"input_hash\":\""
-        << host_detail::hex(evidence.gate.input_hash, sizeof(evidence.gate.input_hash))
-        << "\""
-        << ",\"output_hash\":\""
-        << host_detail::hex(evidence.gate.output_hash, sizeof(evidence.gate.output_hash))
-        << "\""
         << ",\"runtime_status\":\""
         << neural_runtime_status_name(evidence.gate.runtime_status) << "\""
         << ",\"gate_decision\":\""
