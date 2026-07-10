@@ -1,11 +1,11 @@
 {
-  "dataset_blake3": "4d4f7181b41883f6bf99a832d669e60f6ff01dbf2b4c149d279cf7a4379195f8",
-  "dataset_bytes": 1348045,
+  "dataset_blake3": "d6df489c205f6bb0fcca2c2563efe7c96bbfd16ce120a4b869c643c28e75a25d",
+  "dataset_bytes": 1348039,
   "dataset_generator": "caelus_neural_dataset",
-  "dataset_generator_version": 1,
+  "dataset_generator_version": 2,
   "dataset_manifest_path": "dataset.manifest.json",
   "dataset_path": "dataset.jsonl",
-  "engine_commit": "483a4c4f6930a167a5cd0200df8e939eb4cc1477",
+  "engine_commit": "cded4bcff930f1547962394ccbd6879faa570be8",
   "metrics_file": "training_metrics.json",
   "schema_version": 1,
   "signer_identity": "c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f",
@@ -41,6 +41,6 @@
     "weight_scale_denominator": 64
   },
   "training_config_sha256": "100ac9e34aa3f2de4ce30b340dd6fadd090c53de6b6a7eb41c852d696d7ec986",
-  "weights_blake3": "75f8d4c63abb5abbb46c1bd9032ea23b5908335416d6b41aa4119e22c7399097",
+  "weights_blake3": "c11832e19712e8abd0b8610a573588126356dcc46a6625156cd09588da76b863",
   "weights_bytes": 5367
 }

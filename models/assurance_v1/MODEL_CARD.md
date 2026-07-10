@@ -19,12 +19,12 @@ are fitted with Decimal ridge regression and quantized using round-half-even.
 
 ## Provenance
 
-- Dataset Blake3: `4d4f7181b41883f6bf99a832d669e60f6ff01dbf2b4c149d279cf7a4379195f8`
+- Dataset Blake3: `d6df489c205f6bb0fcca2c2563efe7c96bbfd16ce120a4b869c643c28e75a25d`
 - Training configuration SHA-256: `100ac9e34aa3f2de4ce30b340dd6fadd090c53de6b6a7eb41c852d696d7ec986`
-- Weights Blake3: `75f8d4c63abb5abbb46c1bd9032ea23b5908335416d6b41aa4119e22c7399097`
+- Weights Blake3: `c11832e19712e8abd0b8610a573588126356dcc46a6625156cd09588da76b863`
 - Trusted signer identity: `c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f`
 - Synthetic samples: 220
-- Symbolic engine commit/provenance: `483a4c4f6930a167a5cd0200df8e939eb4cc1477`
+- Symbolic engine commit/provenance: `cded4bcff930f1547962394ccbd6879faa570be8`
 
 ## Synthetic test metrics
 

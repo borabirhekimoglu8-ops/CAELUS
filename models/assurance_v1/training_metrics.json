@@ -13,7 +13,7 @@
       "ood_policy_target_fp": 97262,
       "telemetry_anomaly_fp": 37988,
       "true_state_ratio_fp": 54488,
-      "trust_delta_policy_target_fp": 4213
+      "trust_delta_policy_target_fp": 7473
     },
     "outage": [
       {
@@ -32,7 +32,7 @@
         "calibration_error_fp": 387261
       }
     ],
-    "robustness_node_mae_fp": 82263,
+    "robustness_node_mae_fp": 82800,
     "samples": 22
   },
   "train": {
@@ -42,7 +42,7 @@
       "ood_policy_target_fp": 99846,
       "telemetry_anomaly_fp": 39317,
       "true_state_ratio_fp": 60373,
-      "trust_delta_policy_target_fp": 4317
+      "trust_delta_policy_target_fp": 7778
     },
     "outage": [
       {
@@ -61,7 +61,7 @@
         "calibration_error_fp": 367978
       }
     ],
-    "robustness_node_mae_fp": 81548,
+    "robustness_node_mae_fp": 82131,
     "samples": 176
   },
   "validation": {
@@ -71,7 +71,7 @@
       "ood_policy_target_fp": 103987,
       "telemetry_anomaly_fp": 39540,
       "true_state_ratio_fp": 66050,
-      "trust_delta_policy_target_fp": 4429
+      "trust_delta_policy_target_fp": 8209
     },
     "outage": [
       {
@@ -90,7 +90,7 @@
         "calibration_error_fp": 377413
       }
     ],
-    "robustness_node_mae_fp": 78656,
+    "robustness_node_mae_fp": 79193,
     "samples": 22
   }
 }
