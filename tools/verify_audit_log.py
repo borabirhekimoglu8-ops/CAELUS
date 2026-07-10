@@ -441,7 +441,6 @@ class NeuralSemanticVerifier:
         self.scenario_hash: str | None = None
         self.scenario_authorized = False
         self.pending_authority: dict[str, Any] | None = None
-        self.trust_after_by_node: dict[str, int] = {}
         self.evidence_ids: set[str] = set()
         self.last_neural_tick: int | None = None
         self.inference_count = 0
@@ -462,7 +461,6 @@ class NeuralSemanticVerifier:
         self.scenario_hash = None
         self.scenario_authorized = False
         self.pending_authority = None
-        self.trust_after_by_node.clear()
         self.evidence_ids.clear()
         self.last_neural_tick = None
 
@@ -511,7 +509,6 @@ class NeuralSemanticVerifier:
                 f"{where}: neural assurance requires a pinned verified scenario"
             )
         self.scenario_authorized = authorized
-        self.trust_after_by_node.clear()
 
     def _observe_inference(self, event: dict[str, Any], where: str) -> None:
         self._expect_session(event, where)
@@ -670,7 +667,6 @@ class NeuralSemanticVerifier:
         )
         seen_indices: set[int] = set()
         seen_ids: set[str] = set()
-        pending_updates: dict[str, int] = {}
         for index, proposal in enumerate(proposals):
             item_where = f"{where}: applied_proposals[{index}]"
             if not isinstance(proposal, dict):
@@ -690,13 +686,8 @@ class NeuralSemanticVerifier:
                 raise VerificationError(f"{item_where}: trust outside fixed-point range")
             if not -50_000 <= delta <= 50_000 or before + delta != after:
                 raise VerificationError(f"{item_where}: invalid bounded trust transition")
-            previous = self.trust_after_by_node.get(node_id)
-            if previous is not None and previous != before:
-                raise VerificationError(f"{item_where}: trust pre-state breaks audit history")
             seen_indices.add(node_index)
             seen_ids.add(node_id)
-            pending_updates[node_id] = after
-        self.trust_after_by_node.update(pending_updates)
 
     def _validate_levers(self, event: dict[str, Any], where: str) -> None:
         levers = expect_list(

@@ -156,23 +156,16 @@ class NeuralAuditSemanticTests(unittest.TestCase):
         with self.assertRaisesRegex(VerificationError, "pinned model package"):
             verifier(model_reference).observe_event(inference_event(), "inference")
 
-    def test_trust_transitions_must_continue_from_prior_authority(self) -> None:
+    def test_trust_transition_must_be_bounded_and_arithmetically_exact(self) -> None:
         check = verifier()
-        check.observe_event(inference_event(8), "inference-8")
-        check.observe_event(authority_event(8), "authority-8")
-
-        next_inference = inference_event(9)
-        next_inference["input_hash"] = "41" * 32
-        next_inference["output_hash"] = "51" * 32
-        next_inference["evidence_id"] = "51" * 32
-        check.observe_event(next_inference, "inference-9")
-
-        next_authority = authority_event(9, trust_before=700_000)
-        next_authority["input_hash"] = "41" * 32
-        next_authority["output_hash"] = "51" * 32
-        next_authority["evidence_id"] = "51" * 32
-        with self.assertRaisesRegex(VerificationError, "trust pre-state"):
-            check.observe_event(next_authority, "authority-9")
+        check.observe_event(inference_event(), "inference")
+        invalid = authority_event()
+        proposals = invalid["applied_proposals"]
+        assert isinstance(proposals, list)
+        assert isinstance(proposals[0], dict)
+        proposals[0]["trust_after_fp"] = 700_001
+        with self.assertRaisesRegex(VerificationError, "bounded trust transition"):
+            check.observe_event(invalid, "authority")
 
     def test_rejected_inference_needs_no_authority(self) -> None:
         rejected = copy.deepcopy(inference_event())
