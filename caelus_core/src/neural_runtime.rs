@@ -116,9 +116,11 @@ impl DeterministicModelV1 {
         Self::parse_weights_blob(blob, weight_scale_denominator, false, None)
     }
 
-    /// Unit-only construction after the test fixture's manifest/hash checks.
-    #[cfg(test)]
-    fn from_test_verified_weights_blob(
+    /// Test-only construction after fixture manifest/hash checks. The custom
+    /// cfg is emitted only by `tests/neural_reference`; normal Cargo features
+    /// and production builds cannot enable this crate-private constructor.
+    #[cfg(any(test, caelus_neural_differential_harness))]
+    pub(crate) fn from_test_verified_weights_blob(
         blob: &[u8],
         weight_scale_denominator: u32,
         manifest_hash: [u8; 32],

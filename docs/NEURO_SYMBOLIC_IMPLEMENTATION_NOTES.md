@@ -177,8 +177,15 @@ Decision:
   model/input/scenario/tick commitments so the rejected attempt can be audited.
 - C++ and no_std-compatible Rust implement the forward path independently.
   Matching in-code fixtures use real message passing and output heads, not a
-  mocked inference result.  A file-backed cross-language differential runner is
-  still required before claiming C++↔Rust neural equality.
+  mocked inference result.  The file-backed differential gate loads the signed
+  production fixture through the C++ trust gate, runs the same committed input
+  through both implementations twice, compares every integer/hash/output field,
+  and checks a reviewed golden vector.  Rust model construction remains
+  crate-private behind a custom cfg emitted only by the standalone
+  `tests/neural_reference` crate; normal Cargo features and production builds
+  cannot expose it.  This proves equality for the committed fixture on each
+  platform that runs the gate.  A cross-platform claim requires the same gate
+  to pass independently in Linux and Windows CI.
 - Feature order is versioned and tested.  Eight-tick reported-history summaries
   and missingness affect real forward-pass inputs; symbolic authoritative
   state/history are committed for gate/audit use but are intentionally not
@@ -205,4 +212,7 @@ Locations:
 - C++ runtime: `include/neural_runtime.h`
 - Rust reference runtime: `caelus_core/src/neural_runtime.rs`
 - Central gate: `include/neural_gate.h`, `caelus_core/src/neural_gate.rs`
+- File-backed differential: `tests/neural_cpp_reference.cpp`,
+  `tests/neural_reference/src/main.rs`, and
+  `tests/run_neural_differential.py`
 - Feature/range tests: `tests/test_causal_engine.cpp` and Rust module tests
