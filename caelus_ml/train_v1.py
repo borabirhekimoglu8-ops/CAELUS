@@ -30,6 +30,7 @@ CORE_MANIFEST = ROOT / "caelus_core" / "Cargo.toml"
 DEFAULT_TRUSTED_SIGNER_FILE = ROOT / "tools" / "caelus_neural_trusted_pubkey.txt"
 FP = 1_000_000
 DENOMINATOR = 64
+TRUST_DELTA_ANOMALY_WEIGHT = 8
 FEATURES = 16
 HIDDEN = 32
 WEIGHT_COUNT = 4_899
@@ -811,6 +812,12 @@ def class_weights(targets: Iterable[int]) -> dict[int, decimal.Decimal]:
     }
 
 
+def node_head_row_weight(head_index: int, target: int) -> decimal.Decimal:
+    if head_index == 4 and target < 0:
+        return decimal.Decimal(TRUST_DELTA_ANOMALY_WEIGHT)
+    return decimal.Decimal(1)
+
+
 def train_heads(
     samples: Sequence[dict[str, Any]],
     weights: list[int],
@@ -829,7 +836,9 @@ def train_heads(
                     (
                         hidden[node_index],
                         int(node["labels"][target_name]),
-                        decimal.Decimal(1),
+                        node_head_row_weight(
+                            head_index, int(node["labels"][target_name])
+                        ),
                     )
                 )
         head_weights, bias, clipped = fit_ridge(
@@ -1267,7 +1276,10 @@ def main() -> int:
             "lever_effectiveness",
         ],
         "split_policy": dataset_manifest["split_policy"],
-        "class_imbalance": "inverse_binary_frequency_for_outage_heads",
+        "class_imbalance": (
+            "inverse_binary_frequency_for_outage_heads;"
+            f"{TRUST_DELTA_ANOMALY_WEIGHT}x_negative_trust_delta"
+        ),
         "quantization": "round_half_even_then_symmetric_int8_clip",
         "seed": dataset_manifest["seed"],
         "observer_feature_policy": dataset_manifest["observer_feature_policy"],

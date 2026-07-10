@@ -67,6 +67,11 @@ class TrainingPipelineTests(unittest.TestCase):
         self.assertEqual(train_v1.expected_split_for_rollout(9), "train")
         self.assertEqual(train_v1.expected_split_for_rollout(10), "test")
 
+    def test_anomalous_trust_targets_receive_class_weight(self) -> None:
+        self.assertEqual(train_v1.node_head_row_weight(4, -1), 8)
+        self.assertEqual(train_v1.node_head_row_weight(4, 0), 1)
+        self.assertEqual(train_v1.node_head_row_weight(3, -1), 1)
+
     def test_strict_json_rejects_duplicate_keys(self) -> None:
         with self.assertRaises(ValueError):
             train_v1.strict_json_loads(b'{"schema_version":1,"schema_version":1}', "row")
