@@ -9,12 +9,15 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use caelus_network::model_verify::{sign_neural_model_hashes, MAX_HASH_INPUT_BYTES};
+use caelus_network::model_verify::{
+    neural_model_public_key, sign_neural_model_hashes, MAX_HASH_INPUT_BYTES,
+};
 use zeroize::Zeroizing;
 
 fn usage() -> &'static str {
     "Usage:\n\
   caelus_sign_model --manifest <manifest.json> --weights <weights.bin> \\\n      --key </secure/offline/neural_signing.key> [--output <model.sig>] [--write]\n\
+  caelus_sign_model --key </secure/offline/neural_signing.key> --print-public-key\n\
 \n\
 The key file must contain exactly 32 raw bytes or 64 hexadecimal characters.\n\
 Without --write, the signature sidecar is printed to stdout."
@@ -59,7 +62,20 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+fn reject_symbolic_link(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| format!("cannot stat {label} {path:?}: {error}"))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("{label} must not be a symbolic link: {path:?}"));
+    }
+    if !metadata.file_type().is_file() {
+        return Err(format!("{label} must be a regular file: {path:?}"));
+    }
+    Ok(())
+}
+
 fn read_bounded(path: &Path, label: &str) -> Result<Vec<u8>, String> {
+    reject_symbolic_link(path, label)?;
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -99,6 +115,7 @@ fn read_bounded(path: &Path, label: &str) -> Result<Vec<u8>, String> {
 }
 
 fn read_private_key(path: &Path) -> Result<Zeroizing<Vec<u8>>, String> {
+    reject_symbolic_link(path, "private key")?;
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -142,11 +159,12 @@ fn read_private_key(path: &Path) -> Result<Zeroizing<Vec<u8>>, String> {
 
 #[derive(Debug)]
 struct Args {
-    manifest: PathBuf,
-    weights: PathBuf,
+    manifest: Option<PathBuf>,
+    weights: Option<PathBuf>,
     key: PathBuf,
     output: Option<PathBuf>,
     write: bool,
+    print_public_key: bool,
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
@@ -155,6 +173,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut key = None;
     let mut output = None;
     let mut write = false;
+    let mut print_public_key = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--manifest" => manifest = args.next().map(PathBuf::from),
@@ -162,24 +181,47 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--key" => key = args.next().map(PathBuf::from),
             "--output" => output = args.next().map(PathBuf::from),
             "--write" => write = true,
+            "--print-public-key" => print_public_key = true,
             "--help" | "-h" => return Err(usage().into()),
             other => return Err(format!("unknown argument: {other}\n{}", usage())),
         }
     }
+    if !print_public_key && (manifest.is_none() || weights.is_none()) {
+        return Err(format!(
+            "--manifest and --weights are required when signing\n{}",
+            usage()
+        ));
+    }
+    if print_public_key && (manifest.is_some() || weights.is_some() || output.is_some() || write) {
+        return Err("--print-public-key cannot be combined with signing options".into());
+    }
     Ok(Args {
-        manifest: manifest.ok_or_else(|| format!("--manifest is required\n{}", usage()))?,
-        weights: weights.ok_or_else(|| format!("--weights is required\n{}", usage()))?,
+        manifest,
+        weights,
         key: key.ok_or_else(|| format!("--key is required\n{}", usage()))?,
         output,
         write,
+        print_public_key,
     })
 }
 
 fn run(args: Args) -> Result<(), String> {
-    let manifest = read_bounded(&args.manifest, "manifest")?;
-    let weights = read_bounded(&args.weights, "weights")?;
     let key_bytes = read_private_key(&args.key)?;
     let seed = Zeroizing::new(decode_seed(&key_bytes)?);
+    if args.print_public_key {
+        println!("{}", hex_encode(&neural_model_public_key(&seed)));
+        return Ok(());
+    }
+    let manifest_path = args
+        .manifest
+        .as_ref()
+        .ok_or("internal error: manifest path absent")?;
+    let weights_path = args
+        .weights
+        .as_ref()
+        .ok_or("internal error: weights path absent")?;
+    let manifest = read_bounded(manifest_path, "manifest")?;
+    let weights = read_bounded(weights_path, "weights")?;
 
     let manifest_hash = *blake3::hash(&manifest).as_bytes();
     let weights_hash = *blake3::hash(&weights).as_bytes();
@@ -193,7 +235,7 @@ fn run(args: Args) -> Result<(), String> {
     if args.write {
         let output = args
             .output
-            .unwrap_or_else(|| args.manifest.with_file_name("model.sig"));
+            .unwrap_or_else(|| manifest_path.with_file_name("model.sig"));
         // create_new prevents following or truncating an existing symlink and
         // requires the operator to make replacement explicit.
         let mut file = OpenOptions::new()
@@ -250,5 +292,12 @@ mod tests {
         assert_eq!(public_a, public_b);
         assert_eq!(hex_encode(&signature_a).len(), 128);
         assert_eq!(hex_encode(&public_a).len(), 64);
+    }
+
+    #[test]
+    fn public_key_derivation_matches_signing_path() {
+        let seed = [0x33u8; 32];
+        let (_, signed_public) = sign_neural_model_hashes(&[0; 32], &[0; 32], &seed);
+        assert_eq!(neural_model_public_key(&seed), signed_public);
     }
 }

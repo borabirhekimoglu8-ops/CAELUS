@@ -89,6 +89,73 @@ Locations:
 - C++ package parser/trust gate: `include/neural_model.h`
 - Dedicated public anchor: `tools/caelus_neural_trusted_pubkey.txt`
 
+## Phase 3 — Reproducible synthetic data factory
+
+Decision:
+
+- Generate true-state, anomaly, and outage labels by executing
+  `caelus_core::CausalEngine`, not by duplicating symbolic transition rules in
+  Python.  Lever effectiveness is an explicitly synthetic score over dynamic
+  counterfactual engine outcomes.  Confidence, OOD, and trust-delta labels are
+  explicitly named deterministic synthetic policy targets; neither category
+  is presented as symbolic ground truth.  A deterministic Rust binary emits
+  bounded JSONL and a Blake3-pinned dataset manifest.
+- Keep an entire rollout in one split (`rollout_id mod 10`) so related graph
+  nodes and temporal history cannot leak across train/validation/test.  The
+  trainer independently recomputes this split and rejects duplicate,
+  non-contiguous, or mislabeled rollout IDs.
+- Produce future-outage and lever-effectiveness labels from cloned symbolic
+  counterfactual runs that continue the same case dynamics.  The generator
+  records engine provenance, release build profile, feature schema, label
+  sources, RNG algorithm/seed, parameter ranges, cases, and exact dataset hash.
+- Retain authoritative state/history in dataset rows as supervised labels and
+  audit evidence, but withhold them from `CAELUS_FEATURE_SCHEMA_V1`.  Observer
+  features use reported telemetry/history summaries and telemetry-derived
+  flow/utilization.  This prevents a trivial identity path from symbolic state
+  to the hidden-state estimate.
+- Name absolute feature-magnitude rankings as salience, not causal attribution.
+- Cap the committed/tooling format at 4,096 rollouts and 1 MiB per JSONL row.
+  Large operational datasets remain external artifacts.
+- Cover normal operation plus queue/buffer pressure, deadline/hysteresis,
+  latched outage and recovery, false/delayed/missing/corrupt telemetry, trust
+  degradation, adversarial reporting, feedback, delay, capacity loss, traffic
+  spikes, simultaneous failures, and saturation boundaries.
+
+Locations:
+
+- Symbolic generator: `caelus_core/src/bin/caelus_neural_dataset.rs`
+- Offline wrapper: `caelus_ml/generate_dataset.py`
+- Dataset/tooling guide: `caelus_ml/README.md`
+
+## Phase 4 — Compact training and fixed-point export
+
+Decision:
+
+- Keep training standard-library-only and offline.  The first model uses a
+  structured 16→32 projection and two real message-passing layers; deterministic
+  Decimal ridge fits the node, outage, and lever heads.
+- Keep related graphs separated by the generator's rollout split.  Use inverse
+  binary-frequency weighting for outage heads and report post-quantization
+  regression, classification, calibration, ranking, OOD/confidence, and
+  adversarial-case metrics.
+- Quantize with explicit round-half-even into the V1 INT8/INT32 blob.  The
+  production runtime still uses toward-zero division; metrics use the same
+  quantized integer value semantics after export.  Runtime saturation evidence
+  and cross-language equality are tested by the assurance differential suite,
+  not inferred from training metrics.
+- Use the Rust Blake3 helper for dataset/weights commitments so Python does not
+  gain a third-party runtime dependency.  Training configuration is committed
+  with SHA-256 and the algorithm is named in the training manifest/model card.
+- Treat all generated accuracy as synthetic-only.  The model card explicitly
+  disclaims real-world accuracy, fidelity, certification, and ONNX
+  cross-platform determinism.
+
+Locations:
+
+- Trainer/exporter: `caelus_ml/train_v1.py`
+- Tool tests: `caelus_ml/test_pipeline.py`
+- Bounded artifact hasher: `caelus_core/src/bin/caelus_neural_hash.rs`
+
 ## Phase 6 — Deterministic assurance inference
 
 Decision:
@@ -112,8 +179,10 @@ Decision:
   Matching in-code fixtures use real message passing and output heads, not a
   mocked inference result.  A file-backed cross-language differential runner is
   still required before claiming C++↔Rust neural equality.
-- Feature order is versioned and tested.  Eight-tick history and missingness
-  affect real forward-pass inputs.
+- Feature order is versioned and tested.  Eight-tick reported-history summaries
+  and missingness affect real forward-pass inputs; symbolic authoritative
+  state/history are committed for gate/audit use but are intentionally not
+  encoded into observer features.
 - Loaded model capability objects are opaque.  Production code cannot set a
   mutable “trusted” flag or inject an arbitrary trust anchor; test construction
   exists only under the C++ unit-test compile flag.  The Rust reference marks

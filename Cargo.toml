@@ -36,11 +36,12 @@ subtle = "2.5"
 # Zero-on-drop for sensitive key material
 zeroize = { version = "1.7", features = ["derive"] }
 
-# Blake3 for fast deterministic hashing of OTP slots
-blake3 = "1.5"
+# Blake3 commitments persist in audit/neural artifacts; keep both Rust crates
+# on the same exact implementation version.
+blake3 = "=1.8.2"
 
 # O_NOFOLLOW for race-resistant offline private-key opening on Unix.
-libc = "0.2"
+libc = "=0.2.186"
 
 [profile.release]
 # Minimize binary size — target < 50MB static binary

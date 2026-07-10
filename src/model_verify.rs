@@ -36,6 +36,10 @@ pub fn sign_neural_model_hashes(
     (signature, public_key)
 }
 
+pub fn neural_model_public_key(seed: &[u8; 32]) -> [u8; 32] {
+    *SigningKey::from_bytes(seed).verifying_key().as_bytes()
+}
+
 pub fn verify_neural_model_hashes(
     manifest_hash: &[u8; 32],
     weights_hash: &[u8; 32],
