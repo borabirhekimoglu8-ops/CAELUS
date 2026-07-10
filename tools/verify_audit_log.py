@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -20,7 +22,43 @@ from typing import Any, Callable
 
 AUDIT_GENESIS_CTX = b"CAELUS_AUDIT_GENESIS_V1"
 AUDIT_SEAL_CTX = b"CAELUS_AUDIT_SEAL_V1"
+NEURAL_MODEL_SIGNATURE_CTX = b"CAELUS_NEURAL_MODEL_V1\0"
+NEURAL_PACKAGE_ID_CTX = b"CAELUS_NEURAL_PACKAGE_ID_V1\0"
 ZERO_HEX_32 = "0" * 64
+FP_ONE = 1_000_000
+NEURAL_MINIMUM_CONFIDENCE_FP = 650_000
+NEURAL_MAXIMUM_OOD_FP = 500_000
+NEURAL_POLICY_V1_HASH = "3ba5fa3cea21e9b52e36944661e039765a559cc5e653847d788d7e60544641e2"
+MAX_NEURAL_ARTIFACT_BYTES = 16 * 1024 * 1024
+MAX_NEURAL_EVENTS_PER_SESSION = 100_000
+
+NEURAL_ACCEPTED_DECISIONS = {
+    "ACCEPTED_ADVISORY",
+    "ACCEPTED_BOUNDED",
+}
+NEURAL_GATE_DECISIONS = NEURAL_ACCEPTED_DECISIONS | {
+    "REJECTED_LOW_CONFIDENCE",
+    "REJECTED_OOD",
+    "REJECTED_RANGE",
+    "REJECTED_INVARIANT",
+    "REJECTED_TIMEOUT",
+    "REJECTED_MODEL_TRUST",
+    "REJECTED_SCHEMA",
+    "REJECTED_RUNTIME",
+    "SYMBOLIC_FALLBACK",
+}
+NEURAL_RUNTIME_STATUSES = {
+    "OK",
+    "MODEL_UNAVAILABLE",
+    "MODEL_UNTRUSTED",
+    "SCHEMA_MISMATCH",
+    "MALFORMED_INPUT",
+    "UNSUPPORTED_OPERATOR",
+    "DIMENSION_MISMATCH",
+    "OVERFLOW",
+    "TIMEOUT",
+    "RUNTIME_FAILURE",
+}
 
 
 class VerificationError(Exception):
@@ -94,6 +132,32 @@ def parse_u64(value: Any, where: str) -> int:
     raise VerificationError(f"{where}: expected u64")
 
 
+def parse_i64(value: Any, where: str) -> int:
+    if isinstance(value, bool):
+        raise VerificationError(f"{where}: expected i64")
+    if isinstance(value, int) and -(1 << 63) <= value <= (1 << 63) - 1:
+        return value
+    raise VerificationError(f"{where}: expected i64")
+
+
+def expect_bool(value: Any, where: str) -> bool:
+    if not isinstance(value, bool):
+        raise VerificationError(f"{where}: expected boolean")
+    return value
+
+
+def expect_string(value: Any, where: str, maximum: int = 256) -> str:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        raise VerificationError(f"{where}: expected non-empty string <= {maximum} chars")
+    return value
+
+
+def expect_list(value: Any, where: str, maximum: int) -> list[Any]:
+    if not isinstance(value, list) or len(value) > maximum:
+        raise VerificationError(f"{where}: expected array with <= {maximum} entries")
+    return value
+
+
 def u64_le(value: int, where: str) -> bytes:
     if not 0 <= value <= 0xFFFF_FFFF_FFFF_FFFF:
         raise VerificationError(f"{where}: value is outside u64 range")
@@ -112,15 +176,623 @@ def parse_session_id(value: Any, where: str) -> int:
     raise VerificationError(f"{where}: invalid session_id")
 
 
+def strict_json_loads(text: str, where: str) -> Any:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise VerificationError(f"{where}: duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    def reject_nonfinite(value: str) -> None:
+        raise VerificationError(f"{where}: non-finite JSON number {value}")
+
+    try:
+        return json.loads(
+            text,
+            object_pairs_hook=reject_duplicates,
+            parse_constant=reject_nonfinite,
+        )
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise VerificationError(f"{where}: invalid JSON") from exc
+
+
 def line_object(raw_line: bytes, where: str) -> dict[str, Any]:
     try:
         text = raw_line.decode("utf-8")
-        obj = json.loads(text)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except UnicodeDecodeError as exc:
         raise VerificationError(f"{where}: invalid JSON line") from exc
+    obj = strict_json_loads(text, where)
     if not isinstance(obj, dict):
         raise VerificationError(f"{where}: line must be a JSON object")
     return obj
+
+
+def read_regular_file_bounded(path: Path, maximum: int, where: str) -> bytes:
+    absolute_path = path.absolute()
+    for parent in absolute_path.parents:
+        if parent == parent.parent:
+            break
+        try:
+            parent_metadata = parent.lstat()
+        except OSError as exc:
+            raise VerificationError(
+                f"{where}: cannot stat parent directory {parent}: {exc}"
+            ) from exc
+        if stat.S_ISLNK(parent_metadata.st_mode):
+            raise VerificationError(
+                f"{where}: symbolic-link parent directories are not allowed: {parent}"
+            )
+        if not stat.S_ISDIR(parent_metadata.st_mode):
+            raise VerificationError(f"{where}: parent is not a directory: {parent}")
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise VerificationError(f"{where}: cannot stat {path}: {exc}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise VerificationError(f"{where}: {path} must be a regular non-symlink file")
+    if metadata.st_size <= 0 or metadata.st_size > maximum:
+        raise VerificationError(
+            f"{where}: {path} must contain 1..{maximum} bytes"
+        )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise VerificationError(f"{where}: cannot open {path}: {exc}") from exc
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(opened_metadata.st_mode):
+            raise VerificationError(f"{where}: {path} is not a regular file")
+        if (
+            opened_metadata.st_dev != metadata.st_dev
+            or opened_metadata.st_ino != metadata.st_ino
+            or opened_metadata.st_mode != metadata.st_mode
+            or opened_metadata.st_mtime_ns != metadata.st_mtime_ns
+            or opened_metadata.st_size != metadata.st_size
+            or opened_metadata.st_size <= 0
+            or opened_metadata.st_size > maximum
+        ):
+            raise VerificationError(f"{where}: {path} changed before it was opened")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(64 * 1024, maximum - total + 1))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > maximum:
+                raise VerificationError(f"{where}: {path} grew beyond its limit")
+        if total != opened_metadata.st_size:
+            raise VerificationError(f"{where}: {path} changed while being read")
+        final_opened_metadata = os.fstat(descriptor)
+        try:
+            final_path_metadata = path.lstat()
+        except OSError as exc:
+            raise VerificationError(
+                f"{where}: cannot re-stat {path} after reading: {exc}"
+            ) from exc
+        identity_fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
+        if any(
+            getattr(final_opened_metadata, field) != getattr(opened_metadata, field)
+            or getattr(final_path_metadata, field) != getattr(opened_metadata, field)
+            for field in identity_fields
+        ):
+            raise VerificationError(f"{where}: {path} changed while being read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def load_neural_model_reference(
+    directory: Path,
+    blake3_module: Any,
+    verifier: Callable[[bytes, bytes, bytes], None] | None,
+    trusted_pubkey: bytes | None,
+    verify_signature: bool,
+) -> dict[str, Any]:
+    where = f"neural model {directory}"
+    manifest_bytes = read_regular_file_bounded(
+        directory / "manifest.json", 64 * 1024, where
+    )
+    weights = read_regular_file_bounded(
+        directory / "weights.bin", MAX_NEURAL_ARTIFACT_BYTES, where
+    )
+    signature_bytes = read_regular_file_bounded(
+        directory / "model.sig", 512, where
+    )
+    try:
+        manifest_text = manifest_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise VerificationError(f"{where}: manifest is not valid UTF-8") from exc
+    manifest = strict_json_loads(manifest_text, f"{where}: manifest")
+    if not isinstance(manifest, dict):
+        raise VerificationError(f"{where}: manifest must be a JSON object")
+
+    manifest_hash = blake3_digest(blake3_module, manifest_bytes)
+    weights_hash = blake3_digest(blake3_module, weights)
+    package_hash = blake3_digest(
+        blake3_module, NEURAL_PACKAGE_ID_CTX + manifest_hash + weights_hash
+    )
+    expected_weights_hash = expect_hex(
+        manifest.get("weights_hash"), 64, f"{where}: weights_hash"
+    )
+    expected_model_hash = expect_hex(
+        manifest.get("model_hash"), 64, f"{where}: model_hash"
+    )
+    if bytes.fromhex(expected_weights_hash) != weights_hash:
+        raise VerificationError(f"{where}: weights_hash does not match weights.bin")
+    if bytes.fromhex(expected_model_hash) != weights_hash:
+        raise VerificationError(f"{where}: model_hash does not match weights.bin")
+    if parse_u64(manifest.get("weights_size"), f"{where}: weights_size") != len(weights):
+        raise VerificationError(f"{where}: weights_size does not match weights.bin")
+
+    try:
+        signature_text = signature_bytes.decode("ascii", errors="strict").strip()
+    except UnicodeDecodeError as exc:
+        raise VerificationError(f"{where}: model.sig is not ASCII") from exc
+    parts = signature_text.split(":")
+    if len(parts) != 3 or parts[0] != "ed25519":
+        raise VerificationError(f"{where}: malformed model.sig")
+    public_key = bytes.fromhex(expect_hex(parts[1], 64, f"{where}: signer pubkey"))
+    signature = bytes.fromhex(expect_hex(parts[2], 128, f"{where}: signature"))
+    signer_identity = expect_hex(
+        manifest.get("signer_identity"), 64, f"{where}: signer_identity"
+    )
+    if public_key.hex() != signer_identity:
+        raise VerificationError(f"{where}: signer_identity does not match model.sig")
+    if trusted_pubkey is not None and public_key != trusted_pubkey:
+        raise VerificationError(f"{where}: signer does not match trusted neural pubkey")
+    if verify_signature:
+        if verifier is None:
+            raise VerificationError(
+                "neural model signature verification requires 'cryptography' or 'pynacl'"
+            )
+        try:
+            verifier(
+                public_key,
+                signature,
+                NEURAL_MODEL_SIGNATURE_CTX + manifest_hash + weights_hash,
+            )
+        except VerificationError as exc:
+            raise VerificationError(f"{where}: model signature is invalid") from exc
+
+    return {
+        "model_id": expect_string(manifest.get("model_id"), f"{where}: model_id", 63),
+        "model_version": expect_string(
+            manifest.get("model_version"), f"{where}: model_version", 31
+        ),
+        "manifest_hash": manifest_hash.hex(),
+        "weights_hash": weights_hash.hex(),
+        "package_hash": package_hash.hex(),
+        "signer_pubkey": public_key.hex(),
+    }
+
+
+class NeuralSemanticVerifier:
+    """Validate cross-event neural evidence after the cryptographic chain."""
+
+    def __init__(
+        self,
+        model_reference: dict[str, Any] | None = None,
+        require_model_reference: bool = True,
+    ) -> None:
+        self.model_reference = model_reference
+        self.require_model_reference = require_model_reference
+        self.session_id: int | None = None
+        self.scenario_id: str | None = None
+        self.scenario_hash: str | None = None
+        self.scenario_authorized = False
+        self.pending_authority: dict[str, Any] | None = None
+        self.trust_after_by_node: dict[str, int] = {}
+        self.evidence_ids: set[str] = set()
+        self.last_neural_tick: int | None = None
+        self.inference_count = 0
+        self.authority_count = 0
+
+    def begin_session(self, session_id: int, where: str, continuation: bool) -> None:
+        if continuation:
+            if self.session_id is not None and self.session_id != session_id:
+                raise VerificationError(
+                    f"{where}: rotated segment changed neural session_id"
+                )
+            self.session_id = session_id
+            return
+        if self.session_id is not None:
+            self.finish_session(where)
+        self.session_id = session_id
+        self.scenario_id = None
+        self.scenario_hash = None
+        self.scenario_authorized = False
+        self.pending_authority = None
+        self.trust_after_by_node.clear()
+        self.evidence_ids.clear()
+        self.last_neural_tick = None
+
+    def finish_session(self, where: str) -> None:
+        if self.pending_authority is not None:
+            raise VerificationError(
+                f"{where}: missing neural authority resolution for "
+                f"tick {self.pending_authority['tick']}"
+            )
+
+    def _expect_session(self, event: dict[str, Any], where: str) -> None:
+        if self.session_id is None:
+            raise VerificationError(f"{where}: neural event precedes GENESIS")
+        event_session = expect_hex(
+            event.get("session_id"), 16, f"{where}: session_id"
+        )
+        if int(event_session, 16) != self.session_id:
+            raise VerificationError(f"{where}: neural event session_id mismatch")
+
+    def _observe_scenario(self, event: dict[str, Any], where: str) -> None:
+        if self.pending_authority is not None:
+            raise VerificationError(
+                f"{where}: scenario changed with unresolved neural authority"
+            )
+        if self.scenario_id is not None:
+            raise VerificationError(
+                f"{where}: duplicate SCENARIO_ACTIVATED within one audit session"
+            )
+        self.scenario_id = expect_string(
+            event.get("scenario_id"), f"{where}: scenario_id", 63
+        )
+        self.scenario_hash = expect_hex(
+            event.get("scenario_hash"), 64, f"{where}: scenario_hash"
+        )
+        if self.scenario_hash == ZERO_HEX_32:
+            raise VerificationError(f"{where}: scenario_hash must not be zero")
+        authorized = expect_bool(
+            event.get("neural_assurance_authorized"),
+            f"{where}: neural_assurance_authorized",
+        )
+        if authorized and (
+            event.get("signature_status") != "VERIFIED"
+            or event.get("signature_scheme") != "ed25519+pinned"
+        ):
+            raise VerificationError(
+                f"{where}: neural assurance requires a pinned verified scenario"
+            )
+        self.scenario_authorized = authorized
+        self.trust_after_by_node.clear()
+
+    def _observe_inference(self, event: dict[str, Any], where: str) -> None:
+        self._expect_session(event, where)
+        if self.pending_authority is not None:
+            raise VerificationError(
+                f"{where}: prior neural inference has no authority resolution"
+            )
+        if self.scenario_id is None or self.scenario_hash is None:
+            raise VerificationError(
+                f"{where}: neural inference precedes SCENARIO_ACTIVATED"
+            )
+        scenario_id = expect_string(
+            event.get("scenario_id"), f"{where}: scenario_id", 63
+        )
+        scenario_hash = expect_hex(
+            event.get("scenario_hash"), 64, f"{where}: scenario_hash"
+        )
+        if scenario_id != self.scenario_id or scenario_hash != self.scenario_hash:
+            raise VerificationError(f"{where}: neural scenario commitment mismatch")
+
+        tick = parse_u64(event.get("tick"), f"{where}: tick")
+        if self.last_neural_tick is not None and tick <= self.last_neural_tick:
+            raise VerificationError(
+                f"{where}: neural inference ticks must be strictly increasing"
+            )
+        model_hash = expect_hex(event.get("model_hash"), 64, f"{where}: model_hash")
+        manifest_hash = expect_hex(
+            event.get("manifest_hash"), 64, f"{where}: manifest_hash"
+        )
+        input_hash = expect_hex(event.get("input_hash"), 64, f"{where}: input_hash")
+        output_hash = expect_hex(
+            event.get("output_hash"), 64, f"{where}: output_hash"
+        )
+        policy_hash = expect_hex(
+            event.get("policy_hash"), 64, f"{where}: policy_hash"
+        )
+        if policy_hash != NEURAL_POLICY_V1_HASH:
+            raise VerificationError(f"{where}: untrusted Neural Policy V1 commitment")
+        evidence_id = expect_hex(
+            event.get("evidence_id"), 64, f"{where}: evidence_id"
+        )
+        if evidence_id != output_hash:
+            raise VerificationError(f"{where}: evidence_id must equal output_hash")
+        if evidence_id in self.evidence_ids:
+            raise VerificationError(f"{where}: replayed neural evidence_id")
+        if output_hash == ZERO_HEX_32 or policy_hash == ZERO_HEX_32:
+            raise VerificationError(f"{where}: output/policy commitments must not be zero")
+
+        runtime_status = expect_string(
+            event.get("runtime_status"), f"{where}: runtime_status", 48
+        )
+        gate_decision = expect_string(
+            event.get("gate_decision"), f"{where}: gate_decision", 48
+        )
+        if runtime_status not in NEURAL_RUNTIME_STATUSES:
+            raise VerificationError(f"{where}: unknown neural runtime_status")
+        if gate_decision not in NEURAL_GATE_DECISIONS:
+            raise VerificationError(f"{where}: unknown neural gate_decision")
+        accepted = gate_decision in NEURAL_ACCEPTED_DECISIONS
+        model_trusted = expect_bool(
+            event.get("model_trusted"), f"{where}: model_trusted"
+        )
+        fallback = expect_bool(event.get("fallback"), f"{where}: fallback")
+        authority_expected = expect_bool(
+            event.get("authority_expected"), f"{where}: authority_expected"
+        )
+        if accepted:
+            if not self.scenario_authorized:
+                raise VerificationError(
+                    f"{where}: accepted output is not authorized by the active scenario"
+                )
+            if runtime_status != "OK" or not model_trusted:
+                raise VerificationError(
+                    f"{where}: accepted output lacks trusted successful inference"
+                )
+            if fallback or not authority_expected:
+                raise VerificationError(
+                    f"{where}: accepted output has inconsistent fallback/authority flags"
+                )
+            if input_hash == ZERO_HEX_32 or model_hash == ZERO_HEX_32:
+                raise VerificationError(
+                    f"{where}: accepted output has a zero input/model commitment"
+                )
+            if manifest_hash == ZERO_HEX_32:
+                raise VerificationError(
+                    f"{where}: accepted output has a zero manifest commitment"
+                )
+            if event.get("model_load_status") != "LOADED":
+                raise VerificationError(
+                    f"{where}: accepted output does not report a loaded model"
+                )
+            expect_string(event.get("model_id"), f"{where}: model_id", 63)
+            expect_string(event.get("model_version"), f"{where}: model_version", 31)
+        elif not fallback or authority_expected:
+            raise VerificationError(
+                f"{where}: rejected output has inconsistent fallback/authority flags"
+            )
+
+        confidence = parse_i64(
+            event.get("confidence_min_fp"), f"{where}: confidence_min_fp"
+        )
+        ood = parse_i64(event.get("ood_max_fp"), f"{where}: ood_max_fp")
+        if not 0 <= confidence <= FP_ONE or not 0 <= ood <= FP_ONE:
+            raise VerificationError(f"{where}: confidence/OOD outside fixed-point range")
+        if accepted and (
+            confidence < NEURAL_MINIMUM_CONFIDENCE_FP
+            or ood > NEURAL_MAXIMUM_OOD_FP
+        ):
+            raise VerificationError(
+                f"{where}: accepted output violates Neural Policy V1 thresholds"
+            )
+        if parse_u64(
+            event.get("feature_schema_version"), f"{where}: feature_schema_version"
+        ) != 1:
+            raise VerificationError(f"{where}: unsupported neural feature schema")
+        if event.get("runtime_mode") != "DETERMINISTIC_FIXED_POINT_ASSURANCE":
+            raise VerificationError(f"{where}: unsupported neural runtime_mode")
+
+        if accepted and self.model_reference is None and self.require_model_reference:
+            raise VerificationError(
+                f"{where}: accepted neural evidence requires --neural-model-dir"
+            )
+        if self.model_reference is not None and model_trusted:
+            expected = self.model_reference
+            if (
+                model_hash != expected["package_hash"]
+                or manifest_hash != expected["manifest_hash"]
+                or event.get("model_id") != expected["model_id"]
+                or event.get("model_version") != expected["model_version"]
+            ):
+                raise VerificationError(
+                    f"{where}: neural event does not reference the pinned model package"
+                )
+
+        self.inference_count += 1
+        if self.inference_count > MAX_NEURAL_EVENTS_PER_SESSION:
+            raise VerificationError(
+                f"{where}: neural event count exceeds verifier safety limit"
+            )
+        self.last_neural_tick = tick
+        self.evidence_ids.add(evidence_id)
+        if authority_expected:
+            self.pending_authority = {
+                "tick": tick,
+                "evidence_id": evidence_id,
+                "model_hash": model_hash,
+                "input_hash": input_hash,
+                "output_hash": output_hash,
+                "policy_hash": policy_hash,
+                "gate_decision": gate_decision,
+            }
+
+    def _validate_proposals(self, event: dict[str, Any], where: str) -> None:
+        proposals = expect_list(
+            event.get("applied_proposals"), f"{where}: applied_proposals", 64
+        )
+        seen_indices: set[int] = set()
+        seen_ids: set[str] = set()
+        pending_updates: dict[str, int] = {}
+        for index, proposal in enumerate(proposals):
+            item_where = f"{where}: applied_proposals[{index}]"
+            if not isinstance(proposal, dict):
+                raise VerificationError(f"{item_where}: expected object")
+            node_index = parse_u64(proposal.get("node_index"), f"{item_where}: node_index")
+            node_id = expect_string(proposal.get("node_id"), f"{item_where}: node_id", 63)
+            before = parse_i64(
+                proposal.get("trust_before_fp"), f"{item_where}: trust_before_fp"
+            )
+            delta = parse_i64(proposal.get("delta_fp"), f"{item_where}: delta_fp")
+            after = parse_i64(
+                proposal.get("trust_after_fp"), f"{item_where}: trust_after_fp"
+            )
+            if node_index in seen_indices or node_id in seen_ids:
+                raise VerificationError(f"{item_where}: duplicate node proposal")
+            if not 0 <= before <= FP_ONE or not 0 <= after <= FP_ONE:
+                raise VerificationError(f"{item_where}: trust outside fixed-point range")
+            if not -50_000 <= delta <= 50_000 or before + delta != after:
+                raise VerificationError(f"{item_where}: invalid bounded trust transition")
+            previous = self.trust_after_by_node.get(node_id)
+            if previous is not None and previous != before:
+                raise VerificationError(f"{item_where}: trust pre-state breaks audit history")
+            seen_indices.add(node_index)
+            seen_ids.add(node_id)
+            pending_updates[node_id] = after
+        self.trust_after_by_node.update(pending_updates)
+
+    def _validate_levers(self, event: dict[str, Any], where: str) -> None:
+        levers = expect_list(
+            event.get("lever_candidates"), f"{where}: lever_candidates", 32
+        )
+        selected_ids: list[str] = []
+        for index, lever in enumerate(levers):
+            item_where = f"{where}: lever_candidates[{index}]"
+            if not isinstance(lever, dict):
+                raise VerificationError(f"{item_where}: expected object")
+            expect_string(lever.get("lever_id"), f"{item_where}: lever_id", 63)
+            for field in ("neural_score_fp", "symbolic_score_fp"):
+                score = parse_i64(lever.get(field), f"{item_where}: {field}")
+                if not 0 <= score <= FP_ONE:
+                    raise VerificationError(f"{item_where}: {field} outside range")
+            if expect_bool(lever.get("selected"), f"{item_where}: selected"):
+                selected_ids.append(lever["lever_id"])
+        selected = event.get("selected_lever_id")
+        if not isinstance(selected, str) or len(selected) > 63:
+            raise VerificationError(f"{where}: invalid selected_lever_id")
+        if len(selected_ids) > 1 or (selected_ids and selected != selected_ids[0]):
+            raise VerificationError(f"{where}: selected lever flags are inconsistent")
+        if selected and not selected_ids:
+            raise VerificationError(f"{where}: selected_lever_id has no selected candidate")
+
+    def _observe_authority(self, event: dict[str, Any], where: str) -> None:
+        self._expect_session(event, where)
+        pending = self.pending_authority
+        if pending is None:
+            raise VerificationError(f"{where}: neural authority has no inference evidence")
+        linked = {
+            "tick": parse_u64(event.get("tick"), f"{where}: tick"),
+            "evidence_id": expect_hex(
+                event.get("evidence_id"), 64, f"{where}: evidence_id"
+            ),
+            "model_hash": expect_hex(
+                event.get("model_hash"), 64, f"{where}: model_hash"
+            ),
+            "input_hash": expect_hex(
+                event.get("input_hash"), 64, f"{where}: input_hash"
+            ),
+            "output_hash": expect_hex(
+                event.get("output_hash"), 64, f"{where}: output_hash"
+            ),
+            "policy_hash": expect_hex(
+                event.get("policy_hash"), 64, f"{where}: policy_hash"
+            ),
+        }
+        for key, value in linked.items():
+            if value != pending[key]:
+                raise VerificationError(f"{where}: authority {key} mismatch")
+
+        event_type = event.get("type")
+        if event_type == "NEURAL_AUTHORITY_V1":
+            if event.get("gate_decision") != pending["gate_decision"]:
+                raise VerificationError(f"{where}: authority gate_decision mismatch")
+            if not expect_bool(
+                event.get("authority_committed"), f"{where}: authority_committed"
+            ):
+                raise VerificationError(f"{where}: authority event was not committed")
+            if expect_bool(
+                event.get("symbolic_state_overwritten"),
+                f"{where}: symbolic_state_overwritten",
+            ):
+                raise VerificationError(f"{where}: neural output overwrote symbolic state")
+            if expect_bool(
+                event.get("outage_latch_overridden"),
+                f"{where}: outage_latch_overridden",
+            ):
+                raise VerificationError(f"{where}: neural output overrode outage latch")
+            proposals = expect_list(
+                event.get("applied_proposals"), f"{where}: applied_proposals", 64
+            )
+            if pending["gate_decision"] == "ACCEPTED_ADVISORY" and proposals:
+                raise VerificationError(
+                    f"{where}: advisory authority cannot apply bounded proposals"
+                )
+            if pending["gate_decision"] == "ACCEPTED_BOUNDED" and not proposals:
+                raise VerificationError(
+                    f"{where}: bounded authority contains no bounded proposals"
+                )
+            self._validate_proposals(event, where)
+            self._validate_levers(event, where)
+        else:
+            committed = expect_bool(
+                event.get("authority_committed"), f"{where}: authority_committed"
+            )
+            rollback_applied = expect_bool(
+                event.get("rollback_applied"), f"{where}: rollback_applied"
+            )
+            rollback_failed = expect_bool(
+                event.get("rollback_failed"), f"{where}: rollback_failed"
+            )
+            if expect_bool(
+                event.get("symbolic_state_overwritten"),
+                f"{where}: symbolic_state_overwritten",
+            ):
+                raise VerificationError(f"{where}: neural output overwrote symbolic state")
+            if expect_bool(
+                event.get("outage_latch_overridden"),
+                f"{where}: outage_latch_overridden",
+            ):
+                raise VerificationError(f"{where}: neural output overrode outage latch")
+            if committed:
+                raise VerificationError(f"{where}: resolution cannot remain committed")
+            if event_type == "NEURAL_AUTHORITY_REJECTED_V1":
+                if event.get("gate_decision") != "REJECTED_INVARIANT":
+                    raise VerificationError(
+                        f"{where}: authority rejection has invalid gate_decision"
+                    )
+                if rollback_applied or rollback_failed:
+                    raise VerificationError(
+                        f"{where}: pre-commit rejection cannot report rollback"
+                    )
+            elif event_type == "NEURAL_AUTHORITY_ROLLBACK_V1":
+                if event.get("gate_decision") != "SYMBOLIC_FALLBACK":
+                    raise VerificationError(
+                        f"{where}: rollback has invalid gate_decision"
+                    )
+                advisory_noop = (
+                    pending["gate_decision"] == "ACCEPTED_ADVISORY"
+                    and not rollback_applied
+                    and not rollback_failed
+                )
+                if not advisory_noop and rollback_applied == rollback_failed:
+                    raise VerificationError(
+                        f"{where}: rollback must report exactly one terminal result"
+                    )
+                if rollback_failed:
+                    raise VerificationError(
+                        f"{where}: symbolic rollback failed; session is unsafe"
+                    )
+
+        self.pending_authority = None
+        self.authority_count += 1
+
+    def observe_event(self, event: Any, where: str) -> None:
+        if not isinstance(event, dict):
+            raise VerificationError(f"{where}: EVENT payload must be a JSON object")
+        event_type = event.get("type")
+        if event_type == "SCENARIO_ACTIVATED":
+            self._observe_scenario(event, where)
+        elif event_type == "NEURAL_INFERENCE_V1":
+            self._observe_inference(event, where)
+        elif event_type in {
+            "NEURAL_AUTHORITY_V1",
+            "NEURAL_AUTHORITY_REJECTED_V1",
+            "NEURAL_AUTHORITY_ROLLBACK_V1",
+        }:
+            self._observe_authority(event, where)
 
 
 def skip_ws(text: str, index: int) -> int:
@@ -280,6 +952,7 @@ def verify_segment(
     chain_only: bool,
     verbose: bool,
     trusted_pubkey: bytes | None,
+    neural_semantics: NeuralSemanticVerifier | None,
 ) -> bytes:
     chain_head: bytes | None = None
     session_id: int | None = None
@@ -305,6 +978,10 @@ def verify_segment(
                     )
                     event_count = 0
                     saw_seal = False
+                    if neural_semantics is not None:
+                        neural_semantics.begin_session(
+                            session_id, where, continuation=False
+                        )
                     continue
                 if chain_head is not None:
                     raise VerificationError(f"{where}: duplicate GENESIS")
@@ -314,6 +991,12 @@ def verify_segment(
                     previous_segment_head,
                     where,
                 )
+                if neural_semantics is not None:
+                    neural_semantics.begin_session(
+                        session_id,
+                        where,
+                        continuation=previous_segment_head is not None,
+                    )
                 continue
 
             if chain_head is None or session_id is None:
@@ -330,6 +1013,8 @@ def verify_segment(
                 actual_hash = bytes.fromhex(expect_hex(obj.get("hash"), 64, f"{where}: hash"))
                 if actual_hash != expected_hash:
                     raise VerificationError(f"{where}: EVENT hash mismatch")
+                if neural_semantics is not None:
+                    neural_semantics.observe_event(obj.get("event"), where)
                 chain_head = expected_hash
                 event_count += 1
                 continue
@@ -380,6 +1065,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--trusted-pubkey-hex",
         help="optional 32-byte ed25519 public key pin expected in every SEAL",
     )
+    parser.add_argument(
+        "--neural-model-dir",
+        type=Path,
+        help=(
+            "optional signed model package whose identity must match every "
+            "trusted NEURAL_INFERENCE_V1 event"
+        ),
+    )
+    parser.add_argument(
+        "--trusted-neural-pubkey-hex",
+        help="32-byte ed25519 public-key pin for --neural-model-dir",
+    )
+    parser.add_argument(
+        "--skip-neural-semantics",
+        action="store_true",
+        help="verify only the generic chain/SEAL structure, not NEURAL_* event linkage",
+    )
     parser.add_argument("--verbose", action="store_true", help="print per-segment details")
     return parser.parse_args(argv)
 
@@ -398,6 +1100,38 @@ def main(argv: list[str]) -> int:
             trusted_pubkey = bytes.fromhex(
                 expect_hex(args.trusted_pubkey_hex, 64, "--trusted-pubkey-hex")
             )
+        trusted_neural_pubkey = None
+        if args.trusted_neural_pubkey_hex:
+            trusted_neural_pubkey = bytes.fromhex(
+                expect_hex(
+                    args.trusted_neural_pubkey_hex,
+                    64,
+                    "--trusted-neural-pubkey-hex",
+                )
+            )
+        if args.neural_model_dir and trusted_neural_pubkey is None:
+            raise VerificationError(
+                "--neural-model-dir requires --trusted-neural-pubkey-hex"
+            )
+        if trusted_neural_pubkey is not None and args.neural_model_dir is None:
+            raise VerificationError(
+                "--trusted-neural-pubkey-hex requires --neural-model-dir"
+            )
+
+        model_reference = None
+        if args.neural_model_dir is not None:
+            model_reference = load_neural_model_reference(
+                args.neural_model_dir,
+                blake3_module,
+                verifier,
+                trusted_neural_pubkey,
+                verify_signature=True,
+            )
+        neural_semantics = (
+            None
+            if args.skip_neural_semantics
+            else NeuralSemanticVerifier(model_reference)
+        )
 
         previous_head: bytes | None = None
         for segment in segments:
@@ -409,7 +1143,16 @@ def main(argv: list[str]) -> int:
                 args.chain_only,
                 args.verbose,
                 trusted_pubkey,
+                neural_semantics,
             )
+        if neural_semantics is not None:
+            neural_semantics.finish_session(str(segments[-1]))
+            if args.verbose:
+                print(
+                    "neural semantics: "
+                    f"inferences={neural_semantics.inference_count} "
+                    f"authority_resolutions={neural_semantics.authority_count}"
+                )
         print(f"OK: verified {len(segments)} segment(s), final_chain_head={previous_head.hex()}")
         return 0
     except VerificationError as exc:
