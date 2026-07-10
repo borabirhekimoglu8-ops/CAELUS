@@ -22,6 +22,7 @@ extern crate alloc;
 pub mod det_rng;
 pub mod engine;
 pub mod fp;
+pub mod neural_contract;
 
 pub use det_rng::DetRng;
 pub use engine::{

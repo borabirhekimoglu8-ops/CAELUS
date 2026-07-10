@@ -2,6 +2,7 @@
 #include "doctest.h"
 
 #include "causal_engine.h"
+#include "neural_contract.h"
 #include "scenario_pack.h"
 #include "plugin/caelus_solver.h"
 
@@ -179,6 +180,117 @@ TEST_CASE("snapshot exposes fixed-point throughput ratio") {
 
     CHECK(snap.throughput_ratio_fp == fp_div(FP_ONE, snap.clamped_friction_fp));
     CHECK(snap.throughput_ratio == fp_to_d(snap.throughput_ratio_fp));
+}
+
+TEST_CASE("neural V1 contract rejects malformed fixed-point inputs") {
+    CaelusNeuralNodeInputV1 node{};
+    node.struct_size = sizeof(node);
+    node.node_index = 0;
+    node.node_kind = static_cast<uint32_t>(NodeKind::Buffer);
+    node.capacity_fp = FP_ONE;
+    node.authoritative_state_fp = 500'000;
+    node.reported_state_fp = 800'000;
+    node.trust_fp = 700'000;
+    node.queue_utilization_fp = 500'000;
+    node.outage_latched_fp = 0;
+    node.intel_risk_fp = 200'000;
+    CHECK(caelus::neural::node_input_ranges_valid(node));
+
+    node.authoritative_state_fp = FP_ONE + 1;
+    CHECK(!caelus::neural::node_input_ranges_valid(node));
+    node.authoritative_state_fp = 500'000;
+    node.trust_fp = -1;
+    CHECK(!caelus::neural::node_input_ranges_valid(node));
+}
+
+TEST_CASE("neural V1 output ranges reject instead of implicitly clamping") {
+    CaelusNeuralNodeInputV1 node{};
+    node.struct_size = sizeof(node);
+    node.node_index = 0;
+    node.capacity_fp = FP_ONE;
+    node.trust_fp = FP_ONE;
+
+    CaelusNeuralInputV1 input{};
+    input.struct_size = sizeof(input);
+    input.neural_abi_version = CAELUS_NEURAL_ABI_V1;
+    input.feature_schema_version = CAELUS_FEATURE_SCHEMA_V1;
+    input.history_length = CAELUS_NEURAL_HISTORY_TICKS_V1;
+    input.node_count = 1;
+    input.nodes = &node;
+
+    CaelusNeuralOutputBufferV1 output{};
+    output.struct_size = sizeof(output);
+    output.output_schema_version = CAELUS_NEURAL_OUTPUT_V1;
+    output.runtime_status = CAELUS_NEURAL_STATUS_OK;
+    output.node_count = 1;
+    output.nodes[0].node_index = 0;
+    output.nodes[0].estimated_true_state_fp = 500'000;
+    output.nodes[0].telemetry_anomaly_score_fp = 100'000;
+    output.nodes[0].confidence_fp = 900'000;
+    output.nodes[0].out_of_distribution_score_fp = 100'000;
+    output.nodes[0].outage_probability_short_fp = 200'000;
+    output.nodes[0].outage_probability_medium_fp = 300'000;
+    output.nodes[0].outage_probability_long_fp = 400'000;
+    CHECK(caelus::neural::output_ranges_valid(input, output));
+
+    output.nodes[0].confidence_fp = FP_ONE + 1;
+    CHECK(!caelus::neural::output_ranges_valid(input, output));
+}
+
+TEST_CASE("neural V1 input validation rejects null ABI spans") {
+    CaelusNeuralInputV1 input{};
+    input.struct_size = sizeof(input);
+    input.neural_abi_version = CAELUS_NEURAL_ABI_V1;
+    input.feature_schema_version = CAELUS_FEATURE_SCHEMA_V1;
+    input.history_length = CAELUS_NEURAL_HISTORY_TICKS_V1;
+    input.node_count = 1;
+    input.nodes = nullptr;
+    CHECK(!caelus::neural::input_ranges_valid(input));
+}
+
+TEST_CASE("neural V1 policy prevents cumulative duplicate trust proposals") {
+    CaelusNeuralNodeInputV1 nodes[2]{};
+    for (uint32_t i = 0; i < 2; ++i) {
+        nodes[i].struct_size = sizeof(nodes[i]);
+        nodes[i].node_index = i;
+        nodes[i].capacity_fp = FP_ONE;
+        nodes[i].trust_fp = 980'000;
+    }
+
+    CaelusNeuralInputV1 input{};
+    input.struct_size = sizeof(input);
+    input.neural_abi_version = CAELUS_NEURAL_ABI_V1;
+    input.feature_schema_version = CAELUS_FEATURE_SCHEMA_V1;
+    input.history_length = CAELUS_NEURAL_HISTORY_TICKS_V1;
+    input.node_count = 2;
+    input.nodes = nodes;
+
+    CaelusNeuralOutputBufferV1 output{};
+    output.struct_size = sizeof(output);
+    output.output_schema_version = CAELUS_NEURAL_OUTPUT_V1;
+    output.runtime_status = CAELUS_NEURAL_STATUS_OK;
+    output.node_count = 2;
+    for (uint32_t i = 0; i < output.node_count; ++i) {
+        output.nodes[i].node_index = i;
+        output.nodes[i].estimated_true_state_fp = 0;
+        output.nodes[i].confidence_fp = 900'000;
+    }
+    output.proposal_count = 2;
+    for (uint32_t i = 0; i < output.proposal_count; ++i) {
+        output.proposals[i].kind = CAELUS_NEURAL_PROPOSAL_TRUST_DELTA;
+        output.proposals[i].node_index = 0;
+        output.proposals[i].proposed_delta_fp = -20'000;
+        output.proposals[i].authorized_min_fp = -50'000;
+        output.proposals[i].authorized_max_fp = 50'000;
+    }
+    CHECK(!caelus::neural::output_ranges_valid(input, output));
+
+    output.proposal_count = 1;
+    output.proposals[0].proposed_delta_fp = 30'000; // would put trust above 1.0
+    CHECK(!caelus::neural::output_ranges_valid(input, output));
+
+    output.proposals[0].proposed_delta_fp = (std::numeric_limits<int64_t>::min)();
+    CHECK(!caelus::neural::output_ranges_valid(input, output));
 }
 
 TEST_CASE("solver C ABI structs round-trip through plugin vtable") {
