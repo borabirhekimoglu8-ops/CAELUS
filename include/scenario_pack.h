@@ -516,6 +516,17 @@ public:
 
     bool loaded = false;
 
+    /**
+     * Exact canonical payload that passed the scenario signature gate.
+     *
+     * Neural/audit commitments must hash this retained value instead of
+     * reopening the source path after verification (which would create a
+     * file-replacement TOCTOU window).
+     */
+    const std::string& verified_canonical_payload() const noexcept {
+        return verified_canonical_payload_;
+    }
+
     // ── Yükleme ─────────────────────────────────────────────────────────────
 
     bool load(const std::string& path) {
@@ -539,6 +550,7 @@ public:
         hysteresis.clear();
         risk_profile = caelus::intel::OperationalRiskProfile{};
         intel_sequence.clear();
+        verified_canonical_payload_.clear();
 
         // Dosya oku
         std::ifstream f(path, std::ios::binary);
@@ -570,6 +582,7 @@ public:
             std::cerr << "[SCENARIO] Paket imzası reddedildi: " << path << "\n";
             return false;
         }
+        verified_canonical_payload_ = canonical_signed_payload(root);
 
         if (root.has("meta")) {
             const auto& meta = root["meta"];
@@ -743,6 +756,8 @@ public:
 #endif
 
 private:
+    std::string verified_canonical_payload_;
+
     // ─────────────────────────────────────────────────────────────────────────
     // CAELUS_TRUSTED_PUBKEY — Pinlenmiş üretim imzalama pubkey'i (32 bayt).
     // Derleme zamanında sabittir; tüm üretim senaryo paketleri yalnızca bu

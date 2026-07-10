@@ -4,6 +4,7 @@
 #include "causal_engine.h"
 #include "neural_contract.h"
 #include "neural_gate.h"
+#include "neural_host.h"
 #include "neural_model.h"
 #include "neural_runtime.h"
 #include "scenario_pack.h"
@@ -246,6 +247,8 @@ TEST_CASE("fixed-point arithmetic saturates near int64 limits") {
     CHECK(fp_div(kMax, 1LL) == kMax);
     CHECK(fp_div(kMin, 1LL) == kMin);
     CHECK(fp_div(kMax, -1LL) == kMin);
+    CHECK(fp_div(kMin, -1LL) == kMax);
+    CHECK(fp_mul(kMin, kMin) == kMax);
     CHECK(fp_add_saturating(kMax, 1LL) == kMax);
     CHECK(fp_add_saturating(kMin, -1LL) == kMin);
 }
@@ -763,6 +766,93 @@ TEST_CASE("neural missing masks zero unavailable features and obey policy count"
         model, snapshot, policy);
     CHECK(output.runtime_status == CAELUS_NEURAL_STATUS_MALFORMED_INPUT);
     CHECK(output.node_count == 0);
+}
+
+TEST_CASE("symbolic authority applies bounded trust adjustments atomically") {
+    CausalEngine engine;
+    Node first;
+    first.id = "FIRST";
+    first.capacity_fp = FP_ONE;
+    first.trust_fp = 500'000;
+    Node second = first;
+    second.id = "SECOND";
+    second.trust_fp = 980'000;
+    engine.add_node(first);
+    engine.add_node(second);
+
+    const std::vector<BoundedTrustAdjustment> duplicate = {
+        {0u, 10'000}, {0u, -10'000}};
+    CHECK(!engine.apply_bounded_trust_adjustments(duplicate, 50'000));
+    CHECK(engine.nodes()[0].trust_fp == 500'000);
+    CHECK(engine.nodes()[1].trust_fp == 980'000);
+
+    const std::vector<BoundedTrustAdjustment> overflow = {
+        {0u, -10'000}, {1u, 30'000}};
+    CHECK(!engine.apply_bounded_trust_adjustments(overflow, 50'000));
+    CHECK(engine.nodes()[0].trust_fp == 500'000);
+    CHECK(engine.nodes()[1].trust_fp == 980'000);
+
+    const std::vector<BoundedTrustAdjustment> accepted = {
+        {0u, -10'000}, {1u, 20'000}};
+    CHECK(engine.apply_bounded_trust_adjustments(accepted, 50'000));
+    CHECK(engine.nodes()[0].trust_fp == 490'000);
+    CHECK(engine.nodes()[1].trust_fp == FP_ONE);
+}
+
+TEST_CASE("neural host consumes graph history and safely rejects unavailable model") {
+    CausalEngine engine;
+    Node source;
+    source.id = "SOURCE";
+    source.kind = NodeKind::Buffer;
+    source.capacity_fp = FP_ONE;
+    source.state_fp = 400'000;
+    source.reported_state_fp = 200'000;
+    source.trust_fp = 700'000;
+    Node destination = source;
+    destination.id = "DESTINATION";
+    destination.kind = NodeKind::Service;
+    destination.state_fp = 100'000;
+    destination.reported_state_fp = 100'000;
+    destination.trust_fp = FP_ONE;
+    engine.add_node(source);
+    engine.add_node(destination);
+    engine.add_edge(Edge{"SOURCE", "DESTINATION", 900'000, 1, true});
+    Lever lever;
+    lever.id = "RECOVER";
+    lever.success_p_fp = 800'000;
+    lever.cost_ticks = 2;
+    engine.add_lever(lever);
+    engine.inject_intel_fp(300'000, 1, "test");
+
+    std::array<uint8_t, CAELUS_NEURAL_HASH_BYTES_V1> scenario_hash{};
+    scenario_hash.fill(0x5au);
+    caelus::neural::NeuralControllerV1 controller;
+    controller.configure(
+        CAELUS_NEURAL_MODE_ASSURANCE, "", "TEST_SCENARIO", scenario_hash);
+    REQUIRE(controller.initialise_history(engine));
+    engine.tick();
+    REQUIRE(controller.observe_tick(engine));
+
+    const int64_t trust_before = engine.nodes()[0].trust_fp;
+    auto evidence = controller.evaluate(engine, false);
+    CHECK(evidence.attempted);
+    CHECK(evidence.snapshot_valid);
+    CHECK(evidence.observed_history_ticks == 1u);
+    CHECK(evidence.gate.decision == CAELUS_NEURAL_GATE_REJECTED_MODEL_TRUST);
+    CHECK(evidence.applied_proposals.empty());
+    CHECK(!evidence.authority_record_required);
+    CHECK(engine.nodes()[0].trust_fp == trust_before);
+
+    const std::string audit =
+        caelus::neural::neural_inference_audit_event(controller, evidence, 7u);
+    CHECK(audit.find("\"type\":\"NEURAL_INFERENCE_V1\"") != std::string::npos);
+    CHECK(audit.find("\"fallback\":true") != std::string::npos);
+    CHECK(audit.find("\"authority_expected\":false") != std::string::npos);
+
+    const std::string telemetry =
+        caelus::neural::neural_war_room_event(controller, evidence);
+    CHECK(telemetry.find("\"reported_state_fp\":\"") != std::string::npos);
+    CHECK(telemetry.find("\"authoritative_state_fp\":\"") != std::string::npos);
 }
 
 TEST_CASE("solver C ABI structs round-trip through plugin vtable") {

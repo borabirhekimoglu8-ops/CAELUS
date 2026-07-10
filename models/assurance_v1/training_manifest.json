@@ -1,0 +1,46 @@
+{
+  "dataset_blake3": "4d4f7181b41883f6bf99a832d669e60f6ff01dbf2b4c149d279cf7a4379195f8",
+  "dataset_bytes": 1348045,
+  "dataset_generator": "caelus_neural_dataset",
+  "dataset_generator_version": 1,
+  "dataset_manifest_path": "dataset.manifest.json",
+  "dataset_path": "dataset.jsonl",
+  "engine_commit": "483a4c4f6930a167a5cd0200df8e939eb4cc1477",
+  "metrics_file": "training_metrics.json",
+  "schema_version": 1,
+  "signer_identity": "0ec496d12fa6fdd536d7978741d5f002631b70e55da0ee5ce49b72261f8e4db2",
+  "training_config": {
+    "class_imbalance": "inverse_binary_frequency_for_outage_heads",
+    "decimal_precision": 50,
+    "frozen_encoder": "structured_input_projection_and_two_message_layers",
+    "label_sources": {
+      "confidence_ood_trust": "deterministic_synthetic_policy_targets",
+      "future_outage": "dynamic_symbolic_counterfactual",
+      "lever_effectiveness": "synthetic_dynamic_counterfactual_score",
+      "salience": "feature_magnitude_not_causal_attribution",
+      "telemetry_anomaly": "symbolic_state_vs_reported_telemetry",
+      "true_state": "symbolic_engine"
+    },
+    "observer_feature_policy": "telemetry_only_authority_withheld_v1",
+    "quantization": "round_half_even_then_symmetric_int8_clip",
+    "ridge": "0.01",
+    "seed": 14618972319377190656,
+    "split_policy": "rollout_id_mod_10:test=0,validation=1,train=2..9",
+    "trained_heads": [
+      "true_state_ratio_fp",
+      "telemetry_anomaly_fp",
+      "confidence_policy_target_fp",
+      "ood_policy_target_fp",
+      "trust_delta_policy_target_fp",
+      "outage_short",
+      "outage_medium",
+      "outage_long",
+      "lever_effectiveness"
+    ],
+    "trainer": "caelus_decimal_ridge_v1",
+    "weight_scale_denominator": 64
+  },
+  "training_config_sha256": "149a372ee5c3d2ca59b7b7de5a771ee745e29cf1c80008effd710ac33601c6be",
+  "weights_blake3": "3b1ecdc41038c6814c95b8a253482d2fd5271142ab9c106633151aecc24d473f",
+  "weights_bytes": 5367
+}

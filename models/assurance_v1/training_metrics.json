@@ -1,0 +1,96 @@
+{
+  "quantization": {
+    "bias_max": 115362243,
+    "bias_min": -50716155,
+    "coefficient_clipping_count": 20,
+    "weight_max": 127,
+    "weight_min": -127
+  },
+  "test": {
+    "lever_top1_accuracy_fp": 772727,
+    "node_mae_fp": {
+      "confidence_policy_target_fp": 22869,
+      "ood_policy_target_fp": 332043,
+      "telemetry_anomaly_fp": 32276,
+      "true_state_ratio_fp": 180785,
+      "trust_delta_policy_target_fp": 7208
+    },
+    "outage": [
+      {
+        "accuracy_fp": 1000000,
+        "brier_fp": 56,
+        "calibration_error_fp": 3444
+      },
+      {
+        "accuracy_fp": 1000000,
+        "brier_fp": 56,
+        "calibration_error_fp": 3444
+      },
+      {
+        "accuracy_fp": 272727,
+        "brier_fp": 634005,
+        "calibration_error_fp": 736137
+      }
+    ],
+    "robustness_node_mae_fp": 95136,
+    "samples": 22
+  },
+  "train": {
+    "lever_top1_accuracy_fp": 630681,
+    "node_mae_fp": {
+      "confidence_policy_target_fp": 22895,
+      "ood_policy_target_fp": 364077,
+      "telemetry_anomaly_fp": 33966,
+      "true_state_ratio_fp": 189364,
+      "trust_delta_policy_target_fp": 7630
+    },
+    "outage": [
+      {
+        "accuracy_fp": 1000000,
+        "brier_fp": 16,
+        "calibration_error_fp": 2022
+      },
+      {
+        "accuracy_fp": 1000000,
+        "brier_fp": 16,
+        "calibration_error_fp": 2022
+      },
+      {
+        "accuracy_fp": 272727,
+        "brier_fp": 641241,
+        "calibration_error_fp": 741252
+      }
+    ],
+    "robustness_node_mae_fp": 100752,
+    "samples": 176
+  },
+  "validation": {
+    "lever_top1_accuracy_fp": 500000,
+    "node_mae_fp": {
+      "confidence_policy_target_fp": 23529,
+      "ood_policy_target_fp": 382901,
+      "telemetry_anomaly_fp": 33749,
+      "true_state_ratio_fp": 196938,
+      "trust_delta_policy_target_fp": 7931
+    },
+    "outage": [
+      {
+        "accuracy_fp": 1000000,
+        "brier_fp": 26,
+        "calibration_error_fp": 2338
+      },
+      {
+        "accuracy_fp": 1000000,
+        "brier_fp": 26,
+        "calibration_error_fp": 2338
+      },
+      {
+        "accuracy_fp": 272727,
+        "brier_fp": 634177,
+        "calibration_error_fp": 739022
+      }
+    ],
+    "robustness_node_mae_fp": 95254,
+    "samples": 22
+  }
+}
