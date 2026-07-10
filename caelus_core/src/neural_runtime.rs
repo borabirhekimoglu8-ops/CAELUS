@@ -117,8 +117,9 @@ impl DeterministicModelV1 {
         Self::parse_weights_blob(blob, weight_scale_denominator, false, None)
     }
 
-    /// Crate-internal handoff for bytes authenticated by the package trust gate.
-    pub(crate) fn from_verified_weights_blob(
+    /// Unit-only construction after the test fixture's manifest/hash checks.
+    #[cfg(test)]
+    fn from_test_verified_weights_blob(
         blob: &[u8],
         weight_scale_denominator: u32,
         manifest_hash: [u8; 32],
@@ -752,7 +753,8 @@ pub(crate) mod tests_support {
     }
 
     pub(crate) fn verified_fixture_model() -> DeterministicModelV1 {
-        DeterministicModelV1::from_verified_weights_blob(&fixture_blob(), 64, [0x22; 32]).unwrap()
+        DeterministicModelV1::from_test_verified_weights_blob(&fixture_blob(), 64, [0x22; 32])
+            .unwrap()
     }
 }
 
