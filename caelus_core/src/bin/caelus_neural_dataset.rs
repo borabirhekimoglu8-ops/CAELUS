@@ -18,10 +18,11 @@ use caelus_core::{
     Hysteresis, Lever, LeverOutcome, Node, NodeKind, FP_ONE,
 };
 
-const GENERATOR_VERSION: u32 = 1;
+const GENERATOR_VERSION: u32 = 2;
 const HISTORY_TICKS: usize = 8;
 const FUTURE_HORIZONS: [u32; 3] = [4, 16, 64];
 const MAX_SAMPLES: u32 = 4_096;
+const TRUST_DEGRADATION_ANOMALY_FP: i64 = 50_000;
 const CASES: [&str; 22] = [
     "normal",
     "queue_buildup",
@@ -127,6 +128,18 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
 fn sample_range(rng: &mut DetRng, minimum: i64, maximum: i64) -> i64 {
     let width = (maximum - minimum + 1) as u64;
     minimum + (rng.next() % width) as i64
+}
+
+fn trust_delta_policy_target(anomaly_fp: i64) -> i64 {
+    if anomaly_fp >= TRUST_DEGRADATION_ANOMALY_FP {
+        -fp_clamp(anomaly_fp / 4, 0, 50_000)
+    } else {
+        fp_clamp(
+            (TRUST_DEGRADATION_ANOMALY_FP - anomaly_fp) / 5,
+            0,
+            10_000,
+        )
+    }
 }
 
 fn make_node(id: &str, kind: NodeKind, state_fp: i64, weight_fp: i64, deadline_tick: i32) -> Node {
@@ -775,11 +788,8 @@ fn sample_json(rollout_id: u32, base_seed: u64) -> String {
         } else {
             100_000 + missing_count * 100_000
         };
-        let trust_delta_policy_target_fp = if anomaly_fp > 100_000 {
-            -fp_clamp(anomaly_fp / 4, 0, 50_000)
-        } else {
-            fp_clamp((100_000 - anomaly_fp) / 5, 0, 20_000)
-        };
+        let trust_delta_policy_target_fp =
+            trust_delta_policy_target(anomaly_fp);
         let mut driver_indices: Vec<usize> = (0..features.len()).collect();
         driver_indices.sort_by(|left, right| {
             features[*right]
@@ -1047,6 +1057,14 @@ mod tests {
         assert!(example.contains("\"time_to_outage_ticks\":"));
         assert!(example.contains("\"confidence_policy_target_fp\":"));
         assert!(example.contains("\"salient_feature_indices_by_magnitude\":"));
+    }
+
+    #[test]
+    fn trust_policy_degrades_anomalous_telemetry() {
+        assert_eq!(trust_delta_policy_target(0), 10_000);
+        assert_eq!(trust_delta_policy_target(49_999), 0);
+        assert_eq!(trust_delta_policy_target(50_000), -12_500);
+        assert_eq!(trust_delta_policy_target(FP_ONE), -50_000);
     }
 
     #[test]

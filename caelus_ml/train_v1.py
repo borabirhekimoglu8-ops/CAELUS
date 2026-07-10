@@ -1188,7 +1188,7 @@ def main() -> int:
         raise SystemExit("dataset byte count does not match its manifest")
     expected_manifest_fields = {
         "generator": "caelus_neural_dataset",
-        "generator_version": 1,
+        "generator_version": 2,
         "engine": "caelus_core::CausalEngine",
         "build_profile": "release",
         "rng": "xoshiro256**-splitmix64",
