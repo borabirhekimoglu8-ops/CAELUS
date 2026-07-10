@@ -33,22 +33,21 @@ const fn fp_abs_u64(v: i64) -> u64 {
 
 #[inline]
 const fn fp_sat_add_u64(a: u64, b: u64, cap: u64) -> u64 {
-    // C++ `a > cap - b` ve `a + b` ifadeleri mod-2^64 sarmalı; birebir koru
-    // (wrapping_add: b > cap iken guard'ın kaçırdığı uç girdilerde C++ sessizce
-    // sarar — Rust debug paniği sadakati bozardı; bkz. sözleşme notu aşağıda).
-    if a > cap.wrapping_sub(b) {
+    // Match the C++ saturation guard before evaluating `cap - b`; otherwise
+    // b >= cap can underflow that subtraction and incorrectly wrap.
+    if a >= cap || b >= cap || a > cap - b {
         cap
     } else {
-        a.wrapping_add(b)
+        a + b
     }
 }
 
 #[inline]
 const fn fp_sat_double_u64(v: u64, cap: u64) -> u64 {
-    if v > cap.wrapping_sub(v) {
+    if v >= cap || v > cap - v {
         cap
     } else {
-        v.wrapping_add(v)
+        v + v
     }
 }
 
@@ -62,14 +61,9 @@ const fn fp_sat_double_u64(v: u64, cap: u64) -> u64 {
 ///     Gerekçe (1): divisor ≤ 2^63 ⇒ kalan toplamları (result_r+add_r ve
 ///     add_r+add_r) < 2·divisor ≤ 2^64 → kalan yolu HİÇ sarmaz. Motor için
 ///     otomatiktir: divisor ya FP_SCALE'dir ya da bir i64 mutlak değeri (≤2^63).
-///     Gerekçe (2): başlangıç add_q = a/divisor cap'i aşmazsa sat_double/sat_add
-///     koruyucularındaki cap-b/cap-v çıkarmaları hiç sarmaz, add_q ≤ cap
-///     invariantı korunur ve cap'e kenetlenme matematiksel min ile çakışır.
-///   • Ön koşul İHLAL edilirse (a/divisor > cap — yalnız a=2^63 ∧ divisor=1 ∧
-///     cap=2^63-1 ile mümkün; motor yolunda fp_div(i64::MIN, ±1e-6'nın işaret-
-///     pozitif ucu dışında İMKÂNSIZ) add_q mod-2^64 sarabilir ve sonuç min'den
-///     KÜÇÜK (ama yine ≤ cap) çıkabilir. Köşe tests/narrowed_model.rs'te
-///     kilitlenmiştir; fp_mul her zaman divisor=FP_SCALE kullandığından muaftır.
+///     Gerekçe (2): sat_double/sat_add, cap'e eşit ya da büyük girdileri
+///     çıkarma yapmadan doyurur; add_q ≤ cap invariantı korunur ve cap'e
+///     kenetlenme matematiksel min ile çakışır.
 #[inline]
 const fn fp_mul_div_u64_sat(a: u64, mut b: u64, divisor: u64, cap: u64) -> u64 {
     if divisor == 0 || a == 0 || b == 0 || cap == 0 {
@@ -239,6 +233,8 @@ mod tests {
         assert_eq!(fp_div(123_456, 0), 0);
         // Negatif büyüklük tavanı 2^63
         assert_eq!(fp_div(i64::MIN, 1), i64::MIN);
+        assert_eq!(fp_div(i64::MIN, -1), i64::MAX);
+        assert_eq!(fp_mul(i64::MIN, -i64::MAX), i64::MAX);
     }
 
     #[test]
