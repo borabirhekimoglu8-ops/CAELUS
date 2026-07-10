@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux full pipeline (ci.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+
+      - name: Install Python verifier dependencies
+        run: python3 -m pip install --upgrade blake3 cryptography
+
+      - name: Toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+          g++ --version | head -1
+          python3 --version
+
+      - name: Run full CI pipeline
+        run: ./ci.sh
+
+      - name: Extract deterministic CDET block
+        run: |
+          rm -f caelus_audit_0000000000000000.log
+          ./dist/caelus_os --scenario UNIVERSAL_BASELINE --det-mode | grep '^CDET:' > cdet-linux.txt
+          wc -l cdet-linux.txt
+
+      - name: Upload CDET artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdet-linux
+          path: cdet-linux.txt
+          if-no-files-found: error
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: caelus_os-linux
+          path: dist/caelus_os
+          if-no-files-found: error
+
+  windows:
+    name: Windows full pipeline (ci.bat, MSVC)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Verus-pinned Rust toolchain
+        run: rustup toolchain install 1.95.0-x86_64-pc-windows-msvc
+
+      - name: Install Python verifier dependencies
+        # ci.bat prefers the `py -3` launcher; install into that interpreter.
+        run: py -3 -m pip install --upgrade blake3 cryptography
+
+      - name: Toolchain versions
+        shell: cmd
+        run: |
+          rustc --version
+          cargo --version
+          cl.exe 2>&1 | findstr /I version
+          py -3 --version
+
+      - name: Build fresh production binary (build.bat)
+        # ci.bat does not build; without this it exercises the stale committed
+        # dist\caelus_os.exe instead of the code under test.
+        shell: cmd
+        env:
+          CAELUS_CXX: MSVC
+        run: build.bat
+
+      - name: Run full CI pipeline
+        shell: cmd
+        env:
+          CAELUS_CXX: MSVC
+          PYTHONUTF8: "1"
+        run: ci.bat
+
+      - name: Determinism diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Item dist\caelus_os.exe | Format-List Length, LastWriteTime
+          Remove-Item -ErrorAction SilentlyContinue caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Copy-Item caelus_audit_0000000000000000.log run1.log
+          Remove-Item caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Copy-Item caelus_audit_0000000000000000.log run2.log
+          Write-Host '--- RUN1 audit ---'; Get-Content run1.log
+          Write-Host '--- RUN2 audit ---'; Get-Content run2.log
+          Write-Host '--- with external CAELUS_IDENTITY_KEY_HEX ---'
+          $env:CAELUS_IDENTITY_KEY_HEX = 'c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1'
+          Remove-Item caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Copy-Item caelus_audit_0000000000000000.log run3.log
+          Remove-Item caelus_audit_0000000000000000.log
+          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
+          Write-Host '--- RUN3 audit (env set) ---'; Get-Content run3.log
+          Write-Host '--- RUN4 audit (env set) ---'; Get-Content caelus_audit_0000000000000000.log
+
+      - name: Extract deterministic CDET block
+        shell: pwsh
+        run: |
+          Remove-Item -ErrorAction SilentlyContinue caelus_audit_0000000000000000.log
+          $out = & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode 2>&1
+          $out | Where-Object { $_ -match '^CDET:' } | Set-Content -Encoding ascii cdet-windows.txt
+          Get-Content cdet-windows.txt | Measure-Object -Line
+
+      - name: Upload CDET artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdet-windows
+          path: cdet-windows.txt
+          if-no-files-found: error
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: caelus_os-windows
+          path: dist/caelus_os.exe
+          if-no-files-found: error
+
+  cross-platform-determinism:
+    name: Cross-platform CDET equality
+    runs-on: ubuntu-latest
+    needs: [linux, windows]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cdet-*
+          merge-multiple: true
+
+      - name: Compare CDET blocks bit-for-bit
+        run: |
+          # Normalize line endings only (Windows text pipeline emits CRLF);
+          # the CDET payload itself must match byte-for-byte.
+          tr -d '\r' < cdet-windows.txt > cdet-windows.lf.txt
+          echo "--- linux ---";   cat cdet-linux.txt
+          echo "--- windows ---"; cat cdet-windows.lf.txt
+          cmp cdet-linux.txt cdet-windows.lf.txt
+          echo "CDET blocks are bit-identical across Linux and Windows."

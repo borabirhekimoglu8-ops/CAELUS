@@ -37,12 +37,19 @@ the engine/audit path.
 
 ```bash
 CAELUS_PRODUCTION=1 ./build.sh
+dist/caelus_os --scenario UNIVERSAL_BASELINE --det-mode
 python3 tools/verify_audit_log.py caelus_audit_0000000000000000.log
+python3 tools/verify_audit_log.py tests/fixtures/caelus_audit_sample.log \
+  --trusted-pubkey-hex 2dd8b43ecba8eff73b1aa25250de676f4f8a0be072b1f96a7eda7355648ca0d1
 python3 tests/run_bs_exec_golden.py --binary dist/caelus_os
 python3 tests/run_bs_exec_golden.py \
   --binary caelus_core/target/release/caelus_core_repl \
   --reference-binary dist/caelus_os
 ```
+
+The root-level audit log is produced by engine runs and is not a repository
+artifact; a sealed single-session sample is committed at
+`tests/fixtures/caelus_audit_sample.log` for offline verifier checks.
 
 ## Signing-key policy
 

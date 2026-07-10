@@ -197,68 +197,7 @@ const INTEL_FEED = [
   "P2P MESH: NODE-04 ↔ GATE-01 ELSENETİ DOĞRULANDI",
 ];
 
-const SCENARIOS = {
-  regulatory: {
-    keywords: ['regülasyon','mevzuat','izin','denetim','uyum','politika'],
-    metrics: { node:55, edge:40, actor:68, gate:88, friction:1.95, delay:6.1, mult:1.95 },
-    badge: 'YÜKSEK TEHDİT',
-    briefing: buildBriefing(
-      'REGULATORY GATE ANALİZİ // KOD ADI: UYUM EŞİĞİ',
-      'Regulatory Gate üzerindeki yeni kısıtlar, Node ve Edge akışlarında yapay sürtünme üretmektedir. Causal Engine, izin pencereleri ve aktör uyumu arasındaki geri besleme döngüsünü izlemektedir.',
-      'UYARI: Regulatory Gate katsayısındaki artış, Transit Node tamamlanma süresini 2.4 saat geciktirme riski taşımaktadır.',
-      ['Policy Pressure: Uyum hedeflerinin Node ve Actor öncelikleriyle hizalanması.',
-       'Gate Relaxation: Kritik Edge geçişleri için kısıt pencerelerinin daraltılması.',
-       'CP-SAT Optimizasyon: Transit Node görevlerinin izin pencerelerine göre milisaniye hassasiyetinde kaydırılması.'],
-      [['Friction Düşüşü', '%35'], ['Gate Uyum', '%92']],
-      'Regulatory Gate sürtünmesinin %35 oranında düşeceği ve Transit Node güvenilirliğinin %92 seviyesine çıkacağı öngörülmektedir.'
-    )
-  },
-  actor: {
-    keywords: ['aktör','paydaş','nüfuz','kaynak','öncelik','müzakere'],
-    metrics: { node:42, edge:82, actor:68, gate:38, friction:1.63, delay:4.8, mult:1.63 },
-    badge: 'ORTA TEHDİT',
-    briefing: buildBriefing(
-      'ACTOR ETKİ RAPORU // ÖNCELİK ÇATIŞMASI',
-      'Bir dış Actor, kritik Edge kapasitesi üzerinde öncelik talebini artırmıştır. Causal Engine, kaynak paylaşımı ve Node stabilitesi arasındaki etkileşimi hesaplamaktadır.',
-      'UYARI: Actor baskısı artarsa Edge kapasite payı %15 zayıflayabilir.',
-      ['Analitik Şeffaflık: Actor etkisini görünür kılan gecikme ve risk göstergelerinin paylaşılması.',
-       'Asimetrik İttifak: İkincil Actor kümeleriyle uyum skoru artırılarak baskının dağıtılması.',
-       'Edge Çeşitlendirme: Causal Engine tarafından üretilen alternatif Transit Node yollarının devreye alınması.'],
-      [['Actor Baskısı', 'AZALIYOR'], ['Uyum Skoru', '%75']],
-      'Actor kaynak baskısı azalacak, Node ve Edge uyumu %75 seviyesine ulaşacaktır.'
-    )
-  },
-  coordination: {
-    keywords: ['koordinasyon','ekip','vardiya','kapasite','kesinti','yavaşlama'],
-    metrics: { node:60, edge:40, actor:95, gate:38, friction:2.12, delay:6.6, mult:2.12 },
-    badge: 'KRİTİK',
-    briefing: buildBriefing(
-      'KOORDİNASYON RİSK NOTU // ACTOR DİNAMİKLERİ',
-      'Actor kümeleri arasındaki zamanlama uyumsuzluğu, Edge akışını yavaşlatan bir Friction Entity üretmektedir. Bu durum hassas zamanlama mekanizmalarını zayıflatabilir.',
-      'KRİTİK RİSK: Koordinasyon kesintisi oluşursa Node verimliliği doğrudan %40 düşecektir.',
-      ['Arka Kanal Uyum: Actor kümeleri için ortak kapasite ve zamanlama hedefleri tanımlanması.',
-       'Sembolik Yetki: Kritik Actor temsilcilerinin koordinasyon karar halkasına dahil edilmesi.',
-       'Simülatör Caydırıcılığı: Alternatif Edge akışlarının etkisini gösteren CAELUS çıktılarıyla baskının azaltılması.'],
-      [['Kesinti Riski', 'BERTARAF'], ['Friction Hedef', '< 0.40']],
-      'Koordinasyon riski düşecek, Actor uyumu artacak ve sürtünme katsayısı 0.40 değerinin altına gerilecektir.'
-    )
-  },
-  transit: {
-    keywords: ['transit','rota','hat','akış','geçiş','düğüm','edge','node'],
-    metrics: { node:94, edge:20, actor:68, gate:38, friction:1.12, delay:2.0, mult:1.12 },
-    badge: 'DÜŞÜK TEHDİT',
-    briefing: buildBriefing(
-      'TRANSIT NODE OPTİMİZASYONU // EDGE AKIŞI',
-      'Kritik Transit Node tamamlanma süresi, Edge kapasitesi ve Actor uyumuna bağımlıdır. CAELUS CP-SAT motoru, gerçek zamanlı sinyallerle en kısa nedensel yol haritasını hesaplamıştır.',
-      'FIRSAT: Gate hazırlık mekanizmasıyla geçiş süresi 8 dakikadan 90 saniyeye indirilebilir.',
-      ['Dinamik Yol Seçimi: Node kümeleri için anlık Edge ağırlıklarına göre yönlendirme yapılması.',
-       'Gate Hazırlığı: Rust mesh katmanı ile kritik geçişten önce ed25519 el sıkışmasının tamamlanması.',
-       'CP-SAT Optimum: OR-Tools kısıt çözücüsünün travel [45, 74] dakika bandında optimize etmesi.'],
-      [['OTP Skoru', '%99.2'], ['Akış Kazancı', '−12 DK']],
-      'Transit Node tamamlanma süresi ortalama 12 dakika kısalacak, Edge akışı %99.2 seviyesinde garanti altına alınacaktır.'
-    )
-  },
-};
+// SCENARIOS hardcoded senaryo sözlüğü kaldırıldı — analiz motorun canlı snapshot'ından üretilir.
 
 function buildBriefing(title, background, alert, actions, stats, conclusion) {
   return { title, background, alert, actions, stats, conclusion };
@@ -679,22 +618,30 @@ function resizeCanvas() {
 }
 
 function initMeshNodes() {
+  // Yalnız yerel motor düğümü. Diğer peer'lar UYDURULMAZ — gerçek ed25519 mesh
+  // el sıkışma olayları geldikçe addRealPeer() ile eklenir (loopback dahi olsa
+  // motorun fiilen ürettiği gerçek fingerprint'lerdir).
   state.peers = [];
   const local = new MeshNode('LOCAL-ENGINE', 'LOCAL', cW/2, cH/2, true);
   local.label = 'Causal Engine';
   state.peers.push(local);
+}
 
-  const initial = [
-    { id:'NODE-01',  type:'NODE'     },
-    { id:'EDGE-04',  type:'EDGE'     },
-    { id:'ACTOR-01', type:'ACTOR'    },
-    { id:'GATE-01',  type:'REG_GATE' },
-  ];
-  initial.forEach(({id,type}) => {
-    state.peers.push(new MeshNode(id, type,
-      20 + Math.random()*(cW-40),
-      20 + Math.random()*(cH-40)));
-  });
+// Motorun canlı 'handshake' olayından gerçek bir peer ekler/günceller.
+function addRealPeer(fingerprint, sessionId) {
+  const id = 'PEER-' + fingerprint.slice(0, 8).toUpperCase();
+  let peer = state.peers.find(p => p.id === id);
+  if (!peer) {
+    if (state.peers.length >= CFG.MAX_PEERS) return;
+    peer = new MeshNode(id, 'NODE', 20 + Math.random()*(cW-40), 20 + Math.random()*(cH-40));
+    peer.fingerprint = fingerprint;
+    state.peers.push(peer);
+    emitPacket(state.peers[0], peer);
+  }
+  peer.status = 'synced';
+  renderPeerList();
+  el.meshBadge.textContent = 'CANLI MESH';
+  el.meshBadge.className = 'panel-badge';
 }
 
 function emitPacket(fromNode, toNode) {
@@ -806,45 +753,9 @@ function renderPeerList() {
 /* ═══════════════════════════════════════════════════════════════
    DEVICE DISCOVERY SIMULATION
    ═══════════════════════════════════════════════════════════════ */
-const DISCOVERY_POOL = [
-  { id:'NODE-02',     type:'NODE'     },
-  { id:'EDGE-08',     type:'EDGE'     },
-  { id:'ACTOR-02',    type:'ACTOR'    },
-  { id:'GATE-02',     type:'REG_GATE' },
-  { id:'TRANSIT-01',  type:'TRANSIT'  },
-  { id:'FRICTION-01', type:'FRICTION' },
-];
+// DISCOVERY_POOL kaldırıldı — uydurma peer havuzu yok.
 
-function simulateDiscovery() {
-  if (state.peers.length >= CFG.MAX_PEERS) return;
-  const used = new Set(state.peers.map(p=>p.id));
-  const avail = DISCOVERY_POOL.filter(d=>!used.has(d.id));
-  if (!avail.length) return;
-
-  const pick = avail[Math.floor(Math.random()*avail.length)];
-  const newNode = new MeshNode(pick.id, pick.type,
-    20+Math.random()*(cW-40), 20+Math.random()*(cH-40));
-  newNode.status = 'handshaking';
-  state.peers.push(newNode);
-  renderPeerList();
-
-  el.meshBadge.textContent = 'ZK DOĞRULAMA';
-  el.meshBadge.className   = 'panel-badge panel-badge--warn';
-
-  addCryptoLog('info', `YENİ NODE: ${pick.id} (${pick.type}) — el sıkışma başlatılıyor`);
-  SFX.chirp();
-
-  setTimeout(() => {
-    newNode.status = 'synced';
-    emitPacket(state.peers[0], newNode);
-    renderPeerList();
-    el.meshBadge.textContent = 'LOKAL TARAMA';
-    el.meshBadge.className   = 'panel-badge';
-    addCryptoLog('ok', `ED25519 ELSENETİ: ${pick.id} ↔ LOCAL-ENGINE — BAŞARILI`);
-    addCryptoLog('ok', `BLAKE3 OTP slot doğrulandı — session=0x${randomHex(8)}`);
-    SFX.tick();
-  }, 3000);
-}
+// simulateDiscovery kaldırıldı — peer keşfi gerçek mesh olaylarıyla (addRealPeer) yapılır.
 
 /* ═══════════════════════════════════════════════════════════════
    CRYPTO EVENT LOG
@@ -1681,6 +1592,8 @@ function applySnapshotEvent(data) {
       type:          safeLabel(raw.type || raw.kind || '', 16),
       state_fp:      Number(raw.state_fp ?? raw.state ?? 0),
       friction_fp:   Number(raw.friction_fp ?? raw.friction ?? 0),
+      trust_fp:      Number(raw.trust_fp ?? raw.trust ?? 1),
+      reported_fp:   Number(raw.reported_fp ?? raw.reported ?? raw.state_fp ?? raw.state ?? 0),
       capacity_scale:Math.max(0.5, Math.min(2, Number(raw.capacity_fp ?? raw.capacity ?? 1))),
       irrecoverable: !!(raw.irrecoverable),
       outage_active: !!(raw.outage_active),
@@ -1831,23 +1744,24 @@ function handleLcCommand(cmd) {
     return;
   }
 
-  // Local helpers when offline
+  // status: canlıysa motordan gerçek snapshot iste; değilse son bilinen state.
   if (lower === 'status') {
+    if (engineLive()) sendReplCommand('status');
     addLcOutput(`tick=${state.currentTick} friction=${state.metrics.friction.toFixed(2)}μ throughput=${(state.throughputRatio*100).toFixed(1)}% outage=${state.outageActive}`, 'info');
     return;
   }
+  // list levers: motora yönlendir — gerçek kaldıraç listesi 'levers' olayıyla döner.
   if (lower === 'list levers' || lower === 'list') {
-    const LEVER_HINTS = [
-      '[L-01] ZAFER_ANLATI  cost=23t  prob=0.72',
-      '[L-02] TANIIMA       cost=11t  prob=0.85',
-      '[L-04] ZIMRH         cost=31t  prob=0.60',
-      '[clear_irrecoverable] geri-dönüşsüz durumu sıfırla',
-    ];
-    LEVER_HINTS.forEach(h => addLcOutput(h, 'info'));
+    if (engineLive()) {
+      sendReplCommand('list levers');
+      addLcOutput('Kaldıraç listesi motordan isteniyor...', 'info');
+    } else {
+      addLcOutput('Motor çevrimdışı — kaldıraç listesi yalnız canlı motordan gelir.', 'err');
+    }
     return;
   }
 
-  // All other commands: try to send via WS
+  // Diğer tüm komutlar (tick, lever <id>, snapshot) gerçek motora gider.
   sendReplCommand(cmd);
 }
 
@@ -1855,9 +1769,18 @@ function sendReplCommand(cmd) {
   if (liveWs && liveWs.readyState === WebSocket.OPEN) {
     liveWs.send(cmd);
     addLcOutput('→ motora iletildi', 'ok');
+  } else if (LocalEngine.ready) {
+    // Bilgisayardan bağımsız: komutu tarayıcı-içi WASM motoruna uygula.
+    LocalEngine.command(cmd);
   } else {
     addLcOutput('⚠ Motor çevrimdışı — komut gönderilemedi', 'err');
   }
+}
+
+// runAnalysis/lever konsolu "canlı" için liveWs.OPEN'e bakar; yerel WASM motoru
+// da canlıdır. Tek noktadan kontrol.
+function engineLive() {
+  return (liveWs && liveWs.readyState === WebSocket.OPEN) || LocalEngine.ready;
 }
 
 function addLcOutput(line, cls) {
@@ -2069,7 +1992,13 @@ function resolveWsUrl() {
   const params = new URLSearchParams(window.location.search || '');
   const rawPort = params.get('ws_port') || params.get('wsPort') || window.CAELUS_WS_PORT || '47809';
   const port = String(rawPort).match(/^\d{1,5}$/) ? Math.max(1, Math.min(65535, Number(rawPort))) : 47809;
-  return `ws://127.0.0.1:${port}`;
+  // HTTP'den sunulduğunda (uzak War Room) sayfanın host'una geri bağlan ve
+  // URL'deki token'ı taşı; yerel dosya (file://) olarak açıldığında loopback.
+  const servedOverHttp = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+  const host = servedOverHttp && window.location.hostname ? window.location.hostname : '127.0.0.1';
+  const token = params.get('token');
+  const query = token ? ('/?token=' + encodeURIComponent(token)) : '';
+  return `ws://${host}:${port}${query}`;
 }
 
 const WS_URL          = resolveWsUrl();
@@ -2244,11 +2173,15 @@ function handleEngineEvent(ev) {
     }
 
     case 'handshake': {
-      const fp  = String(data.peer_fp   || '').slice(0, 16);
+      const fpFull = String(data.peer_fp || '');
+      const fp  = fpFull.slice(0, 16);
       const sid = String(data.session_id || '—');
       const ok  = data.status === 'success';
       addCryptoLog(ok ? 'ok' : 'err',
         `MESH HANDSHAKE: ${fp}... session=${sid} [${ok ? 'BASARILI' : 'REDDEDILDI'}]`);
+      // GERÇEK peer: motorun canlı el sıkışma olayından mesh paneline ekle
+      // (uydurma simulateDiscovery yerine gerçek ed25519 fingerprint).
+      if (ok && fpFull) addRealPeer(fpFull, sid);
       if (!ok) SFX.alarm();
       break;
     }
@@ -2295,6 +2228,20 @@ function handleEngineEvent(ev) {
       applySnapshotEvent(data);
       break;
 
+    case 'levers': {
+      // Motorun paketinden gelen GERÇEK kaldıraç listesi (hardcoded değil).
+      const levers = Array.isArray(data.levers) ? data.levers : [];
+      state.engineLevers = levers;
+      if (!levers.length) {
+        addLcOutput('Yüklü senaryoda kaldıraç yok.', 'info');
+      } else {
+        addLcOutput(`Kaldıraçlar (${levers.length}) — kaynak: motor:`, 'ok');
+        levers.forEach(l => addLcOutput(
+          `  ${l.id}  hedef=${l.target}  p=${Number(l.success_p).toFixed(2)}  cost=${l.cost_ticks}t  lockout=${l.lockout_ticks}t`, 'info'));
+      }
+      break;
+    }
+
     case 'otp': {
       const slot = state.otpSlots.find(s => s.id === data.slot_id);
       if (slot) { slot.status = String(data.status || slot.status); renderOTPTimeline(); }
@@ -2324,6 +2271,109 @@ function handleEngineEvent(ev) {
 }
 
 /* ── WebSocket lifecycle ── */
+/* ═══════════════════════════════════════════════════════════════
+   LOCAL ENGINE (WebAssembly)  — bilgisayardan/sunucudan BAĞIMSIZ
+   caelus_core (C++ ile bit-bit eşdeğer no_std çekirdek) tarayıcının içinde
+   koşar. WS köprüsü yoksa (standalone sayfa) gerçek motor buradan sürülür;
+   olaylar handleEngineEvent'e beslenir → UI aynı hattı kullanır (demo YOK).
+   ═══════════════════════════════════════════════════════════════ */
+const LocalEngine = (function () {
+  let ex = null;                 // wasm exports
+  let scenarioId = null;
+  const feed = (obj) => handleEngineEvent({ data: JSON.stringify(obj) });
+
+  function u8() { return new Uint8Array(ex.memory.buffer); } // her çağrıda YENİDEN al (detach güvenliği)
+  function writeBuf(str) {
+    const b = new TextEncoder().encode(str);
+    const cap = ex.cae_buf_cap();
+    const n = Math.min(b.length, cap);
+    u8().set(b.subarray(0, n), ex.cae_buf());
+    return n;
+  }
+  function readBuf(len) {
+    const p = ex.cae_buf();
+    return new TextDecoder().decode(u8().slice(p, p + len));
+  }
+  function snapshot() { return JSON.parse(readBuf(ex.cae_snapshot())); }
+
+  function emitStateFrom(snap) {
+    feed({ type:'engine_state', state: scenarioId, scenario_id: scenarioId,
+           tick: snap.tick, friction_mult: snap.clamped_friction,
+           throughput_ratio: snap.throughput_ratio, outage_active: snap.outage_active,
+           any_hysteresis_flip: snap.any_hysteresis_flip,
+           any_deadline_missed: snap.any_deadline_missed });
+  }
+  function pushSnapshotAndState() {
+    const snap = snapshot();
+    emitStateFrom(snap);
+    feed(snap);              // nodes/edges → causal graph + analiz paneli
+    return snap;
+  }
+  function pushLevers() { feed(JSON.parse(readBuf(ex.cae_levers()))); }
+
+  return {
+    get ready() { return !!ex; },
+    async init() {
+      if (ex) return true;
+      if (!window.CAELUS_WASM_B64 || !window.CAELUS_SCENARIOS) return false;
+      const bin = Uint8Array.from(atob(window.CAELUS_WASM_B64), c => c.charCodeAt(0));
+      const { instance } = await WebAssembly.instantiate(bin, {});
+      ex = instance.exports;
+      return true;
+    },
+    scenarios() { return Object.keys(window.CAELUS_SCENARIOS || {}); },
+    load(id) {
+      const json = (window.CAELUS_SCENARIOS || {})[id];
+      if (!json || !ex) return false;
+      scenarioId = id;
+      const rc = ex.cae_load(writeBuf(json));
+      if (rc !== 0) { addLcOutput('WASM motor: senaryo yüklenemedi', 'err'); return false; }
+      let sector = 'UNIVERSAL';
+      try { sector = (JSON.parse(json).sector) || sector; } catch(_) {}
+      feed({ type:'scenario_loaded', scenario_id: id, sector, sig_status:'BUNDLED' });
+      pushSnapshotAndState();
+      pushLevers();
+      setLiveStatus('live');
+      addCryptoLog('ok', `YEREL MOTOR (WASM): ${id} yüklendi — sunucusuz canlı simülasyon`);
+      return true;
+    },
+    // WS komut arayüzüyle aynı: "tick N" | "lever X" | "status" | "list levers"
+    command(cmd) {
+      if (!ex) return false;
+      const parts = cmd.trim().split(/\s+/);
+      const c = (parts[0] || '').toLowerCase();
+      if (c === 'tick') {
+        let n = parseInt(parts[1] || '1', 10); if (!(n > 0)) n = 1; n = Math.min(n, 100000);
+        ex.cae_tick(n);
+        const snap = pushSnapshotAndState();
+        addLcOutput(`→ yerel motor: ${n} tick (t=${snap.tick}, sürtünme=${snap.clamped_friction.toFixed(2)}×)`, 'ok');
+      } else if (c === 'lever') {
+        const id = parts[1] || '';
+        const ok = ex.cae_lever(writeBuf(id)) === 1;
+        pushSnapshotAndState();
+        addLcOutput(`→ yerel motor: lever ${id} → ${ok ? 'BAŞARILI' : 'BAŞARISIZ/KİLİTLİ'}`, ok ? 'ok' : 'err');
+      } else if (c === 'status' || c === 'snapshot') {
+        pushSnapshotAndState();
+      } else if (cmd.trim().toLowerCase() === 'list levers' || c === 'list') {
+        pushLevers();
+      } else {
+        addLcOutput(`yerel motor: bilinmeyen komut "${cmd}"`, 'err');
+      }
+      return true;
+    }
+  };
+})();
+
+async function startLocalEngine() {
+  const ok = await LocalEngine.init();
+  if (!ok) return false;
+  const ids = LocalEngine.scenarios();
+  const preferred = ids.find(x => /BS-01/i.test(x)) || ids[0];
+  addLcOutput(`Yerel WASM motoru hazır — sunucu/ağ gerekmez. Senaryolar: ${ids.join(', ')}`, 'ok');
+  LocalEngine.load(preferred);
+  return true;
+}
+
 function connectLiveBridge() {
   if (liveWs && liveWs.readyState <= WebSocket.OPEN) return;
 
@@ -2426,7 +2476,7 @@ function typewriteBriefing(container, briefing, onDone) {
   ops.push({ type:'close', tag:'ul' });
 
   ops.push({ type:'open',  tag:'h3', attrs:{} });
-  ops.push({ type:'text',  text: 'SİMÜLASYON ETKİ TAHMİNİ' });
+  ops.push({ type:'text',  text: 'CANLI ETKİ ÖZETİ (MOTOR SNAPSHOT)' });
   ops.push({ type:'close', tag:'h3' });
 
   ops.push({ type:'open',  tag:'div', attrs:{ class:'stat-row' } });
@@ -2494,25 +2544,7 @@ function typewriteBriefing(container, briefing, onDone) {
 /* ═══════════════════════════════════════════════════════════════
    SCRAMBLE ANIMATION
    ═══════════════════════════════════════════════════════════════ */
-function scrambleMetrics(onDone) {
-  let count = 0;
-  const iv = setInterval(() => {
-    LEV_CONFIG.forEach(cfg => {
-      const v = Math.floor(Math.random()*100);
-      const valEl = document.getElementById('lev-val-'+cfg.key);
-      const barEl = document.getElementById('lev-bar-'+cfg.key);
-      if (valEl) valEl.textContent = v + '%';
-      if (barEl) barEl.style.width = v + '%';
-    });
-    el.frictionVal.textContent = (1 + Math.random() * 2).toFixed(2);
-    if (Math.random()>0.7) SFX.tick();
-    count++;
-    if (count >= 12) {
-      clearInterval(iv);
-      onDone();
-    }
-  }, 140);
-}
+// scrambleMetrics kaldırıldı — analiz artık motorun gerçek snapshot'ından üretilir.
 
 /* ═══════════════════════════════════════════════════════════════
    SCENARIO EXECUTION
@@ -2535,28 +2567,28 @@ el.cmdInput.addEventListener('keydown', e => {
   if (e.key === 'Escape')             { el.cmdInput.value = ''; el.cmdCounter.textContent = '0 / 400'; }
 });
 
+// GERÇEK analiz: motor zaten imzalı bir senaryoyu koşuyor. "ANALİZ ET",
+// motordan taze bir snapshot ister (WS 'status' komutu → engine emit_ws_snapshot)
+// ve raporu motorun CANLI verisinden üretir. Math.random / sahte CP-SAT yok.
+// Motor çevrimdışıysa uydurma yapmaz, dürüstçe bunu söyler.
 function runAnalysis() {
-  const text = el.cmdInput.value.trim().toLowerCase();
-  if (!text) {
-    setFeedback('HATA: Senaryo alanı boş bırakılamaz.', 'var(--crisis)');
+  const live = engineLive();
+  if (!live) {
+    setFeedback('Motor çevrimdışı — canlı analiz için CAELUS motorunu başlatın (dist/caelus_os --scenario <id> --repl).', 'var(--crisis)');
+    addLcOutput('ANALİZ ET: motor çevrimdışı; uydurma rapor üretilmez.', 'err');
     SFX.alarm();
     return;
-  }
-  if (state.isTyping) {
-    clearTimeout(state.typingTimer);
-    state.isTyping = false;
   }
 
   el.btnExecute.disabled = true;
   el.cmdInput.disabled   = true;
   setEngineState('processing');
-  setFeedback('CAELUS motoru nedensel grafiği inşa ediyor...', 'var(--amber)');
+  setFeedback('Motordan canlı snapshot isteniyor...', 'var(--amber)');
   SFX.chirp();
 
-  let key = 'default';
-  for (const [k, sc] of Object.entries(SCENARIOS)) {
-    if (sc.keywords.some(w => text.includes(w))) { key = k; break; }
-  }
+  // Motora gerçek komut: taze snapshot + lever listesi yayınlat.
+  sendReplCommand('status');
+  sendReplCommand('list levers');
 
   state.reportId++;
   state.reportCount++;
@@ -2564,49 +2596,61 @@ function runAnalysis() {
   el.reportId.textContent = `CLS-${state.reportId}`;
   el.reportTs.textContent = padZ(ts.getHours())+':'+padZ(ts.getMinutes())+'Z';
   el.sbReports.textContent = 'RPT: ' + state.reportCount;
+  addCryptoLog('info', 'ANALİZ ET: motordan canlı snapshot istendi (status).');
 
-  addCryptoLog('info', `Analiz başlatıldı: "${text.slice(0,40)}${text.length>40?'…':''}"`);
-
+  // Snapshot'ın gelmesi için kısa pencere; sonra raporu GERÇEK state'ten üret.
   setTimeout(() => {
-    setEngineState('computing');
-    setFeedback('CP-SAT kısıt çözücüsü çalışıyor... OR-Tools optimizasyon...', 'var(--cyan)');
-    scrambleMetrics(() => {
-      if (key !== 'default') {
-        Object.assign(state.metrics, SCENARIOS[key].metrics);
-      }
-      updateLeverageDOM();
-      updateGauge(state.metrics.friction);
+    renderLiveBriefing();
+    el.btnExecute.disabled = false;
+    el.cmdInput.disabled   = false;
+    setEngineState('done');
+    setFeedback('Analiz motorun canlı verisinden üretildi.', 'var(--green)');
+    SFX.confirm();
+    setTimeout(() => { setEngineState('ready'); setFeedback('Motor komut bekliyor...', ''); }, 3500);
+  }, 650);
+}
 
-      addCryptoLog('ok', `CP-SAT solver: optimal çözüm bulundu — travel=[${40+Math.floor(Math.random()*20)},${65+Math.floor(Math.random()*30)}] dk`);
+// Raporu motorun CANLI durumundan (gerçek düğümler, gerçek sürtünme, gerçek
+// outage/tick) türetir — hiçbir alan hardcoded veya rastgele değildir.
+function renderLiveBriefing() {
+  const nodes = state.causalNodes || [];
+  const fr    = Number(state.metrics.friction) || 1;
+  const outage= !!state.outageActive;
+  const tick  = state.currentTick || 0;
+  const sid   = state.scenarioMeta.scenarioId || '—';
 
-      const briefing = key !== 'default' ? SCENARIOS[key].briefing : {
-        title:      'EVRENSEL CAUSAL ANALİZ // CAELUS SİMÜLATÖRÜ',
-        background: 'Node, Edge, Actor ve Regulatory Gate sinyallerinden oluşan evrensel etki matrisi stabil kalmaktadır. Lokal P2P mesh ağındaki şifreli haberleşme bütünlüğü tamdır.',
-        alert:      'Sistem nominal: Friction Entity katsayısı 1.00 seviyesinde, aktif kriz yok ve güvenli mesh bütünlüğü korunuyor.',
-        actions:    [
-          'Regulatory Gate sinyallerindeki mevzuat ve uyum değişikliklerinin yakın takibi.',
-          'Yerel P2P ağında kriptografik yetkilendirme anahtarlarının periyodik rotasyonu.',
-          'Uçtan uca Node OTP skorlarındaki anlık sapmaların gözlemlenmesi.'
-        ],
-        stats:      [['Friction Entity','1.00×'],['Node Sağlık','%100']],
-        conclusion: 'Tüm sistemler nominal. CAELUS OS kapalı devre operasyona devam etmektedir.'
-      };
+  // Gerçek düğümlerden risk sıralaması: düşük güven veya yüksek sürtünme.
+  const ranked = nodes.slice().sort((a,b) =>
+    (b.friction_fp - a.friction_fp) || (a.state_fp - b.state_fp));
+  const compromised = nodes.filter(n => n.trust_fp < 0.9 || n.irrecoverable);
+  const topFriction = ranked.slice(0, 3).map(n =>
+    `${n.id} (durum ${n.state_fp.toFixed(2)}, güven ${n.trust_fp.toFixed(2)})`);
 
-      typewriteBriefing(el.reportOutput, briefing, () => {
-        el.btnExecute.disabled = false;
-        el.cmdInput.disabled   = false;
-        setEngineState('done');
-        setFeedback('Analiz başarıyla tamamlandı. Rapor üretildi.', 'var(--green)');
-        SFX.confirm();
-        addCryptoLog('ok', `Rapor ${el.reportId.textContent} üretildi ve kayıt altına alındı`);
-
-        setTimeout(() => {
-          setEngineState('ready');
-          setFeedback('Analiz motoru girdi bekliyor...', '');
-        }, 3500);
-      });
-    });
-  }, 400);
+  const briefing = {
+    title: `CANLI CAUSAL ANALİZ // ${sid} · tick ${tick}`,
+    background: nodes.length
+      ? `Motor ${nodes.length} düğüm / ${(state.causalEdges||[]).length} kenarlık nedensel grafı canlı işliyor. Sürtünme çarpanı ${fr.toFixed(2)}×; throughput %${(state.throughputRatio*100).toFixed(1)}.`
+      : 'Motor bağlı ancak henüz düğüm yayınlanmadı; imzalı senaryo enjeksiyonu bekleniyor.',
+    alert: outage
+      ? `KRİTİK: Outage latch aktif — throughput 0. Geri dönüş yalnız başarılı recovery lever'ı ile mümkün.`
+      : (fr >= 2 ? `UYARI: Sürtünme rejim tavanına yakın (${fr.toFixed(2)}×). Gözlemlenebilirlik sapması izleniyor.`
+                 : `Sistem nominal aralıkta: sürtünme ${fr.toFixed(2)}×, aktif outage yok.`),
+    actions: (compromised.length
+      ? compromised.slice(0,3).map(n => `${n.id}: güven ${n.trust_fp.toFixed(2)} — raporlanan/gerçek durum sapması doğrulanmalı.`)
+      : ['Düğüm güven katsayıları nominal; gözlemlenebilirlik saldırısı sinyali yok.']),
+    stats: [
+      ['Sürtünme', fr.toFixed(2)+'×'],
+      ['Throughput', '%'+(state.throughputRatio*100).toFixed(0)],
+      ['Tick', String(tick)],
+      ['Riskli düğüm', String(compromised.length)]
+    ],
+    conclusion: topFriction.length
+      ? `En yüksek sürtünme katkısı: ${topFriction.join(' · ')}. Kaynak: motorun canlı snapshot'ı.`
+      : 'Motorun canlı snapshot\'ı alındı.'
+  };
+  typewriteBriefing(el.reportOutput, briefing, () => {
+    addCryptoLog('ok', `Canlı rapor ${el.reportId.textContent} üretildi (kaynak: motor snapshot)`);
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2669,13 +2713,20 @@ function initUI() {
   // Scenario card (P1-C)
   updateScenarioCard();
 
-  // Loops
+  // Loops. Not: peer keşfi UYDURULMAZ — gerçek mesh el sıkışma olaylarıyla
+  // (addRealPeer) beslenir; sahte simulateDiscovery kaldırıldı.
   state.fluctuateInterval = setInterval(fluctuate, CFG.TELEMETRY_MS);
-  setInterval(simulateDiscovery,  CFG.DISCOVERY_MS);
   setInterval(updateSessionBadge, 5000);
 
   setLiveStatus('offline');
-  connectLiveBridge();
+  // Bilgisayardan bağımsız mod: gömülü WASM motoru varsa onu başlat (sunucu/ağ
+  // gerekmez); yoksa canlı WS köprüsüne bağlan (masaüstü/uzak motor).
+  if (window.CAELUS_WASM_B64 && window.CAELUS_SCENARIOS) {
+    if (state.fluctuateInterval) { clearInterval(state.fluctuateInterval); state.fluctuateInterval = null; }
+    startLocalEngine().then(ok => { if (!ok) connectLiveBridge(); });
+  } else {
+    connectLiveBridge();
+  }
 
   setInterval(() => {
     const ev = CRYPTO_EVENTS[Math.floor(Math.random()*CRYPTO_EVENTS.length)];

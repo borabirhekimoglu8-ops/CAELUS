@@ -19,6 +19,10 @@
 #include <cstdlib>      // getenv, strtoull
 #include <cctype>
 #include <ctime>
+#include <thread>
+#include <mutex>
+#include <deque>
+#include <condition_variable>
 #include "src/intel_core.h"
 #include "ws_emitter.h"
 #include "det_rng.h"
@@ -30,7 +34,13 @@
 // ─── Cross-platform env-var setter (for --det-mode seed injection) ───────────
 static inline void caelus_setenv(const char* name, const char* value) {
 #ifdef _WIN32
+    // _putenv_s updates only the CRT environment (std::getenv); the Rust
+    // staticlib reads the Win32 block via GetEnvironmentVariableW and the two
+    // stores are NOT synced. Without the Win32 write, det-mode's fixed
+    // identity/enclave seeds never reach the Rust layer — the audit chain
+    // head then varies per run on Windows (caught by the CDET CI job).
     _putenv_s(name, value);
+    SetEnvironmentVariableA(name, value);
 #else
     setenv(name, value, /*overwrite=*/1);
 #endif
@@ -59,6 +69,47 @@ static caelus::WsEmitter g_emitter;
 // g_tick_ctr is accessible to plugins via CaelusEngineFns::current_tick().
 static caelus::PluginRegistry  g_registry;
 static std::atomic<uint64_t>   g_tick_ctr{0};
+
+// Aktif senaryo kimliği — War Room canlı snapshot yayını için (REPL tick
+// döngüsü scenario_id parametresi taşımadığından burada tutulur).
+static std::string             g_scenario_id;
+
+// ─── Birleşik REPL komut kuyruğu ──────────────────────────────────────────────
+// İki üretici: (1) stdin okuyucu thread (terminal kullanıcısı), (2) WsEmitter
+// komut sink'i (War Room tarayıcısı). Tek tüketici: ana REPL döngüsü. Motor
+// yalnız ana thread'de mutasyona uğrar; her iki girdi kaynağı da komutu buraya
+// koyar, motoru asla doğrudan çağırmaz.
+struct CommandQueue {
+    std::mutex               m;
+    std::condition_variable  cv;
+    std::deque<std::string>  q;
+    bool                     closed = false;
+
+    void push(std::string s) {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            q.push_back(std::move(s));
+        }
+        cv.notify_one();
+    }
+    // Bir komut için bloke olur. false → kuyruk kapandı ve boşaldı (çıkış).
+    bool pop(std::string& out) {
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait(lk, [&]{ return !q.empty() || closed; });
+        if (q.empty()) return false;
+        out = std::move(q.front());
+        q.pop_front();
+        return true;
+    }
+    void close() {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            closed = true;
+        }
+        cv.notify_all();
+    }
+};
+static CommandQueue g_repl_cmds;
 
 // ─── Denetim Günlüğü (R6) ────────────────────────────────────────────────────
 // Blake3-zincirli, ed25519-mühürlü, append-only adli kayıt.
@@ -212,10 +263,10 @@ static std::string hex_encode(const uint8_t* buf, size_t len) {
 // scenario_pack.h şu an aktif düzenlendiği için burada kasıtlı olarak ayrı
 // ve farklı isimli bir sabit tanımlandı.
 static constexpr uint8_t CAELUS_TRUSTED_PLUGIN_PUBKEY[32] = {
-    0x9b, 0xb1, 0xdb, 0xd0, 0x39, 0x04, 0x36, 0x70,
-    0xb7, 0xbf, 0x2c, 0x5d, 0x75, 0x33, 0x77, 0x78,
-    0x66, 0x13, 0x5b, 0x92, 0xf9, 0xb3, 0x8f, 0xe6,
-    0xcd, 0x8d, 0x97, 0x35, 0xa0, 0x4f, 0xa8, 0x02,
+    0xa1, 0x1b, 0x52, 0x8e, 0x53, 0x44, 0xd9, 0xaa,
+    0x71, 0x47, 0x47, 0x3b, 0xf1, 0x6c, 0xe9, 0xe9,
+    0xc9, 0x77, 0xf8, 0x96, 0x08, 0x95, 0x8b, 0x58,
+    0x63, 0x59, 0x41, 0x4c, 0xc7, 0xe9, 0x7e, 0x7f,
 };
 
 /// DynamicPluginLoader::CaelusPluginSignatureVerifier imzasına uygun üretim
@@ -424,6 +475,79 @@ static void audit_repl_event(const std::string& command,
     g_audit.append(ss.str());
 }
 
+// Intel veri düzlemi retlerini (imza/token kapısı, okuyucu thread'lerdeki
+// atomik sayaç) motor thread'inde adli zincire işler; her
+// dispatch_connectors() geçişinden sonra çağrılır. Audit henüz açık değilse
+// delta birikir ve açıldığında tek olayda raporlanır.
+static void audit_intel_rejections() {
+    static uint64_t last_seen = 0;
+    const uint64_t total = caelus::connector_detail::intel_rejected_total()
+                               .load(std::memory_order_relaxed);
+    if (total == last_seen || !g_audit.is_open()) return;
+    std::ostringstream ss;
+    ss << "{\"type\":\"INTEL_REJECTED\",\"delta\":" << (total - last_seen)
+       << ",\"total\":" << total << "}";
+    g_audit.append(ss.str());
+    last_seen = total;
+}
+
+// NodeKind → War Room etiketi (UI causal graph düğüm tipleri).
+static const char* node_kind_label(caelus::causal::NodeKind k) noexcept {
+    switch (k) {
+        case caelus::causal::NodeKind::Service:    return "Service";
+        case caelus::causal::NodeKind::Buffer:     return "Buffer";
+        case caelus::causal::NodeKind::Queue:      return "Queue";
+        case caelus::causal::NodeKind::Perishable: return "Perishable";
+        case caelus::causal::NodeKind::Gate:       return "Gate";
+        case caelus::causal::NodeKind::Adversary:  return "Adversary";
+    }
+    return "Service";
+}
+
+// Motorun GERÇEK graf durumunu War Room'a yayınlar (UI'ın `snapshot` olayı:
+// causal graph + düğüm sinyalleri + analiz paneli bundan beslenir). Demo/sahte
+// veri değildir — doğrudan CausalEngine'in canlı düğüm/kenar vektörlerinden
+// serileştirilir.
+static void emit_ws_snapshot(const caelus::causal::CausalEngine& engine,
+                             const std::string& scenario_id) {
+    using caelus::causal::fp_to_d;
+    std::ostringstream o;
+    o << std::fixed << std::setprecision(6);
+    o << "{\"type\":\"snapshot\","
+      << "\"scenario_id\":\"" << json_escape(scenario_id) << "\","
+      << "\"tick\":" << engine.current_tick() << ","
+      << "\"clamped_friction\":" << engine.friction_multiplier() << ","
+      << "\"regime_exceeded\":" << (engine.regime_exceeded() ? "true" : "false") << ","
+      << "\"outage_active\":" << (engine.outage_active() ? "true" : "false") << ","
+      << "\"nodes\":[";
+    bool first = true;
+    for (const auto& n : engine.nodes()) {
+        if (!first) o << ",";
+        first = false;
+        o << "{\"id\":\"" << json_escape(n.id) << "\","
+          << "\"type\":\"" << node_kind_label(n.kind) << "\","
+          << "\"state\":" << fp_to_d(n.state_fp) << ","
+          << "\"reported\":" << fp_to_d(n.reported_state_fp) << ","
+          << "\"trust\":" << fp_to_d(n.trust_fp) << ","
+          << "\"friction\":" << fp_to_d(n.weight_fp) << ","
+          << "\"capacity\":" << fp_to_d(n.capacity_fp) << ","
+          << "\"irrecoverable\":" << (n.irrecoverable ? "true" : "false") << "}";
+    }
+    o << "],\"edges\":[";
+    first = true;
+    for (const auto& e : engine.edges()) {
+        if (e.to.empty()) continue;  // sürtünme-toplama kenarı (görselleştirilmez)
+        if (!first) o << ",";
+        first = false;
+        o << "{\"from\":\"" << json_escape(e.from) << "\","
+          << "\"to\":\"" << json_escape(e.to) << "\","
+          << "\"weight\":" << fp_to_d(e.multiplier_fp) << ","
+          << "\"lag_ticks\":" << e.lag_ticks << "}";
+    }
+    o << "]}";
+    g_emitter.emit(o.str());
+}
+
 static const caelus::causal::Lever* find_pack_lever(const caelus::ScenarioPack& pack,
                                                     const std::string& id) {
     for (const auto& lever : pack.levers)
@@ -509,6 +633,7 @@ static caelus::causal::EngineSnapshot run_repl_tick(
         std::cout << "[CONNECTOR] Tick " << tick_before << ": "
                   << delivered << " intel olayi enjekte edildi.\n";
     }
+    audit_intel_rejections();
 
     caelus::causal::EngineSnapshot snap = engine.run_ticks(1);
     g_emitter.emit(caelus::ws_json::friction(
@@ -532,6 +657,16 @@ static caelus::causal::EngineSnapshot run_repl_tick(
         g_audit.append(ss.str());
     }
 
+    // War Room canlı yayını: throughput göstergesi + gerçek graf snapshot'ı.
+    // Yalnız bir tarayıcı bağlıyken serileştirme maliyetine gireriz.
+    if (g_emitter.connected()) {
+        g_emitter.emit(caelus::ws_json::engine_state(
+            g_scenario_id.empty() ? "LIVE" : g_scenario_id, g_scenario_id,
+            engine.current_tick(), snap.clamped_friction_d(),
+            snap.throughput_ratio, snap.outage_active, snap.any_hysteresis_flip));
+        emit_ws_snapshot(engine, g_scenario_id);
+    }
+
     return snap;
 }
 
@@ -544,10 +679,24 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
     std::cout << "\n[REPL] Senaryo REPL basladi. Yardim icin 'help', cikis icin 'quit'.\n";
     print_repl_snapshot(engine, last_snap);
 
+    // War Room tarayıcısından gelen komutları (WS text frame) da bu REPL'e
+    // yönlendir: gerçek motor sürülür, snapshot geri yayınlanır. Handler
+    // emitter thread'inde koşar, sadece kuyruğa iter (motora dokunmaz).
+    g_emitter.on_command([](std::string c){ g_repl_cmds.push(std::move(c)); });
+
+    // stdin ayrı bir thread'de okunup aynı kuyruğa beslenir; ana döngü tek
+    // tüketici olarak terminal + tarayıcı komutlarını sırayla işler.
+    std::thread stdin_thread([]{
+        std::string in;
+        while (std::getline(std::cin, in)) g_repl_cmds.push(in);
+        g_repl_cmds.close();
+    });
+    stdin_thread.detach();
+
     std::string line;
     while (true) {
         std::cout << "\ncaelus:" << scenario_id << " t=" << engine.current_tick() << "> ";
-        if (!std::getline(std::cin, line)) {
+        if (!g_repl_cmds.pop(line)) {
             std::cout << "\n[REPL] stdin kapandi, cikiliyor.\n";
             break;
         }
@@ -581,6 +730,9 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
             } else {
                 print_repl_snapshot(engine, last_snap);
             }
+            // War Room "ANALİZ ET" bu komutu gönderir: gerçek graf snapshot'ını
+            // WS üzerinden geri yayınla (analiz paneli motorun canlı verisiyle dolar).
+            if (g_emitter.connected()) emit_ws_snapshot(engine, g_scenario_id);
             audit_repl_event(command_line, engine, "ok");
             continue;
         }
@@ -591,6 +743,28 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
                            [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
             if (what == "levers") {
                 print_repl_levers(pack, pack_loaded);
+                // War Room lever konsolu: gerçek kaldıraç listesini WS'e yayınla
+                // (UI'daki hardcoded ipuçları yerine motorun paketinden gelir).
+                if (g_emitter.connected()) {
+                    std::ostringstream lo;
+                    lo << "{\"type\":\"levers\",\"scenario_id\":\""
+                       << json_escape(g_scenario_id) << "\",\"levers\":[";
+                    bool lf = true;
+                    if (pack_loaded) {
+                        for (const auto& lv : pack.levers) {
+                            if (!lf) lo << ",";
+                            lf = false;
+                            lo << "{\"id\":\"" << json_escape(lv.id) << "\","
+                               << "\"target\":\"" << json_escape(lv.target) << "\","
+                               << "\"success_p\":" << std::fixed << std::setprecision(2)
+                               << caelus::causal::fp_to_d(lv.success_p_fp) << ","
+                               << "\"cost_ticks\":" << lv.cost_ticks << ","
+                               << "\"lockout_ticks\":" << lv.lockout_ticks << "}";
+                        }
+                    }
+                    lo << "]}";
+                    g_emitter.emit(lo.str());
+                }
                 audit_repl_event(command_line, engine, "ok");
             } else {
                 std::cout << "[REPL] Bilinmeyen liste. Ornek: list levers\n";
@@ -780,10 +954,55 @@ int main(int argc, char* argv[]) {
         std::cout << "[DET] Deterministik mod aktif — tohumlu PRNG + sanal saat(0)\n";
     }
 
-    // ── Start War Room WebSocket emitter (127.0.0.1:47809, loopback only) ──
-    // Skipped in --det-mode (not needed for CI; avoids port contention).
+    // ── Start War Room WebSocket emitter ───────────────────────────────────
+    // Varsayılan: 127.0.0.1 (air-gapped, loopback). Opsiyonel UZAK MOD:
+    // CAELUS_WARROOM_REMOTE=1 → LAN'a (0.0.0.0) bağlanır ve embedded UI'ı aynı
+    // portta HTTP ile sunar; böylece aynı WiFi'daki telefon canlı motoru açar.
+    // FAIL-CLOSED: CAELUS_WARROOM_TOKEN yoksa uzak moda GEÇİLMEZ (loopback'te
+    // kalır). Token, HTTP sayfası ve WS bağlantısının ikisinde de zorunludur.
+    // Uyarı: TLS yok — token LAN'da düz metin gider; yalnız güvendiğiniz yerel
+    // ağda kullanın. --det-mode'da tümü atlanır (CI/port çakışması yok).
     if (!det_mode) {
+        const char* remote_env = std::getenv("CAELUS_WARROOM_REMOTE");
+        const bool want_remote = remote_env && (remote_env[0] == '1' ||
+            std::strcmp(remote_env, "true") == 0 || std::strcmp(remote_env, "yes") == 0);
+        const char* token_env = std::getenv("CAELUS_WARROOM_TOKEN");
+        const std::string token = (token_env && token_env[0]) ? token_env : "";
+
+        bool remote = false;
+        if (want_remote) {
+#ifndef CAELUS_EMBEDDED_UI
+            std::cerr << "[WS-EMITTER] UZAK MOD reddedildi: bu derlemede gomulu UI yok "
+                         "(CAELUS_EMBEDDED_UI). Loopback'te devam ediliyor.\n";
+#else
+            if (token.empty()) {
+                std::cerr << "[WS-EMITTER] UZAK MOD reddedildi (FAIL-CLOSED): "
+                             "CAELUS_WARROOM_TOKEN ayarli degil. Kimlik dogrulamasi "
+                             "olmadan LAN'a acilmaz. Loopback'te devam ediliyor.\n"
+                             "  Ornek: set CAELUS_WARROOM_TOKEN=<uzun-gizli-dize>\n";
+            } else {
+                caelus::WsEmitter::Config cfg;
+                cfg.bind_all = true;
+                cfg.token    = token;
+                g_emitter.configure(cfg);
+                g_emitter.add_http_route("/", "text/html; charset=utf-8",
+                    CAELUS_UI_HTML, CAELUS_UI_HTML_LEN);
+                g_emitter.add_http_route("/app.js", "application/javascript; charset=utf-8",
+                    CAELUS_UI_JS, CAELUS_UI_JS_LEN);
+                remote = true;
+            }
+#endif
+        }
+
         g_emitter.start(47809);
+
+        if (remote) {
+            std::cout << "\n[UZAK WAR ROOM] Telefon/tablet ayni WiFi'dan acsin:\n"
+                      << "  http://<BU-BILGISAYARIN-LAN-IP>:47809/?token=" << token << "\n"
+                      << "  (LAN IP'yi bul: Windows 'ipconfig', Linux/mac 'ip addr'/'ifconfig')\n"
+                      << "  Token, sayfa VE WS baglantisi icin zorunlu; yanlis/eksik token reddedilir.\n"
+                      << "  NOT: TLS yok — yalnizca guvendiginiz yerel agda kullanin.\n\n";
+        }
     }
 
     // ── Bootstrap Plugin Registry ──────────────────────────────────────────
@@ -915,6 +1134,12 @@ int main(int argc, char* argv[]) {
     ConnectorIntelBridge connector_bridge{&causal_engine};
     g_registry.bind_intel_injector(&connector_bridge, &InjectConnectorIntel);
 
+    // Intel veri düzlemi imza doğrulayıcısı: Rust ed25519 FFI'si kancaya
+    // kurulur. Pin (CAELUS_TRUSTED_INTEL_PUBKEY) set iken kapı bu doğrulayıcı
+    // olmadan hiçbir payload kabul etmez (fail-closed); kurulum connector
+    // do_init'lerinden ÖNCE olmalıdır.
+    caelus::connector_detail::set_intel_sig_verifier(&caelus_verify_scenario_signature);
+
     // Live connectors are opt-in and registered only after the concrete engine
     // intel sink is bound. Their reader threads enqueue events; engine ticks
     // drain them through dispatch_connectors() on the main causal path.
@@ -943,6 +1168,9 @@ int main(int argc, char* argv[]) {
     const bool awaiting_scenario = !pack_loaded;
     std::string awaiting_state_json;
 
+    // War Room canlı snapshot yayınının kullandığı aktif senaryo kimliği.
+    g_scenario_id = pack_loaded ? scenario_pack.id : scenario_id;
+
     if (pack_loaded) {
         // Paket grafını motora uygula (reset() + tüm düğüm/kenar/döngü yükle)
         scenario_pack.apply_to_engine(causal_engine);
@@ -950,6 +1178,9 @@ int main(int argc, char* argv[]) {
         *profile = scenario_pack.risk_profile;
         g_emitter.emit(caelus::ws_json::scenario_loaded(
             scenario_pack.id, scenario_pack.region));
+        // Gerçek graf durumunu (düğüm/kenar) hemen yayınla: UI'ın causal graph
+        // ve analiz paneli yüklenir yüklenmez motorun canlı verisiyle dolar.
+        emit_ws_snapshot(causal_engine, g_scenario_id);
         std::cout << "[SCENARIO] Domain: " << scenario_pack.sector
                   << " | Ufuk: " << scenario_pack.horizon_hours << " saat"
                   << " | Tick: " << scenario_pack.tick_minutes << " dak\n";
@@ -988,6 +1219,7 @@ int main(int argc, char* argv[]) {
             std::cout << "[CONNECTOR] Tick " << tick << ": "
                       << delivered << " intel olayi enjekte edildi.\n";
         }
+        audit_intel_rejections();
         return causal_engine.tick();
     };
 

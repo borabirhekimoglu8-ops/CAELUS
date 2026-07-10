@@ -210,3 +210,103 @@ TEST_CASE("JsonParser strictly handles unicode escapes") {
         CHECK(!parser.parse(root));
     }
 }
+
+// ─── JsonParser sınır vakaları (güvenlik yüzeyi: untrusted senaryo JSON'u) ───
+
+static bool json_parses(const std::string& doc) {
+    caelus::JsonVal root;
+    caelus::JsonParser parser(doc.data(), doc.size());
+    return parser.parse(root);
+}
+
+TEST_CASE("JsonParser rejects truncated documents without crashing") {
+    CHECK(!json_parses(""));
+    CHECK(!json_parses("   \n\t "));
+    CHECK(!json_parses("{"));
+    CHECK(!json_parses("["));
+    CHECK(!json_parses("{\"k\""));
+    CHECK(!json_parses("{\"k\":"));
+    CHECK(!json_parses("{\"k\":1,"));
+    CHECK(!json_parses("[1,2,"));
+    CHECK(!json_parses("\"unterminated"));
+    CHECK(!json_parses("\"escape at end\\"));
+    CHECK(!json_parses("{\"k\":\"\\u00\"}"));
+    CHECK(!json_parses("-"));
+    CHECK(!json_parses("1e"));
+    CHECK(!json_parses("1e+"));
+}
+
+TEST_CASE("JsonParser rejects trailing garbage after a valid document") {
+    CHECK(!json_parses("{} {}"));
+    CHECK(!json_parses("[1,2] x"));
+    CHECK(!json_parses("1 2"));
+    CHECK(json_parses("  {\"k\":1}  "));  // çevre boşluğu serbest
+}
+
+TEST_CASE("JsonParser rejects malformed literals and number grammar") {
+    CHECK(!json_parses("tru"));
+    CHECK(!json_parses("TRUE"));
+    CHECK(!json_parses("nul"));
+    CHECK(!json_parses("None"));
+    CHECK(!json_parses("+1"));
+    CHECK(!json_parses("01"));       // öncü sıfır yasak (RFC 8259)
+    CHECK(!json_parses("-01"));
+    CHECK(!json_parses(".5"));
+    CHECK(!json_parses("1."));
+    CHECK(!json_parses("0x10"));
+    CHECK(json_parses("-0"));
+    CHECK(json_parses("0.5"));
+    CHECK(json_parses("1e10"));
+    CHECK(json_parses("-1.25E-3"));
+}
+
+TEST_CASE("JsonParser rejects raw control characters inside strings") {
+    std::string raw_nl = "{\"s\":\"a\nb\"}";
+    CHECK(!json_parses(raw_nl));
+    std::string raw_nul("{\"s\":\"a\0b\"}", 12);
+    CHECK(!json_parses(raw_nul));
+    std::string raw_tab = "{\"s\":\"a\tb\"}";
+    CHECK(!json_parses(raw_tab));
+    CHECK(json_parses("{\"s\":\"a\\n\\t\\u0000b\"}"));  // escape'li halleri serbest
+    CHECK(!json_parses("{\"s\":\"bad\\x escape\"}"));
+}
+
+TEST_CASE("JsonParser recursion limit is an exact boundary") {
+    auto nested_arrays = [](int levels) {
+        std::string doc(static_cast<size_t>(levels), '[');
+        doc += "0";
+        doc.append(static_cast<size_t>(levels), ']');
+        return doc;
+    };
+    CHECK(json_parses(nested_arrays(64)));   // MAX_RECURSION_DEPTH tam sınırda
+    CHECK(!json_parses(nested_arrays(65)));  // bir fazlası reddedilir
+
+    // Nesne + dizi karışık derinlik de aynı limite tabidir.
+    std::string mixed;
+    for (int i = 0; i < 40; ++i) mixed += "{\"k\":[";
+    mixed += "0";
+    for (int i = 0; i < 40; ++i) mixed += "]}";
+    CHECK(!json_parses(mixed));  // 80 seviye
+}
+
+TEST_CASE("JsonParser survives adversarial small inputs (fuzz corpus)") {
+    // Sabit tohumlu xoshiro benzeri LCG ile üretilmiş rastgele baytlar:
+    // amaç çökmemek ve tutarlı kabul/ret vermek, belirli bir sonuç değil.
+    uint64_t s = 0xC0FFEE1234567890ULL;
+    auto next = [&s]() {
+        s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+        return static_cast<unsigned char>(s & 0xFF);
+    };
+    for (int round = 0; round < 500; ++round) {
+        std::string doc;
+        const int len = 1 + static_cast<int>(next() % 48);
+        for (int i = 0; i < len; ++i) {
+            static const char alphabet[] = "{}[]\":,0123456789.eE+-\\utrflans \n\x01\x7f";
+            doc += alphabet[next() % (sizeof(alphabet) - 1)];
+        }
+        caelus::JsonVal root;
+        caelus::JsonParser parser(doc.data(), doc.size());
+        (void)parser.parse(root);  // çökmediği ve UB üretmediği sürece geçerli
+    }
+    CHECK(true);
+}

@@ -3,7 +3,24 @@ caelus_core/target/
 *.log
 *.tmp
 *.sig.tmp
-dist/caelus_os
+dist/
+
+# Generated build trees and bytecode
+build_cmake/
+build_tests/
+__pycache__/
+*.pyc
+
+# War Room UI extracted at runtime from the embedded binary (deleted on clean
+# exit; source of truth is ui/index.html + ui/app.js).
+caelus_ui.html
+caelus_app.js
+
+# Committed test fixtures are exempt from the *.log rule above.
+!tests/fixtures/*.log
 
 # Private signing material must be generated/stored outside the repository.
 tools/caelus_signing.key
+
+# WASM build çıktısı (üretilmiş)
+caelus_wasm/target/
