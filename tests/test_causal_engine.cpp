@@ -35,6 +35,14 @@ extern "C" uint8_t caelus_verify_scenario_signature(
     return static_cast<uint8_t>(g_stub_ed25519_result);
 }
 
+extern "C" uint8_t caelus_verify_neural_model_signature(
+    const uint8_t* /*manifest_hash32*/,
+    const uint8_t* /*weights_hash32*/,
+    const uint8_t* /*public_key32*/,
+    const uint8_t* /*signature64*/) {
+    return static_cast<uint8_t>(g_stub_ed25519_result);
+}
+
 // Unit-only deterministic hash stub.  Production and end-to-end tests link the
 // real Rust Blake3 FFI; this stub lets C++ math/gate tests remain standalone.
 extern "C" uint8_t caelus_blake3_hash(
