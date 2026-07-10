@@ -687,6 +687,8 @@ TEST_CASE("central neural gate enforces confidence OOD and symbolic-only policy"
     NeuralRuntimeFixtureInput fixture;
     const auto snapshot = fixture.snapshot();
     auto policy = caelus::neural::default_assurance_policy();
+    CHECK(policy.minimum_confidence_fp == 650'000);
+    CHECK(policy.maximum_ood_fp == 500'000);
     policy.minimum_confidence_fp = 0;
     policy.maximum_ood_fp = FP_ONE;
     auto output = caelus::neural::DeterministicNeuralRuntimeV1::infer(

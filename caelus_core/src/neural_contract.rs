@@ -233,7 +233,9 @@ impl NeuralPolicy {
             max_missing_values: 8,
             max_inference_steps: 1_000_000,
             minimum_confidence_fp: 650_000,
-            maximum_ood_fp: 300_000,
+            // Scores above 0.5 are rejected as out-of-distribution. This
+            // threshold is mirrored by C++ and committed into gate evidence.
+            maximum_ood_fp: 500_000,
             maximum_abs_trust_delta_fp: MAX_ABS_TRUST_DELTA_V1,
         }
     }
@@ -448,6 +450,13 @@ mod tests {
         assert!(node_input_ranges_valid(&input.nodes[0]));
         input.nodes[0].authoritative_state_fp = input.nodes[0].capacity_fp + 1;
         assert!(!node_input_ranges_valid(&input.nodes[0]));
+    }
+
+    #[test]
+    fn assurance_policy_thresholds_are_explicit() {
+        let policy = NeuralPolicy::assurance_default();
+        assert_eq!(policy.minimum_confidence_fp, 650_000);
+        assert_eq!(policy.maximum_ood_fp, 500_000);
     }
 
     #[test]

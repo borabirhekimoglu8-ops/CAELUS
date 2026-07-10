@@ -306,7 +306,9 @@ inline CaelusNeuralPolicyV1 default_assurance_policy() noexcept {
     p.max_missing_values = 8;
     p.max_inference_steps = UINT64_C(1000000);
     p.minimum_confidence_fp = 650'000;
-    p.maximum_ood_fp = 300'000;
+    // V1 treats scores above 0.5 as out-of-distribution.  The threshold is
+    // mirrored by the Rust reference and committed into every gate decision.
+    p.maximum_ood_fp = 500'000;
     p.maximum_abs_trust_delta_fp = kMaxAbsTrustDeltaV1;
     return p;
 }
