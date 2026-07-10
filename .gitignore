@@ -22,5 +22,8 @@ caelus_app.js
 # Private signing material must be generated/stored outside the repository.
 tools/caelus_signing.key
 
+# Per-device identity seed — generate locally; never commit.
+caelus_identity.key
+
 # WASM build çıktısı (üretilmiş)
 caelus_wasm/target/
