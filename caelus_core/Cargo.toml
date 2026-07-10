@@ -24,9 +24,24 @@ name = "caelus_core"
 # values and must remain MSRV/no_std compatible.
 blake3 = { version = "=1.8.2", default-features = false }
 
+[target.'cfg(unix)'.dependencies]
+# Offline artifact tooling refuses symlink traversal while hashing. This target
+# dependency does not add libc to non-Unix builds.
+libc = { version = "=0.2.186", default-features = false }
+
 [[bin]]
 name = "caelus_core_repl"
 path = "src/bin/caelus_core_repl.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "caelus_neural_dataset"
+path = "src/bin/caelus_neural_dataset.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "caelus_neural_hash"
+path = "src/bin/caelus_neural_hash.rs"
 required-features = ["std"]
 
 [profile.release]

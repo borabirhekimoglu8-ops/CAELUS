@@ -9,3 +9,6 @@ dist/caelus_os
 # Private signing material must be generated/stored outside the repository.
 tools/caelus_signing.key
 tools/caelus_neural_signing.key
+
+# Full synthetic datasets and unsigned training outputs stay external.
+caelus_ml/generated/

@@ -181,6 +181,7 @@ impl EngineSnapshot {
 // CausalEngine
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[derive(Clone)]
 pub struct CausalEngine {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -446,6 +447,9 @@ impl CausalEngine {
     pub fn get_node(&self, id: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.id == id)
     }
+    pub fn get_node_mut(&mut self, id: &str) -> Option<&mut Node> {
+        self.nodes.iter_mut().find(|n| n.id == id)
+    }
 
     // ── Salt-okunur iç durum erişimcileri (invariant doğrulama / UI için) ────
     // Motor semantiğini DEĞİŞTİRMEZLER; F2 invariant süpürme harness'ı bunlarla
@@ -453,6 +457,9 @@ impl CausalEngine {
 
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
+    }
+    pub fn edges(&self) -> &[Edge] {
+        &self.edges
     }
     pub fn hysteresis_list(&self) -> &[Hysteresis] {
         &self.hysts
@@ -463,10 +470,6 @@ impl CausalEngine {
     pub fn permanent_friction_fp(&self) -> i64 {
         self.permanent_friction_fp
     }
-    fn get_node_mut(&mut self, id: &str) -> Option<&mut Node> {
-        self.nodes.iter_mut().find(|n| n.id == id)
-    }
-
     // ── Özel hesaplama fonksiyonları ─────────────────────────────────────────
 
     fn aggregate_friction(&self) -> i64 {
