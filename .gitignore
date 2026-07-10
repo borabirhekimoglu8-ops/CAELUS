@@ -1,6 +1,8 @@
 target/
 caelus_core/target/
 build_tests/
+__pycache__/
+*.py[cod]
 *.log
 *.tmp
 *.sig.tmp
