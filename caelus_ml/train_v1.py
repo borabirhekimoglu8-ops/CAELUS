@@ -1077,7 +1077,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", default="caelus-bs01-synthetic-v1")
     parser.add_argument("--model-version", default="1.0.0")
     parser.add_argument("--created-utc", required=True)
-    parser.add_argument("--ridge", default="0.01")
+    # Ridge 1.0 is the calibrated V1 default.  The previous 0.01 default
+    # clipped many INT8 coefficients and materially degraded the exported
+    # fixed-point heads even when the pre-quantized fit looked reasonable.
+    parser.add_argument("--ridge", default="1")
     return parser.parse_args()
 
 

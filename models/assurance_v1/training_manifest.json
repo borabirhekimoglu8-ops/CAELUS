@@ -8,7 +8,7 @@
   "engine_commit": "483a4c4f6930a167a5cd0200df8e939eb4cc1477",
   "metrics_file": "training_metrics.json",
   "schema_version": 1,
-  "signer_identity": "0ec496d12fa6fdd536d7978741d5f002631b70e55da0ee5ce49b72261f8e4db2",
+  "signer_identity": "c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f",
   "training_config": {
     "class_imbalance": "inverse_binary_frequency_for_outage_heads",
     "decimal_precision": 50,
@@ -23,7 +23,7 @@
     },
     "observer_feature_policy": "telemetry_only_authority_withheld_v1",
     "quantization": "round_half_even_then_symmetric_int8_clip",
-    "ridge": "0.01",
+    "ridge": "1",
     "seed": 14618972319377190656,
     "split_policy": "rollout_id_mod_10:test=0,validation=1,train=2..9",
     "trained_heads": [
@@ -40,7 +40,7 @@
     "trainer": "caelus_decimal_ridge_v1",
     "weight_scale_denominator": 64
   },
-  "training_config_sha256": "149a372ee5c3d2ca59b7b7de5a771ee745e29cf1c80008effd710ac33601c6be",
-  "weights_blake3": "3b1ecdc41038c6814c95b8a253482d2fd5271142ab9c106633151aecc24d473f",
+  "training_config_sha256": "100ac9e34aa3f2de4ce30b340dd6fadd090c53de6b6a7eb41c852d696d7ec986",
+  "weights_blake3": "75f8d4c63abb5abbb46c1bd9032ea23b5908335416d6b41aa4119e22c7399097",
   "weights_bytes": 5367
 }

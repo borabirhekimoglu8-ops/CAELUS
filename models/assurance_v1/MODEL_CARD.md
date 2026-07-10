@@ -20,18 +20,18 @@ are fitted with Decimal ridge regression and quantized using round-half-even.
 ## Provenance
 
 - Dataset Blake3: `4d4f7181b41883f6bf99a832d669e60f6ff01dbf2b4c149d279cf7a4379195f8`
-- Training configuration SHA-256: `149a372ee5c3d2ca59b7b7de5a771ee745e29cf1c80008effd710ac33601c6be`
-- Weights Blake3: `3b1ecdc41038c6814c95b8a253482d2fd5271142ab9c106633151aecc24d473f`
-- Trusted signer identity: `0ec496d12fa6fdd536d7978741d5f002631b70e55da0ee5ce49b72261f8e4db2`
+- Training configuration SHA-256: `100ac9e34aa3f2de4ce30b340dd6fadd090c53de6b6a7eb41c852d696d7ec986`
+- Weights Blake3: `75f8d4c63abb5abbb46c1bd9032ea23b5908335416d6b41aa4119e22c7399097`
+- Trusted signer identity: `c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f`
 - Synthetic samples: 220
 - Symbolic engine commit/provenance: `483a4c4f6930a167a5cd0200df8e939eb4cc1477`
 
 ## Synthetic test metrics
 
-- True-state ratio MAE (fixed-point): 180785
-- Telemetry anomaly MAE (fixed-point): 32276
+- True-state ratio MAE (fixed-point): 54488
+- Telemetry anomaly MAE (fixed-point): 37988
 - Lever top-1 accuracy (fixed-point): 772727
-- Quantized coefficient clipping count: 20
+- Quantized coefficient clipping count: 2
 
 See `training_metrics.json` for all split, outage, calibration, synthetic
 confidence/OOD policy-target, and robustness metrics.

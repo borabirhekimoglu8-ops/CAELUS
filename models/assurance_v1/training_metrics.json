@@ -1,96 +1,96 @@
 {
   "quantization": {
-    "bias_max": 115362243,
-    "bias_min": -50716155,
-    "coefficient_clipping_count": 20,
+    "bias_max": 53650853,
+    "bias_min": -55716977,
+    "coefficient_clipping_count": 2,
     "weight_max": 127,
-    "weight_min": -127
+    "weight_min": -70
   },
   "test": {
     "lever_top1_accuracy_fp": 772727,
     "node_mae_fp": {
-      "confidence_policy_target_fp": 22869,
-      "ood_policy_target_fp": 332043,
-      "telemetry_anomaly_fp": 32276,
-      "true_state_ratio_fp": 180785,
-      "trust_delta_policy_target_fp": 7208
+      "confidence_policy_target_fp": 26363,
+      "ood_policy_target_fp": 97262,
+      "telemetry_anomaly_fp": 37988,
+      "true_state_ratio_fp": 54488,
+      "trust_delta_policy_target_fp": 4213
     },
     "outage": [
       {
         "accuracy_fp": 1000000,
-        "brier_fp": 56,
-        "calibration_error_fp": 3444
+        "brier_fp": 252,
+        "calibration_error_fp": 12142
       },
       {
         "accuracy_fp": 1000000,
-        "brier_fp": 56,
-        "calibration_error_fp": 3444
+        "brier_fp": 252,
+        "calibration_error_fp": 12142
       },
       {
-        "accuracy_fp": 272727,
-        "brier_fp": 634005,
-        "calibration_error_fp": 736137
+        "accuracy_fp": 727272,
+        "brier_fp": 181856,
+        "calibration_error_fp": 387261
       }
     ],
-    "robustness_node_mae_fp": 95136,
+    "robustness_node_mae_fp": 82263,
     "samples": 22
   },
   "train": {
     "lever_top1_accuracy_fp": 630681,
     "node_mae_fp": {
-      "confidence_policy_target_fp": 22895,
-      "ood_policy_target_fp": 364077,
-      "telemetry_anomaly_fp": 33966,
-      "true_state_ratio_fp": 189364,
-      "trust_delta_policy_target_fp": 7630
+      "confidence_policy_target_fp": 27193,
+      "ood_policy_target_fp": 99846,
+      "telemetry_anomaly_fp": 39317,
+      "true_state_ratio_fp": 60373,
+      "trust_delta_policy_target_fp": 4317
     },
     "outage": [
       {
         "accuracy_fp": 1000000,
-        "brier_fp": 16,
-        "calibration_error_fp": 2022
+        "brier_fp": 149,
+        "calibration_error_fp": 9670
       },
       {
         "accuracy_fp": 1000000,
-        "brier_fp": 16,
-        "calibration_error_fp": 2022
+        "brier_fp": 149,
+        "calibration_error_fp": 9670
       },
       {
-        "accuracy_fp": 272727,
-        "brier_fp": 641241,
-        "calibration_error_fp": 741252
+        "accuracy_fp": 636363,
+        "brier_fp": 189455,
+        "calibration_error_fp": 367978
       }
     ],
-    "robustness_node_mae_fp": 100752,
+    "robustness_node_mae_fp": 81548,
     "samples": 176
   },
   "validation": {
     "lever_top1_accuracy_fp": 500000,
     "node_mae_fp": {
-      "confidence_policy_target_fp": 23529,
-      "ood_policy_target_fp": 382901,
-      "telemetry_anomaly_fp": 33749,
-      "true_state_ratio_fp": 196938,
-      "trust_delta_policy_target_fp": 7931
+      "confidence_policy_target_fp": 29050,
+      "ood_policy_target_fp": 103987,
+      "telemetry_anomaly_fp": 39540,
+      "true_state_ratio_fp": 66050,
+      "trust_delta_policy_target_fp": 4429
     },
     "outage": [
       {
         "accuracy_fp": 1000000,
-        "brier_fp": 26,
-        "calibration_error_fp": 2338
+        "brier_fp": 135,
+        "calibration_error_fp": 9404
       },
       {
         "accuracy_fp": 1000000,
-        "brier_fp": 26,
-        "calibration_error_fp": 2338
+        "brier_fp": 135,
+        "calibration_error_fp": 9404
       },
       {
-        "accuracy_fp": 272727,
-        "brier_fp": 634177,
-        "calibration_error_fp": 739022
+        "accuracy_fp": 590909,
+        "brier_fp": 200474,
+        "calibration_error_fp": 377413
       }
     ],
-    "robustness_node_mae_fp": 95254,
+    "robustness_node_mae_fp": 78656,
     "samples": 22
   }
 }
