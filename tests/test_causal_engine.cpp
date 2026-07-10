@@ -9,6 +9,7 @@
 #include "scenario_pack.h"
 #include "plugin/caelus_solver.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -161,7 +162,7 @@ struct NeuralRuntimeFixtureInput {
         nodes[0].authoritative_state_fp = 110'000;
         nodes[0].reported_state_fp = 0;
         nodes[0].trust_fp = 730'000;
-        nodes[0].queue_utilization_fp = 110'000;
+        nodes[0].queue_utilization_fp = 0;
         nodes[0].deadline_distance_fp = 800'000;
         nodes[0].hysteresis_distance_fp = 900'000;
         nodes[0].intel_risk_fp = 270'000;
@@ -636,17 +637,27 @@ TEST_CASE("deterministic neural operation budget fails closed as timeout") {
     CHECK(late_timeout.lever_score_count == 0);
 }
 
-TEST_CASE("neural feature V1 order encodes history and missingness explicitly") {
+TEST_CASE("neural feature V1 withholds authority and encodes telemetry missingness") {
     NeuralRuntimeFixtureInput fixture;
     const auto feature =
         caelus::neural::runtime_detail::encode_features(fixture.nodes[0]);
-    CHECK(feature[0] == 110'000);
+    CHECK(feature[0] == 0);
     CHECK(feature[1] == 0);
     CHECK(feature[2] == 730'000);
-    CHECK(feature[3] == 110'000);
-    CHECK(feature[5] == 20'000);
+    CHECK(feature[3] == 0);
+    CHECK(feature[4] == 0);
+    CHECK(feature[5] == 0);
+    CHECK(feature[6] == 0);
+    CHECK(feature[9] == 0);
     CHECK(feature[14] == 0);
     CHECK(feature[15] == 200'000);
+
+    auto changed_authority = fixture.nodes[0];
+    changed_authority.authoritative_state_fp = 900'000;
+    std::fill(std::begin(changed_authority.state_history_fp),
+              std::end(changed_authority.state_history_fp), 900'000);
+    CHECK(caelus::neural::runtime_detail::encode_features(
+              changed_authority) == feature);
 
     fixture.nodes[0].missing_mask =
         CAELUS_NEURAL_MISSING_STATE_HISTORY |

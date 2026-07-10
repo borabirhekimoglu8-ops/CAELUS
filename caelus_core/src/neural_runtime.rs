@@ -13,8 +13,7 @@ use crate::neural_contract::{
     NeuralMode, NeuralOutput, NeuralPolicy, NodeInput, NodeOutput, ParameterProposal, ProposalKind,
     RuntimeStatus, FEATURE_COUNT_V1, FP_SCALE, HIDDEN_DIM_V1, HISTORY_TICKS_V1,
     KNOWN_MISSING_MASK_V1, MAX_NODES_V1, MISSING_DEADLINE, MISSING_FLOW, MISSING_HYSTERESIS,
-    MISSING_INTEL, MISSING_REPORTED_HISTORY, MISSING_REPORTED_STATE, MISSING_STATE_HISTORY,
-    NEURAL_OUTPUT_V1,
+    MISSING_INTEL, MISSING_REPORTED_HISTORY, MISSING_REPORTED_STATE, NEURAL_OUTPUT_V1,
 };
 
 pub const WEIGHTS_HEADER_BYTES_V1: usize = 48;
@@ -201,38 +200,38 @@ fn bit_count_u32(mut value: u32) -> u32 {
     count
 }
 
-type FeatureVector = [i64; FEATURE_COUNT_V1];
+pub type FeatureVector = [i64; FEATURE_COUNT_V1];
 type HiddenVector = [i64; HIDDEN_DIM_V1];
 type HiddenMatrix = Vec<HiddenVector>;
 
 pub fn encode_features(node: &NodeInput) -> FeatureVector {
     let mut feature = [0i64; FEATURE_COUNT_V1];
-    feature[0] = fp_ratio(node.authoritative_state_fp, node.capacity_fp);
-    feature[1] = if node.missing_mask & MISSING_REPORTED_STATE != 0 {
+    // Authoritative state and history remain in the committed input so the
+    // gate can validate proposals and audits can reconstruct the decision.
+    // They are deliberately withheld from FEATURE_SCHEMA_V1: otherwise the
+    // observer's true-state head could learn a trivial identity function.
+    let reported_missing = node.missing_mask & MISSING_REPORTED_STATE != 0;
+    let reported_ratio = if reported_missing {
         0
     } else {
         fp_ratio(node.reported_state_fp, node.capacity_fp)
     };
+    feature[0] = reported_ratio;
+    feature[1] = fp_mul(reported_ratio, node.trust_fp);
     feature[2] = node.trust_fp;
-    if node.missing_mask & MISSING_STATE_HISTORY == 0 {
-        feature[3] = fp_ratio(
-            node.state_history_fp[HISTORY_TICKS_V1 - 1],
-            node.capacity_fp,
-        );
-        let newest = node.state_history_fp[HISTORY_TICKS_V1 - 1];
-        let oldest = node.state_history_fp[0];
-        let delta = saturating_sub_i64(newest, oldest);
-        feature[5] = fp_ratio(delta, node.capacity_fp);
-    }
     if node.missing_mask & MISSING_REPORTED_HISTORY == 0 {
-        feature[4] = fp_ratio(
-            node.reported_history_fp[HISTORY_TICKS_V1 - 1],
-            node.capacity_fp,
-        );
         let newest = node.reported_history_fp[HISTORY_TICKS_V1 - 1];
         let oldest = node.reported_history_fp[0];
+        feature[3] = fp_ratio(newest, node.capacity_fp);
+        feature[4] = fp_ratio(oldest, node.capacity_fp);
         let delta = saturating_sub_i64(newest, oldest);
-        feature[6] = fp_ratio(delta, node.capacity_fp);
+        feature[5] = fp_ratio(delta, node.capacity_fp);
+        if !reported_missing {
+            feature[6] = fp_ratio(
+                saturating_sub_i64(node.reported_state_fp, newest),
+                node.capacity_fp,
+            );
+        }
     }
     if node.missing_mask & MISSING_FLOW == 0 {
         feature[7] = fp_clamp(node.incoming_flow_fp, -FP_SCALE, FP_SCALE);
@@ -702,7 +701,7 @@ pub(crate) mod tests_support {
             authoritative_state_fp: 110_000,
             reported_state_fp: 0,
             trust_fp: 730_000,
-            queue_utilization_fp: 110_000,
+            queue_utilization_fp: 0,
             deadline_distance_fp: 800_000,
             hysteresis_distance_fp: 900_000,
             intel_risk_fp: 270_000,
@@ -779,6 +778,18 @@ mod tests {
             input.nodes[0].reported_state_fp
         );
         assert_eq!(first.lever_scores.len(), 1);
+    }
+
+    #[test]
+    fn feature_schema_withholds_authoritative_state_from_observer() {
+        let input = fixture_input();
+        let expected = encode_features(&input.nodes[0]);
+        let mut changed_authority = input.nodes[0].clone();
+        changed_authority.authoritative_state_fp = 900_000;
+        changed_authority.state_history_fp = [900_000; HISTORY_TICKS_V1];
+        assert_eq!(expected, encode_features(&changed_authority));
+        assert_eq!(expected[0], 0);
+        assert_eq!(expected[1], 0);
     }
 
     #[test]

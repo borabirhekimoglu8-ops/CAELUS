@@ -127,30 +127,30 @@ using HiddenMatrix = std::vector<HiddenVector>;
 
 inline FeatureVector encode_features(const CaelusNeuralNodeInputV1& node) noexcept {
     FeatureVector feature{};
-    feature[0] = fp_ratio(node.authoritative_state_fp, node.capacity_fp);
-    feature[1] =
-        (node.missing_mask & CAELUS_NEURAL_MISSING_REPORTED_STATE) != 0u
-            ? 0 : fp_ratio(node.reported_state_fp, node.capacity_fp);
+    // The observer must not learn to copy the symbolic authority into its
+    // hidden-state estimate.  Authoritative state/history remain in the input
+    // commitment for gate validation and audit, but FEATURE_SCHEMA_V1 exposes
+    // only telemetry-derived state features to the model.
+    const bool reported_missing =
+        (node.missing_mask & CAELUS_NEURAL_MISSING_REPORTED_STATE) != 0u;
+    const int64_t reported_ratio =
+        reported_missing ? 0 : fp_ratio(node.reported_state_fp, node.capacity_fp);
+    feature[0] = reported_ratio;
+    feature[1] = causal::fp_mul(reported_ratio, node.trust_fp);
     feature[2] = node.trust_fp;
-    if ((node.missing_mask & CAELUS_NEURAL_MISSING_STATE_HISTORY) == 0u) {
-        feature[3] = fp_ratio(
-            node.state_history_fp[CAELUS_NEURAL_HISTORY_TICKS_V1 - 1u],
-            node.capacity_fp);
-        const int64_t newest =
-            node.state_history_fp[CAELUS_NEURAL_HISTORY_TICKS_V1 - 1u];
-        const int64_t oldest = node.state_history_fp[0];
-        const int64_t delta = saturating_sub_i64(newest, oldest);
-        feature[5] = fp_ratio(delta, node.capacity_fp);
-    }
     if ((node.missing_mask & CAELUS_NEURAL_MISSING_REPORTED_HISTORY) == 0u) {
-        feature[4] = fp_ratio(
-            node.reported_history_fp[CAELUS_NEURAL_HISTORY_TICKS_V1 - 1u],
-            node.capacity_fp);
         const int64_t newest =
             node.reported_history_fp[CAELUS_NEURAL_HISTORY_TICKS_V1 - 1u];
         const int64_t oldest = node.reported_history_fp[0];
+        feature[3] = fp_ratio(newest, node.capacity_fp);
+        feature[4] = fp_ratio(oldest, node.capacity_fp);
         const int64_t delta = saturating_sub_i64(newest, oldest);
-        feature[6] = fp_ratio(delta, node.capacity_fp);
+        feature[5] = fp_ratio(delta, node.capacity_fp);
+        if (!reported_missing) {
+            feature[6] = fp_ratio(
+                saturating_sub_i64(node.reported_state_fp, newest),
+                node.capacity_fp);
+        }
     }
     if ((node.missing_mask & CAELUS_NEURAL_MISSING_FLOW) == 0u) {
         feature[7] = causal::fp_clamp(
