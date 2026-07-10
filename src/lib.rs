@@ -12,6 +12,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 pub mod audit_log;
+pub mod model_verify;
 pub mod network;
 pub mod scenario_verify;
 
@@ -51,6 +52,9 @@ pub use audit_log::{
 // ─── Scenario signature verification FFI surface ─────────────────────────────
 // C++ builds a deterministic canonical payload from ScenarioPack critical
 // fields, then calls this ed25519 verifier before accepting a scenario.
+pub use model_verify::{
+    caelus_blake3_hash, caelus_sign_neural_model_hashes, caelus_verify_neural_model_signature,
+};
 pub use scenario_verify::caelus_verify_scenario_signature;
 
 /// Sign a canonical scenario payload with a 32-byte Ed25519 seed.

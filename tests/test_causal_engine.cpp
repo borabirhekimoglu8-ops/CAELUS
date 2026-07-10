@@ -3,6 +3,7 @@
 
 #include "causal_engine.h"
 #include "neural_contract.h"
+#include "neural_model.h"
 #include "scenario_pack.h"
 #include "plugin/caelus_solver.h"
 
@@ -291,6 +292,74 @@ TEST_CASE("neural V1 policy prevents cumulative duplicate trust proposals") {
 
     output.proposals[0].proposed_delta_fp = (std::numeric_limits<int64_t>::min)();
     CHECK(!caelus::neural::output_ranges_valid(input, output));
+}
+
+TEST_CASE("neural model manifest rejects unknown critical fields") {
+    const std::string manifest = R"JSON({
+        "manifest_version":1,
+        "unexpected_critical_field":true
+    })JSON";
+    std::vector<uint8_t> bytes(manifest.begin(), manifest.end());
+    caelus::neural::NeuralModelManifestV1 parsed;
+    caelus::neural::ModelLoadStatus status =
+        caelus::neural::ModelLoadStatus::Unavailable;
+    std::string error;
+    CHECK(!caelus::neural::model_detail::parse_manifest(
+        bytes, parsed, status, error));
+    CHECK(status == caelus::neural::ModelLoadStatus::UnknownManifestField);
+}
+
+TEST_CASE("neural weights header validates exact tensor dimensions and size") {
+    using namespace caelus::neural;
+    NeuralModelManifestV1 manifest;
+    manifest.input_features = CAELUS_NEURAL_FEATURES_V1;
+    manifest.hidden_dimensions = CAELUS_NEURAL_HIDDEN_V1;
+    manifest.message_passing_layers = 2;
+    manifest.weight_count = kExpectedWeightCountV1;
+    manifest.bias_count = kExpectedBiasCountV1;
+    manifest.weights_size = static_cast<uint32_t>(
+        kWeightsHeaderBytesV1 + kExpectedWeightCountV1 +
+        kExpectedBiasCountV1 * 4u);
+
+    std::vector<uint8_t> data(manifest.weights_size, 0u);
+    const uint8_t magic[8] = {'C','A','E','L','N','N','1','\0'};
+    std::memcpy(data.data(), magic, sizeof(magic));
+    auto write_u32 = [&](size_t offset, uint32_t value) {
+        for (size_t i = 0; i < 4; ++i)
+            data[offset + i] = static_cast<uint8_t>(value >> (i * 8u));
+    };
+    auto write_u64 = [&](size_t offset, uint64_t value) {
+        for (size_t i = 0; i < 8; ++i)
+            data[offset + i] = static_cast<uint8_t>(value >> (i * 8u));
+    };
+    write_u32(8, kWeightsFormatVersionV1);
+    write_u32(12, kWeightsEndianMarkerV1);
+    write_u32(16, manifest.input_features);
+    write_u32(20, manifest.hidden_dimensions);
+    write_u32(24, manifest.message_passing_layers);
+    write_u32(28, manifest.weight_count);
+    write_u32(32, manifest.bias_count);
+    write_u32(36, 0);
+    write_u64(40, static_cast<uint64_t>(manifest.weight_count) +
+                      static_cast<uint64_t>(manifest.bias_count) * 4u);
+    std::string error;
+    CHECK(model_detail::validate_weights_header(data, manifest, error));
+
+    write_u32(20, manifest.hidden_dimensions + 1u);
+    CHECK(!model_detail::validate_weights_header(data, manifest, error));
+}
+
+TEST_CASE("dedicated neural trust anchor is a valid distinct public key") {
+    std::array<uint8_t, 32> neural_key{};
+    CHECK(caelus::neural::default_trusted_neural_pubkey(neural_key));
+    const std::array<uint8_t, 32> scenario_key = {
+        0x9b, 0xb1, 0xdb, 0xd0, 0x39, 0x04, 0x36, 0x70,
+        0xb7, 0xbf, 0x2c, 0x5d, 0x75, 0x33, 0x77, 0x78,
+        0x66, 0x13, 0x5b, 0x92, 0xf9, 0xb3, 0x8f, 0xe6,
+        0xcd, 0x8d, 0x97, 0x35, 0xa0, 0x4f, 0xa8, 0x02
+    };
+    CHECK(!caelus::neural::model_detail::constant_time_equal(
+        neural_key.data(), scenario_key.data(), neural_key.size()));
 }
 
 TEST_CASE("solver C ABI structs round-trip through plugin vtable") {

@@ -50,3 +50,34 @@ Locations:
 - C++ contract: `include/neural_contract.h`
 - no_std Rust mirror: `caelus_core/src/neural_contract.rs`
 - Regression tests: `tests/test_causal_engine.cpp` and Rust module tests
+
+## Phase 2 — Signed model package and trust gate
+
+Decision:
+
+- Neural models are data-only packages with fixed filenames
+  (`manifest.json`, `weights.bin`, `model.sig`).  Manifest-controlled external
+  data paths are forbidden.
+- Signatures use a dedicated domain constructed inside Rust:
+  `CAELUS_NEURAL_MODEL_V1\0 || Blake3(manifest bytes) ||
+  Blake3(weights bytes)`.  Scenario/plugin keys and domains are not reused.
+- The dedicated neural trust anchor is
+  `tools/caelus_neural_trusted_pubkey.txt`; only the public key is committed.
+  The generated private seed remains outside the repository.  Production
+  rotation is a rebuild-time trust-anchor change.
+- The model loader strictly rejects unknown top-level fields, unknown nested
+  quantization/creation fields, unsupported operators, malformed dimensions,
+  unsupported engine/scenario ranges, integer metadata overflow, external
+  references, hash mismatch, invalid signature, and untrusted signers.
+- The V1 tensor blob is little-endian, data-only and has an exact header/count
+  contract.  It cannot contain native code or arbitrary operator names.
+- Model trust failure is fail-closed for model loading but is designed to
+  return a typed status to the host so the symbolic engine can continue unless
+  policy explicitly requires neural assurance.
+
+Locations:
+
+- Rust hash/sign/verify domain: `src/model_verify.rs`
+- Offline signer: `src/bin/caelus_sign_model.rs`
+- C++ package parser/trust gate: `include/neural_model.h`
+- Dedicated public anchor: `tools/caelus_neural_trusted_pubkey.txt`
