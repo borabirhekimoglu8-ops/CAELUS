@@ -5,12 +5,12 @@
   "dataset_generator_version": 2,
   "dataset_manifest_path": "dataset.manifest.json",
   "dataset_path": "dataset.jsonl",
-  "engine_commit": "cded4bcff930f1547962394ccbd6879faa570be8",
+  "engine_commit": "1ce832496d58482192228780ca562dfeb9d33ec0",
   "metrics_file": "training_metrics.json",
   "schema_version": 1,
   "signer_identity": "c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f",
   "training_config": {
-    "class_imbalance": "inverse_binary_frequency_for_outage_heads",
+    "class_imbalance": "inverse_binary_frequency_for_outage_heads;8x_negative_trust_delta",
     "decimal_precision": 50,
     "frozen_encoder": "structured_input_projection_and_two_message_layers",
     "label_sources": {
@@ -40,7 +40,7 @@
     "trainer": "caelus_decimal_ridge_v1",
     "weight_scale_denominator": 64
   },
-  "training_config_sha256": "100ac9e34aa3f2de4ce30b340dd6fadd090c53de6b6a7eb41c852d696d7ec986",
-  "weights_blake3": "c11832e19712e8abd0b8610a573588126356dcc46a6625156cd09588da76b863",
+  "training_config_sha256": "8c7bd4f3aaa7acaca74cbf698629a640555e7dca077d78c7809e225c85365534",
+  "weights_blake3": "44609fc02d32b3ec250b621b5833f03791a83b9a5d3337878e22aa1480c2807c",
   "weights_bytes": 5367
 }
