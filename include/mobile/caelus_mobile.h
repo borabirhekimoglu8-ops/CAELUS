@@ -329,7 +329,10 @@ int32_t caelus_mobile_audit_path_v1(
 
 /**
  * Audit chain status as compact JSON:
- * {"open":bool,"entries":u64,"chain_head":"hex64","session_id":"hex16"}.
+ * {"open":bool,"sealed":bool,"entries":u64,"chain_head":"hex64",
+ *  "session_id":"hex16"}.
+ * `open` = the chain context is live (export/read possible);
+ * `sealed` = the SEAL line has been written — no further events accepted.
  */
 int32_t caelus_mobile_audit_status_json_v1(
     CaelusMobileEngine* engine,

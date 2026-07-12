@@ -1292,6 +1292,10 @@ int32_t caelus_mobile_tick_v1(
             return fail(handle, CAELUS_MOBILE_E_INVALID_ARGUMENT,
                         "tick_count must be 1..10000");
         }
+        if (handle.phase == Phase::Sealed) {
+            return fail(handle, CAELUS_MOBILE_E_LIFECYCLE,
+                        "session is sealed; no further ticks are possible");
+        }
         if (handle.phase != Phase::ScenarioLoaded) {
             return fail(handle, CAELUS_MOBILE_E_LIFECYCLE,
                         "load a scenario before ticking");
@@ -1495,6 +1499,8 @@ int32_t caelus_mobile_audit_status_json_v1(
     return guarded(engine, false, [&](CaelusMobileEngine& handle) -> int32_t {
         std::ostringstream json;
         json << "{\"open\":" << (handle.audit.is_open() ? "true" : "false")
+             << ",\"sealed\":"
+             << (handle.phase == Phase::Sealed ? "true" : "false")
              << ",\"entries\":" << handle.audit.entries()
              << ",\"chain_head\":\"" << handle.audit.chain_head_hex() << "\""
              << ",\"session_id\":\""

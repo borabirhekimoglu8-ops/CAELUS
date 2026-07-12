@@ -902,6 +902,7 @@ TEST_CASE("mobile audit surface: path, status, export, lifecycle, seal") {
     const std::string status =
         fetch_string(box.handle, &caelus_mobile_audit_status_json_v1);
     CHECK(status.find("\"open\":true") != std::string::npos);
+    CHECK(status.find("\"sealed\":false") != std::string::npos);
     CHECK(status.find("\"chain_head\":\"") != std::string::npos);
     CHECK(status.find("\"session_id\":\"1122334455667788\"") !=
           std::string::npos);
@@ -923,7 +924,11 @@ TEST_CASE("mobile audit surface: path, status, export, lifecycle, seal") {
     CHECK(exported.find("APP_LIFECYCLE") != std::string::npos);
     CHECK(exported.find("SEAL") != std::string::npos);
 
-    // After sealing, audited operations must fail closed.
+    // After sealing, audited operations must fail closed and the status
+    // must report the sealed latch.
+    const std::string sealed_status =
+        fetch_string(box.handle, &caelus_mobile_audit_status_json_v1);
+    CHECK(sealed_status.find("\"sealed\":true") != std::string::npos);
     CHECK(caelus_mobile_note_lifecycle_v1(
               box.handle, CAELUS_MOBILE_LIFECYCLE_FOREGROUND) ==
           CAELUS_MOBILE_E_AUDIT_FAILURE);
