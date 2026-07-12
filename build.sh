@@ -78,6 +78,7 @@ else
 fi
 
 [[ -f "$ROOT/ui/index.html" ]] || die "ui/index.html bulunamadı."
+[[ -f "$ROOT/ui/scenario_compiler.js" ]] || die "ui/scenario_compiler.js bulunamadı."
 [[ -f "$ROOT/ui/app.js"     ]] || die "ui/app.js bulunamadı."
 ok "UI kaynak dosyaları: mevcut"
 echo ""
@@ -86,7 +87,7 @@ mkdir -p "$ROOT/include" "$OUT_DIR"
 
 # =============================================================================
 # AŞAMA 1 — UI Varlık Karartma (Asset Obfuscation & Embedding)
-# ui/index.html + ui/app.js → include/ui_payload.h
+# ui/index.html + ui/scenario_compiler.js + ui/app.js → include/ui_payload.h
 # =============================================================================
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
 echo -e "${BOLD}[AŞAMA 1/3] UI Gömme (Asset Embedding — gizleme/şifreleme DEĞİL)${RESET}"
@@ -119,7 +120,7 @@ embed_file() {
         printf "0x00};\n" >> "$PAYLOAD_H"
     fi
 
-    printf "static const std::size_t   %s = %d;\n\n" "$len_name" "$byte_count" \
+    printf "static const std::size_t   %s = %d;\n" "$len_name" "$byte_count" \
         >> "$PAYLOAD_H"
 }
 
@@ -137,14 +138,21 @@ EOF
 inf "index.html → hex byte dizisi..."
 embed_file "$ROOT/ui/index.html" "CAELUS_UI_HTML" "CAELUS_UI_HTML_LEN" "ui/index.html"
 ok "index.html gömüldü."
+printf "\n" >> "$PAYLOAD_H"
+
+inf "scenario_compiler.js → hex byte dizisi..."
+embed_file "$ROOT/ui/scenario_compiler.js" "CAELUS_SCENARIO_COMPILER_JS" "CAELUS_SCENARIO_COMPILER_JS_LEN" "ui/scenario_compiler.js"
+ok "scenario_compiler.js gömüldü."
+printf "\n" >> "$PAYLOAD_H"
 
 inf "app.js → hex byte dizisi..."
 embed_file "$ROOT/ui/app.js" "CAELUS_UI_JS" "CAELUS_UI_JS_LEN" "ui/app.js"
 ok "app.js gömüldü."
 
 HTML_BYTES=$(wc -c < "$ROOT/ui/index.html")
+COMPILER_BYTES=$(wc -c < "$ROOT/ui/scenario_compiler.js")
 JS_BYTES=$(wc -c < "$ROOT/ui/app.js")
-TOTAL_PAYLOAD_KB=$(( (HTML_BYTES + JS_BYTES) / 1024 ))
+TOTAL_PAYLOAD_KB=$(( (HTML_BYTES + COMPILER_BYTES + JS_BYTES) / 1024 ))
 inf "Toplam gömülü UI payload: ${TOTAL_PAYLOAD_KB} KB"
 ok "Aşama 1 tamamlandı → $PAYLOAD_H"
 echo ""

@@ -277,6 +277,10 @@ if "%EMBED_UI%"=="1" (
         echo [HATA] ui\app.js bulunamadı.
         exit /b 1
     )
+    if not exist "%ROOT%\ui\scenario_compiler.js" (
+        echo [HATA] ui\scenario_compiler.js bulunamadı.
+        exit /b 1
+    )
     echo [OK] UI kaynak dosyaları: mevcut
 ) else (
     echo [INFO] CAELUS_SKIP_UI_EMBED=1 — UI header uretimi ve embed define atlandi.
@@ -289,7 +293,7 @@ if not exist "%ROOT%\dist"    mkdir "%ROOT%\dist"
 
 :: =============================================================================
 :: AŞAMA 1 — UI Varlık Karartma (Asset Obfuscation & Embedding)
-:: ui/index.html + ui/app.js → include/ui_payload.h
+:: ui/index.html + ui/scenario_compiler.js + ui/app.js → include/ui_payload.h
 :: =============================================================================
 echo ══════════════════════════════════════════════════════════════
 echo [AŞAMA 1/3] UI Gomme (Asset Embedding — gizleme/sifreleme DEGIL)
@@ -329,7 +333,22 @@ if "%EMBED_UI%"=="1" (
     )
     echo [OK] index.html gömüldü.
 
-    echo [1/3] app.js → hex byte dizisi...
+    echo [2/3] scenario_compiler.js → hex byte dizisi...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$bytes = [System.IO.File]::ReadAllBytes('%ROOT%\ui\scenario_compiler.js');" ^
+        "$hex = ($bytes | ForEach-Object { '0x{0:x2}' -f $_ }) -join ', ';" ^
+        "$len = $bytes.Length;" ^
+        "Add-Content '%PAYLOAD_H%' ('// Embedded: ui/scenario_compiler.js  (' + $len + ' bytes)');" ^
+        "Add-Content '%PAYLOAD_H%' ('static const unsigned char CAELUS_SCENARIO_COMPILER_JS[] = {' + $hex + ', 0x00};');" ^
+        "Add-Content '%PAYLOAD_H%' ('static const std::size_t   CAELUS_SCENARIO_COMPILER_JS_LEN = ' + $len + ';');" ^
+        "Add-Content '%PAYLOAD_H%' '';"
+    if errorlevel 1 (
+        echo [HATA] scenario_compiler.js dönüştürülemedi.
+        exit /b 1
+    )
+    echo [OK] scenario_compiler.js gömüldü.
+
+    echo [3/3] app.js → hex byte dizisi...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$bytes = [System.IO.File]::ReadAllBytes('%ROOT%\ui\app.js');" ^
         "$hex = ($bytes | ForEach-Object { '0x{0:x2}' -f $_ }) -join ', ';" ^
