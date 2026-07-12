@@ -527,6 +527,18 @@ public:
         return verified_canonical_payload_;
     }
 
+    /**
+     * Compiled-in scenario trust anchor (PUBLIC key, 32 bytes).  Read-only
+     * accessor for host layers (mobile trust screen) that must display the
+     * exact pinned value the binary enforces.
+     */
+    static const uint8_t* trusted_scenario_pubkey() noexcept {
+        return CAELUS_TRUSTED_PUBKEY;
+    }
+    static constexpr size_t trusted_scenario_pubkey_len() noexcept {
+        return 32u;
+    }
+
     // ── Yükleme ─────────────────────────────────────────────────────────────
 
     bool load(const std::string& path) {

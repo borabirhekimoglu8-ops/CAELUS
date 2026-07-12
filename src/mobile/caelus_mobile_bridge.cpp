@@ -1644,4 +1644,33 @@ int32_t caelus_mobile_verify_model_signature_v1(
                : CAELUS_MOBILE_E_MODEL_REJECTED;
 }
 
+int32_t caelus_mobile_trusted_anchors_json_v1(
+    uint8_t* output,
+    size_t output_capacity,
+    size_t* out_len) {
+    if (out_len == nullptr) return CAELUS_MOBILE_E_INVALID_ARGUMENT;
+    std::array<uint8_t, 32> neural_public_key{};
+    if (!caelus::neural::default_trusted_neural_pubkey(neural_public_key)) {
+        return CAELUS_MOBILE_E_INTERNAL;
+    }
+    std::ostringstream json;
+    json << "{\"type\":\"CAELUS_MOBILE_TRUST_ANCHORS_V1\""
+         << ",\"abi_version\":" << CAELUS_MOBILE_ABI_VERSION
+         << ",\"engine_version\":\"" << kEngineVersionString << "\""
+         << ",\"scenario_pubkey\":\""
+         << hex_lower(caelus::ScenarioPack::trusted_scenario_pubkey(),
+                      caelus::ScenarioPack::trusted_scenario_pubkey_len())
+         << "\""
+         << ",\"neural_pubkey\":\""
+         << hex_lower(neural_public_key.data(), neural_public_key.size())
+         << "\"}";
+    const std::string payload = json.str();
+    *out_len = payload.size();
+    if (output == nullptr || output_capacity < payload.size()) {
+        return CAELUS_MOBILE_E_BUFFER_TOO_SMALL;
+    }
+    std::memcpy(output, payload.data(), payload.size());
+    return CAELUS_MOBILE_OK;
+}
+
 } // extern "C"

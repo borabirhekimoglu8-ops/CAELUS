@@ -151,6 +151,7 @@ build_slice() {
         _caelus_mobile_last_error_v1
         _caelus_mobile_blake3_v1
         _caelus_mobile_verify_model_signature_v1
+        _caelus_mobile_trusted_anchors_json_v1
         _caelus_mobile_register_key_protection_v1
     )
     local symbol_table
@@ -159,7 +160,7 @@ build_slice() {
         echo "$symbol_table" | grep -q " $symbol\$" \
             || die "[$name] Zorunlu ABI sembolü eksik: $symbol"
     done
-    ok "[$name] 19/19 ABI sembolü mevcut."
+    ok "[$name] ${#required_symbols[@]}/${#required_symbols[@]} ABI sembolü mevcut."
 }
 
 for slice in "${SLICES[@]}"; do

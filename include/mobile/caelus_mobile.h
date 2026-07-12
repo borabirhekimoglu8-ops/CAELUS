@@ -397,6 +397,18 @@ int32_t caelus_mobile_verify_model_signature_v1(
     const uint8_t* blob_hash32,
     const uint8_t* signature64);
 
+/**
+ * COMPILED-IN public trust anchors as compact JSON (two-call pattern):
+ * {"type":"CAELUS_MOBILE_TRUST_ANCHORS_V1","abi_version":u32,
+ *  "engine_version":"…","scenario_pubkey":"hex64","neural_pubkey":"hex64"}.
+ * Stateless; PUBLIC key material only.  The Swift trust screen renders
+ * these values so the UI can never drift from what the binary enforces.
+ */
+int32_t caelus_mobile_trusted_anchors_json_v1(
+    uint8_t* output,
+    size_t output_capacity,
+    size_t* out_len);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

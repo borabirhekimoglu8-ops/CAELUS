@@ -1074,6 +1074,29 @@ TEST_CASE("mobile stateless crypto helpers") {
                                                       nullptr) ==
               CAELUS_MOBILE_E_INVALID_ARGUMENT);
     }
+    SUBCASE("trusted anchors expose the compiled-in PUBLIC keys") {
+        size_t needed = 0;
+        REQUIRE(caelus_mobile_trusted_anchors_json_v1(nullptr, 0, &needed) ==
+                CAELUS_MOBILE_E_BUFFER_TOO_SMALL);
+        REQUIRE(needed > 0);
+        std::string payload(needed, '\0');
+        size_t written = 0;
+        REQUIRE(caelus_mobile_trusted_anchors_json_v1(
+                    reinterpret_cast<uint8_t*>(payload.data()),
+                    payload.size(), &written) == CAELUS_MOBILE_OK);
+        REQUIRE(written == needed);
+        CHECK(payload.find("\"type\":\"CAELUS_MOBILE_TRUST_ANCHORS_V1\"") !=
+              std::string::npos);
+        // The exact pinned production anchors (public key material only).
+        CHECK(payload.find("\"scenario_pubkey\":\"9bb1dbd039043670b7bf2c5d7533"
+                           "777866135b92f9b38fe6cd8d9735a04fa802\"") !=
+              std::string::npos);
+        CHECK(payload.find("\"neural_pubkey\":\"c8527f9105465967aea81d07514ea1"
+                           "1f597f32fedc7d6f8f9e7d182f999fc51f\"") !=
+              std::string::npos);
+        CHECK(caelus_mobile_trusted_anchors_json_v1(nullptr, 0, nullptr) ==
+              CAELUS_MOBILE_E_INVALID_ARGUMENT);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
