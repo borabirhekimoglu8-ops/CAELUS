@@ -123,4 +123,32 @@ cargo build --release --locked --manifest-path "$ROOT/caelus_core/Cargo.toml" --
     --binary "$ROOT/caelus_core/target/release/caelus_core_repl" \
     --reference-binary "$EXE"
 
+log "Mobile C ABI bridge: host build + C++ bridge test suite"
+"$ROOT/tools/build_host_bridge.sh" --with-tests
+
+if command -v swift >/dev/null 2>&1; then
+    log "Mobile Swift package: build + XCTest against the real native core"
+    (cd "$ROOT/platforms/ios/CAELUSMobile" && swift build && swift test)
+
+    log "Mobile BS-01 end-to-end demo (Swift → C ABI → shared core)"
+    mobile_export="$(mktemp -d)"
+    trap 'rm -f "$out1" "$out2" "$blk1" "$blk2"; rm -rf "$mobile_export"' EXIT
+    (cd "$ROOT/platforms/ios/CAELUSMobile" \
+        && CAELUS_DEMO_EXPORT_DIR="$mobile_export" swift run caelus-mobile-demo)
+    [[ -s "$mobile_export/audit_export.ndjson" ]] \
+        || die "mobile demo produced no audit export"
+
+    log "Mobile demo audit chain + SEAL + neural identity verification"
+    NEURAL_PUBKEY="c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f"
+    "$PYTHON" "$ROOT/tools/verify_audit_log.py" \
+        "$mobile_export/audit_export.ndjson" \
+        --neural-model-dir "$ROOT/models/assurance_v1" \
+        --trusted-neural-pubkey-hex "$NEURAL_PUBKEY"
+else
+    # Loud, explicit skip: the C ABI + bridge tests above still ran; only
+    # the Swift-layer tests need a Swift toolchain (Linux swift.org build
+    # or macOS Xcode).  Never reported as passed.
+    log "SKIP (no swift toolchain): mobile Swift package tests + BS-01 mobile demo"
+fi
+
 log "All checks passed"
