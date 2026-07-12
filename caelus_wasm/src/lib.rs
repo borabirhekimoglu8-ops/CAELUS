@@ -17,18 +17,33 @@ use caelus_core::{
     fp_to_d, CausalEngine, Edge, FeedbackLoop, Hysteresis, Lever, LeverOutcome, Node, NodeKind,
     FP_ONE,
 };
+use core::cell::UnsafeCell;
 
-// wasm32 tek iş parçacıklıdır → static mut güvenli (unsafe ile erişilir).
-static mut ENGINE: Option<CausalEngine> = None;
-static mut SCENARIO_ID: String = String::new();
-static mut LEVERS: Vec<PackLever> = Vec::new();
+// wasm32 tek iş parçacıklıdır. UnsafeCell, global runtime durumunun interior
+// mutability sözleşmesini açık kılar ve `static mut` referanslarının doğuracağı
+// örtük aliasing/UB riskini önler. Export edilen çağrılar senkrondur ve hiçbir
+// host callback'i çağırmadığından yeniden giriş mümkün değildir.
+struct WasmGlobal<T>(UnsafeCell<T>);
+unsafe impl<T> Sync for WasmGlobal<T> {}
+impl<T> WasmGlobal<T> {
+    const fn new(value: T) -> Self {
+        Self(UnsafeCell::new(value))
+    }
+    fn get(&self) -> *mut T {
+        self.0.get()
+    }
+}
+
+static ENGINE: WasmGlobal<Option<CausalEngine>> = WasmGlobal::new(None);
+static SCENARIO_ID: WasmGlobal<String> = WasmGlobal::new(String::new());
+static LEVERS: WasmGlobal<Vec<PackLever>> = WasmGlobal::new(Vec::new());
 
 const BUF_CAP: usize = 512 * 1024;
-static mut BUF: [u8; BUF_CAP] = [0u8; BUF_CAP];
+static BUF: WasmGlobal<[u8; BUF_CAP]> = WasmGlobal::new([0u8; BUF_CAP]);
 
 #[no_mangle]
 pub extern "C" fn cae_buf() -> *mut u8 {
-    unsafe { BUF.as_mut_ptr() }
+    unsafe { (*BUF.get()).as_mut_ptr() }
 }
 #[no_mangle]
 pub extern "C" fn cae_buf_cap() -> usize {
@@ -38,7 +53,7 @@ pub extern "C" fn cae_buf_cap() -> usize {
 fn buf_str(len: usize) -> String {
     let n = len.min(BUF_CAP);
     // SAFETY: JS yalnız geçerli UTF-8 (JSON/id) yazar; hatalıysa kayıpsız kurtar.
-    let bytes = unsafe { &BUF[..n] };
+    let bytes = unsafe { &(*BUF.get())[..n] };
     String::from_utf8_lossy(bytes).into_owned()
 }
 
@@ -46,7 +61,7 @@ fn write_buf(s: &str) -> usize {
     let b = s.as_bytes();
     let n = b.len().min(BUF_CAP);
     unsafe {
-        BUF[..n].copy_from_slice(&b[..n]);
+        (*BUF.get())[..n].copy_from_slice(&b[..n]);
     }
     n
 }
@@ -62,9 +77,9 @@ pub extern "C" fn cae_load(len: usize) -> i32 {
     let mut eng = CausalEngine::new();
     let levers = apply_pack(&root, &mut eng);
     unsafe {
-        SCENARIO_ID = root.get("id").as_s().to_string();
-        LEVERS = levers;
-        ENGINE = Some(eng);
+        *SCENARIO_ID.get() = root.get("id").as_s().to_string();
+        *LEVERS.get() = levers;
+        *ENGINE.get() = Some(eng);
     }
     0
 }
@@ -73,7 +88,7 @@ pub extern "C" fn cae_load(len: usize) -> i32 {
 #[no_mangle]
 pub extern "C" fn cae_tick(n: u32) {
     unsafe {
-        if let Some(e) = ENGINE.as_mut() {
+        if let Some(e) = (&mut *ENGINE.get()).as_mut() {
             for _ in 0..n {
                 e.tick();
             }
@@ -86,7 +101,7 @@ pub extern "C" fn cae_tick(n: u32) {
 pub extern "C" fn cae_lever(len: usize) -> i32 {
     let id = buf_str(len);
     unsafe {
-        if let Some(e) = ENGINE.as_mut() {
+        if let Some(e) = (&mut *ENGINE.get()).as_mut() {
             let seed = e.current_tick().wrapping_mul(0x9E3779B97F4A7C15);
             return if e.apply_lever(&id, seed) { 1 } else { 0 };
         }
@@ -99,8 +114,8 @@ pub extern "C" fn cae_lever(len: usize) -> i32 {
 #[no_mangle]
 pub extern "C" fn cae_snapshot() -> usize {
     let s = unsafe {
-        match ENGINE.as_ref() {
-            Some(e) => build_snapshot_json(e, &SCENARIO_ID),
+        match (&*ENGINE.get()).as_ref() {
+            Some(e) => build_snapshot_json(e, &*SCENARIO_ID.get()),
             None => String::from("{\"type\":\"snapshot\",\"nodes\":[],\"edges\":[]}"),
         }
     };
@@ -110,7 +125,7 @@ pub extern "C" fn cae_snapshot() -> usize {
 /// Gerçek kaldıraç listesi → BUF; uzunluk döner. Biçim 'levers' WS olayıyla aynı.
 #[no_mangle]
 pub extern "C" fn cae_levers() -> usize {
-    let s = unsafe { build_levers_json(&SCENARIO_ID, &LEVERS) };
+    let s = unsafe { build_levers_json(&*SCENARIO_ID.get(), &*LEVERS.get()) };
     write_buf(&s)
 }
 
