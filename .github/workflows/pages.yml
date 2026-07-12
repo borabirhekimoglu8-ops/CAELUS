@@ -1,0 +1,70 @@
+name: Deploy iPhone War Room
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: caelus-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build WASM and deploy GitHub Pages
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out the CI-verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Install WebAssembly target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build deterministic browser engine
+        run: >-
+          cargo build --release --locked
+          --target wasm32-unknown-unknown
+          --manifest-path caelus_wasm/Cargo.toml
+
+      - name: Assemble offline-first iPhone package
+        run: python3 tools/build_standalone.py
+
+      - name: Validate deploy artifact
+        run: |
+          test -s dist/index.html
+          test -s dist/caelus_standalone.html
+          test -s dist/manifest.webmanifest
+          test -s dist/sw.js
+          grep -q 'CAELUS_WASM_B64' dist/index.html
+          grep -q 'BS-01_SAHTE_UFUK' dist/index.html
+          grep -q 'BS-02_GOLGE_ARSIV' dist/index.html
+          grep -q 'BS-03_KUM_SAATI' dist/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

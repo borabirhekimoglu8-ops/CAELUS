@@ -2,7 +2,12 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#05090f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CAELUS">
+<link rel="manifest" href="manifest.webmanifest">
 <title>CAELUS OS // UNIVERSAL CAUSAL UI</title>
 <style>
 /* ═══════════════════════════════════════════════════════════════
@@ -184,6 +189,44 @@ body {
   text-transform:uppercase;
   margin-top:1px;
 }
+.scenario-switcher {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:210px;
+  padding:4px 7px;
+  border:1px solid var(--border-lit);
+  background:rgba(5,9,15,.72);
+}
+.scenario-switcher label {
+  color:var(--text-3);
+  font-size:7.5px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  flex-shrink:0;
+}
+.scenario-switcher select {
+  min-width:0;
+  flex:1;
+  color:var(--cyan);
+  background:var(--panel-bg2);
+  border:0;
+  outline:0;
+  font:9px var(--mono);
+  padding:3px 2px;
+}
+.scenario-switcher button {
+  min-width:34px;
+  min-height:26px;
+  border:1px solid var(--cyan-dim);
+  background:rgba(6,194,212,.08);
+  color:var(--cyan);
+  font:700 8px var(--mono);
+  letter-spacing:1px;
+  cursor:pointer;
+}
+.scenario-switcher button:disabled,
+.scenario-switcher select:disabled { opacity:.45; cursor:not-allowed; }
 .hdr-badges { display:flex; align-items:center; gap:12px; }
 .badge {
   font-size:9px;
@@ -1022,6 +1065,128 @@ body {
 #live-pill.pill--offline  { color:var(--crisis); border-color:rgba(207,102,121,.4); background:rgba(207,102,121,.07); }
 #live-pill.pill--live     { color:var(--green);  border-color:rgba(74,222,128,.4);  background:rgba(74,222,128,.07); animation:dot-pulse 2.5s ease infinite; }
 #live-pill.pill--awaiting { color:var(--amber);  border-color:rgba(232,168,56,.45); background:rgba(232,168,56,.08); animation:dot-pulse 1.8s ease infinite; }
+
+/* ── iPhone / iPad responsive shell ─────────────────────────── */
+@media (max-width: 900px) {
+  html, body {
+    height:auto;
+    min-height:100%;
+    overflow-x:hidden;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  body { font-size:11px; user-select:text; }
+  button, input, textarea, select { font-size:16px; touch-action:manipulation; }
+  .crt-vignette { display:none; }
+  .crt-scanlines { opacity:.45; }
+  .shell {
+    display:flex;
+    flex-direction:column;
+    width:100%;
+    height:auto;
+    min-height:100dvh;
+    padding:
+      max(6px, env(safe-area-inset-top))
+      max(6px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(6px, env(safe-area-inset-left));
+    gap:6px;
+  }
+  .hdr {
+    min-height:0;
+    height:auto;
+    padding:9px 10px;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:flex-start;
+  }
+  .hdr-brand { flex:1 1 180px; }
+  .hdr-logo { font-size:15px; }
+  .hdr-sub { font-size:7px; letter-spacing:.8px; }
+  .scenario-switcher { order:2; flex:1 1 100%; min-width:0; }
+  .scenario-switcher select { min-height:38px; font-size:12px; }
+  .scenario-switcher button { min-height:42px; min-width:52px; }
+  .hdr-badges {
+    order:3;
+    width:100%;
+    gap:6px;
+    overflow-x:auto;
+    padding-bottom:2px;
+  }
+  .badge { font-size:7px; letter-spacing:1px; white-space:nowrap; }
+  .hdr-telemetry {
+    order:4;
+    width:100%;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .tel { align-items:flex-start; min-width:0; }
+  .tel-label { font-size:7px; }
+  .tel-val { font-size:9px; }
+  .workspace {
+    display:flex;
+    flex-direction:column;
+    width:100%;
+    gap:6px;
+    overflow:visible;
+  }
+  .workspace > .panel {
+    width:100%;
+    height:72dvh;
+    min-height:560px;
+    flex:none;
+  }
+  .workspace > .panel--center { height:82dvh; min-height:640px; }
+  .panel-body { -webkit-overflow-scrolling:touch; }
+  .panel-cap { padding:9px 11px; }
+  .panel-title { font-size:10px; letter-spacing:1.2px; }
+  .panel-badge { font-size:9px; }
+  .tab-btn, .btn { min-height:42px; }
+  .tab-btn { font-size:10px; }
+  .lc-input-row { min-height:48px; }
+  .lc-input { font-size:16px; min-height:38px; }
+  #lc-send, #lc-clear { min-height:38px !important; min-width:48px; }
+  .crypto-log, .lc-output { font-size:10.5px; line-height:1.55; }
+  .log-ts, .log-ok, .log-warn, .log-err, .log-info { font-size:9px; }
+  .peer-item, .peer-detail, .otp-row, .plugin-item { font-size:10px; }
+  .section-label, .sc-sector, .sc-tick, .g-stat-label { font-size:9px; }
+  .g-stat-val, .sc-name { font-size:11px; }
+  .cmd-input, #cmd-input { font-size:16px; }
+  .tp-section { gap:9px; padding:8px 9px; }
+  .tp-gauge-svg-wrap { width:76px; height:76px; }
+  .mesh-viewport, .causal-viewport { height:210px; }
+  .crypto-log { max-height:160px; }
+  .lever-console { max-height:175px; }
+  .lc-output { max-height:112px; }
+  .status-bar {
+    min-height:34px;
+    padding:4px 7px;
+    overflow-x:auto;
+    flex:none;
+  }
+  .ticker-area { min-width:280px; }
+  .sb-right { gap:9px; }
+  #live-watermark { font-size:25px; letter-spacing:2px; }
+  #live-pill {
+    top:auto;
+    right:max(10px, env(safe-area-inset-right));
+    bottom:max(10px, env(safe-area-inset-bottom));
+    font-size:7px;
+    z-index:9994;
+  }
+  #outage-banner { flex-wrap:wrap; gap:4px; padding:7px 10px; }
+  .outage-title { font-size:9px; letter-spacing:1px; }
+  .boot-terminal { width:calc(100vw - 24px); padding:20px 16px; }
+  .boot-header { font-size:12px; letter-spacing:1.5px; }
+  .boot-lines { min-height:150px; font-size:9px; }
+}
+
+@media (max-width: 430px) {
+  .hdr-telemetry .tel:nth-child(4) { display:none; }
+  .workspace > .panel { height:76dvh; }
+  .workspace > .panel--center { height:88dvh; }
+  .panel-title { letter-spacing:1px; }
+}
 </style>
 </head>
 <body>
@@ -1060,7 +1225,15 @@ body {
   <header class="hdr">
     <div class="hdr-brand">
       <div class="hdr-logo">CAELUS OS</div>
-      <div class="hdr-sub">// UNIVERSAL UI v3.0 · SHADOW-MESH ACTIVE · CAUSAL ENGINE</div>
+      <div class="hdr-sub">// UNIVERSAL UI v3.0 · DETERMINISTIC CAUSAL ENGINE</div>
+    </div>
+
+    <div class="scenario-switcher" aria-label="Senaryo seçimi">
+      <label for="scenario-select">Senaryo</label>
+      <select id="scenario-select" disabled>
+        <option>Motor hazırlanıyor…</option>
+      </select>
+      <button id="scenario-load" type="button" disabled>YÜKLE</button>
     </div>
 
     <div class="hdr-badges">
@@ -1306,7 +1479,7 @@ body {
             <div class="gauge-stats">
               <div class="g-stat"><div class="g-stat-label">Risk Seviyesi</div><div class="g-stat-val" id="g-risk">NÖTR</div></div>
               <div class="g-stat"><div class="g-stat-label">Gecikme Tahmini</div><div class="g-stat-val" id="g-delay">0.0 SAAT</div></div>
-              <div class="g-stat"><div class="g-stat-label">OTP Durumu</div><div class="g-stat-val" id="g-otp">AKTİF</div></div>
+              <div class="g-stat"><div class="g-stat-label" id="g-otp-label">OTP Durumu</div><div class="g-stat-val" id="g-otp">AKTİF</div></div>
               <div class="g-stat"><div class="g-stat-label">Çarpan</div><div class="g-stat-val" id="g-mult">1.00×</div></div>
             </div>
           </div>
@@ -1345,8 +1518,8 @@ body {
   <footer class="status-bar">
     <div class="sb-badges">
       <div class="sb-badge sb-badge--ok">KAPALI DEVRE</div>
-      <div class="sb-badge sb-badge--ok">AES-256-CBC</div>
-      <div class="sb-badge sb-badge--ok">ED25519</div>
+      <div class="sb-badge sb-badge--ok" id="sb-crypto">AES-256-CBC</div>
+      <div class="sb-badge sb-badge--ok" id="sb-signature">ED25519</div>
       <div class="sb-badge" id="sb-threat" style="color:var(--green);border-color:rgba(74,222,128,.3);">RİSK: NÖTR</div>
     </div>
     <div class="ticker-area">

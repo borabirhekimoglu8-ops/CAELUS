@@ -1,9 +1,11 @@
 /**
  * CAELUS OS — Universal Causal Interface v3.0 (Vanilla JS, Zero Dependencies)
  *
- * SIMULATION NOTE: All metrics, telemetry and analysis reports are illustrative
- * demo data generated locally. This interface is NOT connected live to the
- * C++/Rust CAELUS engine binary. All figures are sample data.
+ * Runtime modes:
+ * - Embedded WebAssembly: the real deterministic caelus_core runs in-browser.
+ * - WebSocket bridge: the desktop C++/Rust host drives the same event surface.
+ * - No engine: the interface stays explicitly offline and never fabricates a
+ *   decision report.
  *
  * Security: user scenario text is read only via .toLowerCase()/.includes()
  * for keyword routing — it is NEVER interpolated into innerHTML.
@@ -12,6 +14,8 @@
  */
 
 'use strict';
+
+const IS_STANDALONE = Boolean(window.CAELUS_WASM_B64 && window.CAELUS_SCENARIOS);
 
 /* ═══════════════════════════════════════════════════════════════
    CONSTANTS & CONFIG
@@ -82,6 +86,7 @@ const state = {
   causalEdges:       [],
   activeLeftTab:     'mesh',
   ctScrollOffset:    0,     // crisis timeline horizontal scroll offset
+  engineLevers:      [],
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -99,6 +104,7 @@ const el = {
   hdrMesh:        $('hdr-mesh'),
   hdrThreat:      $('hdr-threat'),
   hdrMode:        $('hdr-mode'),
+  hdrEnclave:     $('hdr-enclave'),
   sbThreat:       $('sb-threat'),
 
   meshCanvas:     $('mesh-canvas'),
@@ -132,6 +138,7 @@ const el = {
   gRisk:          $('g-risk'),
   gDelay:         $('g-delay'),
   gOtp:           $('g-otp'),
+  gOtpLabel:      $('g-otp-label'),
   gMult:          $('g-mult'),
   otpTimeline:    $('otp-timeline'),
 
@@ -140,6 +147,8 @@ const el = {
   sbSession:      $('sb-session'),
   sbPkts:         $('sb-pkts'),
   sbReports:      $('sb-reports'),
+  sbCrypto:       $('sb-crypto'),
+  sbSignature:    $('sb-signature'),
   monitorBadge:   $('monitor-badge'),
 
   /* ── v3.0 new elements ── */
@@ -173,6 +182,9 @@ const el = {
 
   pluginList:     $('plugin-list'),
   pluginNoneMsg:  $('plugin-none-msg'),
+
+  scenarioSelect: $('scenario-select'),
+  scenarioLoad:   $('scenario-load'),
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -437,14 +449,18 @@ el.audioToggle.addEventListener('change', e => {
 /* ═══════════════════════════════════════════════════════════════
    BOOT SEQUENCE
    ═══════════════════════════════════════════════════════════════ */
-const BOOT_LINES = [
-  { delay: 0,    text: '[AES]  Self-Test (FIPS-197 KAT)..............', suffix: ' PASS', cls: 'ok' },
-  { delay: 320,  text: '[ID]   ED25519 caelus_identity.key............', suffix: ' LOADED', cls: 'ok' },
-  { delay: 600,  text: '[OTP]  BLAKE3 Slot Manifest....................',  suffix: ' ACTIVE', cls: 'ok' },
-  { delay: 860,  text: '[NET]  Shadow-Mesh 224.0.0.251:47808..........', suffix: ' BOUND', cls: 'ok' },
-  { delay: 1120, text: '[CPU]  Causal Engine UNIVERSAL_BASELINE.....', suffix: ' NOMINAL', cls: 'ok' },
-  { delay: 1400, text: '[SAT]  OR-Tools CP-SAT Engine..................', suffix: ' STANDBY', cls: 'warn' },
-  { delay: 1660, text: '[UI]   Command Center v3.0....................', suffix: ' READY', cls: 'ok' },
+const BOOT_LINES = IS_STANDALONE ? [
+  { delay: 0,    text: '[WASM] Tarayıcı-içi çekirdek...................', suffix: ' LOADING', cls: 'ok' },
+  { delay: 280,  text: '[CORE] Sabit-nokta nedensel motor..............', suffix: ' READY', cls: 'ok' },
+  { delay: 560,  text: '[PACK] CI doğrulamalı senaryo paketi...........', suffix: ' READY', cls: 'ok' },
+  { delay: 840,  text: '[NET]  Dış ağ / Shadow-Mesh.....................', suffix: ' DISABLED', cls: 'warn' },
+  { delay: 1120, text: '[HOST] Plugin ve cihaz anahtarı.................', suffix: ' DESKTOP', cls: 'warn' },
+  { delay: 1400, text: '[UI]   iPhone Command Center....................', suffix: ' READY', cls: 'ok' },
+] : [
+  { delay: 0,   text: '[UI]   Command Center...........................', suffix: ' READY', cls: 'ok' },
+  { delay: 300, text: '[HOST] C++/Rust motor köprüsü...................', suffix: ' WAITING', cls: 'warn' },
+  { delay: 600, text: '[PACK] İmzalı senaryo...........................', suffix: ' WAITING', cls: 'warn' },
+  { delay: 900, text: '[NET]  Shadow-Mesh..............................', suffix: ' WAITING', cls: 'warn' },
 ];
 
 function runBoot() {
@@ -466,7 +482,9 @@ function runBoot() {
   });
 
   setTimeout(() => {
-    el.bootFinal.textContent = '▶ ENTERING SECURE OPERATIONAL MODE...';
+    el.bootFinal.textContent = IS_STANDALONE
+      ? '▶ STARTING LOCAL DETERMINISTIC ENGINE...'
+      : '▶ WAITING FOR TRUSTED ENGINE HOST...';
     el.bootFinal.style.opacity = '1';
     SFX.confirm();
   }, maxDelay + 500);
@@ -826,7 +844,7 @@ function initLeverageBars() {
   el.leverageList.innerHTML = '';
   LEV_CONFIG.forEach(cfg => {
     const v = state.metrics[cfg.key];
-    state.history[cfg.key] = Array.from({length:CFG.SPARKLINE_POINTS}, ()=> v + (Math.random()-0.5)*6);
+    state.history[cfg.key] = Array.from({length:CFG.SPARKLINE_POINTS}, () => v);
 
     const item = document.createElement('div');
     item.className = 'lev-item';
@@ -1041,7 +1059,10 @@ function updateGauge(mu) {
   el.gDelay.textContent = delay.toFixed(1) + ' SAAT';
   el.gDelay.style.color = strokeColor;
 
-  if (v >= 2.30) {
+  if (IS_STANDALONE) {
+    el.gOtp.textContent = 'HOST';
+    el.gOtp.style.color = 'var(--text-3)';
+  } else if (v >= 2.30) {
     el.gOtp.textContent = 'TEHDİT';
     el.gOtp.style.color = '#cf6679';
   } else {
@@ -1719,7 +1740,7 @@ function initLeverConsole() {
   }
 
   // Startup hints
-  addLcOutput('LEVER KONSOL hazır. Komutlar: status, list levers, lever <id>, tick <n>, snapshot --json, clear_irrecoverable', 'hint');
+  addLcOutput('LEVER KONSOL hazır. Komutlar: status, list levers, lever <id>, tick <n>, snapshot --json, scenario <id>, reset', 'hint');
 }
 
 function handleLcCommand(cmd) {
@@ -1808,8 +1829,8 @@ function updateScenarioCard() {
   // Signature badge
   const sig = (meta.sigStatus || '').toUpperCase();
   if (el.scSigBadge) {
-    if (sig === 'VERIFIED' || sig.includes('ED25519')) {
-      el.scSigBadge.textContent  = '✓ İMZALI';
+    if (sig === 'VERIFIED' || sig.includes('ED25519') || sig === 'CI-VERIFIED') {
+      el.scSigBadge.textContent  = sig === 'CI-VERIFIED' ? '✓ CI DOĞRULADI' : '✓ İMZALI';
       el.scSigBadge.className    = 'sc-sig-badge sc-sig--verified';
     } else if (sig.includes('SELF_SIGNED') || sig.includes('DEV')) {
       el.scSigBadge.textContent  = '⚠ DEV BYPASS';
@@ -1868,6 +1889,13 @@ function updatePluginPanel(plugins) {
    ═══════════════════════════════════════════════════════════════ */
 function initOTPTimeline() {
   state.otpSlots = [];
+  if (IS_STANDALONE) {
+    el.otpTimeline.textContent = 'Tarayıcı profilinde kapalı · Desktop host gerektirir';
+    el.otpTimeline.style.color = 'var(--text-3)';
+    el.otpTimeline.style.fontSize = '8.5px';
+    if (el.gOtp) el.gOtp.textContent = 'HOST';
+    return;
+  }
   const now = Math.floor(Date.now()/1000);
   for (let i = 0; i < CFG.OTP_SLOTS; i++) {
     state.otpSlots.push({
@@ -1944,7 +1972,13 @@ function tickOTP() {
    INTEL TICKER
    ═══════════════════════════════════════════════════════════════ */
 function initTicker() {
-  const doubled = INTEL_FEED.concat(INTEL_FEED).join('  ·  ');
+  const feed = IS_STANDALONE ? [
+    'TARAYICI-İÇİ WASM ÇEKİRDEĞİ — SUNUCUSUZ VE YEREL',
+    'SENARYO PAKETLERİ CI ÜRETİM KAPISINDAN GEÇEREK BUNDLE EDİLDİ',
+    'TICK · LEVER · SNAPSHOT · CANLI NEDENSEL GRAF',
+    'AĞ / PLUGIN / CİHAZ KİMLİĞİ İŞLEVLERİ DESKTOP HOST GEREKTİRİR',
+  ] : INTEL_FEED;
+  const doubled = feed.concat(feed).join('  ·  ');
   el.tickerText.textContent = doubled;
 }
 
@@ -2325,16 +2359,20 @@ const LocalEngine = (function () {
     load(id) {
       const json = (window.CAELUS_SCENARIOS || {})[id];
       if (!json || !ex) return false;
-      scenarioId = id;
       const rc = ex.cae_load(writeBuf(json));
       if (rc !== 0) { addLcOutput('WASM motor: senaryo yüklenemedi', 'err'); return false; }
+      scenarioId = id;
+      state.tickHistory = [];
+      state.engineLevers = [];
       let sector = 'UNIVERSAL';
       try { sector = (JSON.parse(json).sector) || sector; } catch(_) {}
-      feed({ type:'scenario_loaded', scenario_id: id, sector, sig_status:'BUNDLED' });
+      feed({ type:'scenario_loaded', scenario_id: id, sector, sig_status:'CI-VERIFIED' });
       pushSnapshotAndState();
       pushLevers();
       setLiveStatus('live');
-      addCryptoLog('ok', `YEREL MOTOR (WASM): ${id} yüklendi — sunucusuz canlı simülasyon`);
+      if (el.scenarioSelect) el.scenarioSelect.value = id;
+      addCryptoLog('ok', `YEREL MOTOR (WASM): ${id} yüklendi — CI doğrulamalı paket`);
+      addLcOutput(`Aktif senaryo: ${id}`, 'ok');
       return true;
     },
     // WS komut arayüzüyle aynı: "tick N" | "lever X" | "status" | "list levers"
@@ -2343,7 +2381,7 @@ const LocalEngine = (function () {
       const parts = cmd.trim().split(/\s+/);
       const c = (parts[0] || '').toLowerCase();
       if (c === 'tick') {
-        let n = parseInt(parts[1] || '1', 10); if (!(n > 0)) n = 1; n = Math.min(n, 100000);
+        let n = parseInt(parts[1] || '1', 10); if (!(n > 0)) n = 1; n = Math.min(n, 10000);
         ex.cae_tick(n);
         const snap = pushSnapshotAndState();
         addLcOutput(`→ yerel motor: ${n} tick (t=${snap.tick}, sürtünme=${snap.clamped_friction.toFixed(2)}×)`, 'ok');
@@ -2356,6 +2394,17 @@ const LocalEngine = (function () {
         pushSnapshotAndState();
       } else if (cmd.trim().toLowerCase() === 'list levers' || c === 'list') {
         pushLevers();
+      } else if (c === 'scenario' || c === 'load') {
+        const requested = parts.slice(1).join(' ');
+        const found = this.scenarios().find(id => id.toLowerCase() === requested.toLowerCase());
+        if (!found) {
+          addLcOutput(`yerel motor: senaryo bulunamadı "${requested}"`, 'err');
+          addLcOutput(`mevcut: ${this.scenarios().join(', ')}`, 'info');
+          return false;
+        }
+        return this.load(found);
+      } else if (c === 'reset') {
+        return scenarioId ? this.load(scenarioId) : false;
       } else {
         addLcOutput(`yerel motor: bilinmeyen komut "${cmd}"`, 'err');
       }
@@ -2369,8 +2418,20 @@ async function startLocalEngine() {
   if (!ok) return false;
   const ids = LocalEngine.scenarios();
   const preferred = ids.find(x => /BS-01/i.test(x)) || ids[0];
+  if (el.scenarioSelect) {
+    el.scenarioSelect.innerHTML = '';
+    ids.forEach(id => {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = id;
+      el.scenarioSelect.appendChild(option);
+    });
+    el.scenarioSelect.disabled = false;
+  }
+  if (el.scenarioLoad) el.scenarioLoad.disabled = false;
   addLcOutput(`Yerel WASM motoru hazır — sunucu/ağ gerekmez. Senaryolar: ${ids.join(', ')}`, 'ok');
   LocalEngine.load(preferred);
+  switchLeftTab('causal');
   return true;
 }
 
@@ -2676,13 +2737,27 @@ function initUI() {
   // Throughput gauge — initialize with ratio=1.0
   applyThroughputGauge(1.0, false);
 
-  // Initial crypto log burst
-  addCryptoLog('ok',   'AES-256-CBC KAT (FIPS-197): PASS');
-  addCryptoLog('ok',   'ED25519 caelus_identity.key yüklendi');
-  addCryptoLog('ok',   'BLAKE3 OTP manifest: 4 slot aktif');
-  addCryptoLog('ok',   'Shadow-Mesh UDP 224.0.0.251:47808 bağlandı');
-  addCryptoLog('info', 'Causal Engine: UNIVERSAL_BASELINE profili nominal');
-  addCryptoLog('info', 'Evrensel Causal UI v3.0 hazır');
+  // Yalnız doğrulanabilir runtime durumunu yaz. Tarayıcı modunda cihaz kimliği,
+  // mesh veya AES host işlevleri çalışıyormuş gibi gösterilmez.
+  if (IS_STANDALONE) {
+    if (el.hdrEnclave) el.hdrEnclave.textContent = 'WASM LOCAL';
+    if (el.gOtpLabel) el.gOtpLabel.textContent = 'Host Kripto';
+    if (el.sbCrypto) {
+      el.sbCrypto.textContent = 'HOST KRİPTO';
+      el.sbCrypto.className = 'sb-badge sb-badge--warn';
+    }
+    if (el.sbSignature) el.sbSignature.textContent = 'CI İMZALI PACK';
+    if (el.pluginNoneMsg) el.pluginNoneMsg.textContent = 'Tarayıcı profilinde kapalı · Desktop host gerektirir';
+    if (el.meshBadge) {
+      el.meshBadge.textContent = 'HOST ONLY';
+      el.meshBadge.className = 'panel-badge panel-badge--warn';
+    }
+    addCryptoLog('info', 'WASM runtime hazırlanıyor — tüm hesaplama bu cihazda');
+    addCryptoLog('ok', 'Dağıtım paketi: CI doğrulamalı imzalı senaryo seti');
+    addCryptoLog('warn', 'Mesh / plugin / cihaz anahtarı: tarayıcı profilinde kapalı');
+  } else {
+    addCryptoLog('info', 'Causal UI hazır — canlı motor bağlantısı bekleniyor');
+  }
 
   // Leverage bars
   initLeverageBars();
@@ -2710,6 +2785,18 @@ function initUI() {
   // Lever console (P1-B)
   initLeverConsole();
 
+  if (el.scenarioLoad) {
+    el.scenarioLoad.addEventListener('click', () => {
+      if (!LocalEngine.ready || !el.scenarioSelect) return;
+      LocalEngine.load(el.scenarioSelect.value);
+    });
+  }
+  if (el.scenarioSelect) {
+    el.scenarioSelect.addEventListener('change', () => {
+      if (LocalEngine.ready) LocalEngine.load(el.scenarioSelect.value);
+    });
+  }
+
   // Scenario card (P1-C)
   updateScenarioCard();
 
@@ -2728,12 +2815,8 @@ function initUI() {
     connectLiveBridge();
   }
 
-  setInterval(() => {
-    const ev = CRYPTO_EVENTS[Math.floor(Math.random()*CRYPTO_EVENTS.length)];
-    ev();
-  }, CFG.PKT_EMIT_MS);
-
-  setInterval(tickOTP, 5000);
+  // Gerçek host olayları handleEngineEvent üzerinden gelir. Rastgele kripto
+  // kayıtları üretmek güvence arayüzünde yanıltıcı olduğundan kaldırıldı.
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2743,4 +2826,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateClocks, 1000);
   updateClocks();
   runBoot();
+  if ('serviceWorker' in navigator && /^https?:$/.test(window.location.protocol)) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
 });
