@@ -634,36 +634,55 @@ public:
         uint32_t engine_version,
         uint32_t scenario_schema) noexcept;
 
+    /**
+     * load_from_memory — verify a model package supplied as raw buffers.
+     *
+     * Identical verification chain to the directory loader (signature over
+     * the exact raw bytes before any JSON parsing, pinned trust anchor,
+     * manifest compatibility, weights-header validation).  Used by the
+     * mobile bridge where packages arrive through security-scoped document
+     * imports instead of a filesystem directory.
+     */
+    static NeuralModelPackage load_from_memory(
+        const std::vector<uint8_t>& manifest_bytes,
+        std::vector<uint8_t> weights_bytes,
+        const std::vector<uint8_t>& signature_bytes,
+        uint32_t engine_version,
+        uint32_t scenario_schema) noexcept;
+
 private:
     static NeuralModelPackage load_with_key(
         const std::string& directory,
         const std::array<uint8_t, 32>& trusted_public_key,
         uint32_t engine_version,
         uint32_t scenario_schema) noexcept;
+
+    static NeuralModelPackage verify_buffers(
+        const std::vector<uint8_t>& manifest_bytes,
+        std::vector<uint8_t> weights_bytes,
+        const std::vector<uint8_t>& signature_bytes,
+        const std::array<uint8_t, 32>& trusted_public_key,
+        uint32_t engine_version,
+        uint32_t scenario_schema) noexcept;
 };
 
-inline NeuralModelPackage NeuralModelLoader::load_with_key(
-    const std::string& directory,
+inline NeuralModelPackage NeuralModelLoader::verify_buffers(
+    const std::vector<uint8_t>& manifest_bytes,
+    std::vector<uint8_t> weights_bytes,
+    const std::vector<uint8_t>& signature_bytes,
     const std::array<uint8_t, 32>& trusted_public_key,
     uint32_t engine_version,
     uint32_t scenario_schema) noexcept {
     NeuralModelPackage package;
     try {
-        std::vector<uint8_t> manifest_bytes;
-        std::vector<uint8_t> signature_bytes;
-        const std::string separator =
-            (!directory.empty() && (directory.back() == '/' || directory.back() == '\\'))
-                ? "" : "/";
-        if (!model_detail::read_file_bounded(directory + separator + "manifest.json",
-                                              kMaxManifestBytesV1, manifest_bytes) ||
-            !model_detail::read_file_bounded(directory + separator + "weights.bin",
-                                              kMaxWeightsBytesV1, package.weights_) ||
-            !model_detail::read_file_bounded(directory + separator + "model.sig",
-                                              512u, signature_bytes)) {
+        if (manifest_bytes.empty() || manifest_bytes.size() > kMaxManifestBytesV1 ||
+            weights_bytes.empty() || weights_bytes.size() > kMaxWeightsBytesV1 ||
+            signature_bytes.empty() || signature_bytes.size() > 512u) {
             package.status_ = ModelLoadStatus::Unavailable;
-            package.error_ = "model package files unavailable, empty, or over size limit";
+            package.error_ = "model package buffers empty or over size limit";
             return package;
         }
+        package.weights_ = std::move(weights_bytes);
         // Authenticate the exact raw bytes before invoking the JSON parser.
         // This keeps unauthenticated manifests off the recursive parser path.
         std::array<uint8_t, 64> signature{};
@@ -740,6 +759,58 @@ inline NeuralModelPackage NeuralModelLoader::load_with_key(
         package.error_ = "exception while loading model package";
         return package;
     }
+}
+
+inline NeuralModelPackage NeuralModelLoader::load_with_key(
+    const std::string& directory,
+    const std::array<uint8_t, 32>& trusted_public_key,
+    uint32_t engine_version,
+    uint32_t scenario_schema) noexcept {
+    try {
+        std::vector<uint8_t> manifest_bytes;
+        std::vector<uint8_t> weights_bytes;
+        std::vector<uint8_t> signature_bytes;
+        const std::string separator =
+            (!directory.empty() && (directory.back() == '/' || directory.back() == '\\'))
+                ? "" : "/";
+        if (!model_detail::read_file_bounded(directory + separator + "manifest.json",
+                                              kMaxManifestBytesV1, manifest_bytes) ||
+            !model_detail::read_file_bounded(directory + separator + "weights.bin",
+                                              kMaxWeightsBytesV1, weights_bytes) ||
+            !model_detail::read_file_bounded(directory + separator + "model.sig",
+                                              512u, signature_bytes)) {
+            NeuralModelPackage package;
+            package.status_ = ModelLoadStatus::Unavailable;
+            package.error_ = "model package files unavailable, empty, or over size limit";
+            return package;
+        }
+        return verify_buffers(
+            manifest_bytes, std::move(weights_bytes), signature_bytes,
+            trusted_public_key, engine_version, scenario_schema);
+    } catch (...) {
+        NeuralModelPackage package;
+        package.status_ = ModelLoadStatus::IoError;
+        package.error_ = "exception while loading model package";
+        return package;
+    }
+}
+
+inline NeuralModelPackage NeuralModelLoader::load_from_memory(
+    const std::vector<uint8_t>& manifest_bytes,
+    std::vector<uint8_t> weights_bytes,
+    const std::vector<uint8_t>& signature_bytes,
+    uint32_t engine_version,
+    uint32_t scenario_schema) noexcept {
+    std::array<uint8_t, 32> trusted_public_key{};
+    if (!default_trusted_neural_pubkey(trusted_public_key)) {
+        NeuralModelPackage package;
+        package.status_ = ModelLoadStatus::UnsupportedManifest;
+        package.error_ = "compiled neural trust anchor is malformed";
+        return package;
+    }
+    return verify_buffers(
+        manifest_bytes, std::move(weights_bytes), signature_bytes,
+        trusted_public_key, engine_version, scenario_schema);
 }
 
 inline NeuralModelPackage NeuralModelLoader::load(

@@ -530,43 +530,35 @@ public:
     // ── Yükleme ─────────────────────────────────────────────────────────────
 
     bool load(const std::string& path) {
-        loaded = false;
-        schema_version.clear();
-        id.clear();
-        blackswan_class.clear();
-        sector.clear();
-        min_caelus_engine.clear();
-        signature.clear();
-        sig_status.clear();
-        sig_scheme.clear();
-        title.clear();
-        region.clear();
-        tick_minutes = 15;
-        horizon_hours = 240;
-        nodes.clear();
-        edges.clear();
-        loops.clear();
-        levers.clear();
-        hysteresis.clear();
-        risk_profile = caelus::intel::OperationalRiskProfile{};
-        intel_sequence.clear();
-        verified_canonical_payload_.clear();
-
         // Dosya oku
         std::ifstream f(path, std::ios::binary);
         if (!f) {
+            reset_fields();
             std::cout << "[SCENARIO] Paket bulunamadı: " << path << "\n";
             return false;
         }
         std::ostringstream buf;
         buf << f.rdbuf();
-        std::string content = buf.str();
+        return load_from_memory(buf.str(), path);
+    }
+
+    /**
+     * load_from_memory — dosya sistemi yerine bellekteki JSON içeriğinden yükle.
+     *
+     * Aynı imza gate'i, aynı canonical payload, aynı ayrıştırma yolu.
+     * Mobil köprü (iOS güvenlik-kapsamlı içe aktarma) ve testler bu yolu
+     * kullanır; masaüstü load(path) yalnızca dosyayı okuyup buraya devreder.
+     * origin_label sadece log/hata mesajlarında görünür.
+     */
+    bool load_from_memory(const std::string& content,
+                          const std::string& origin_label) {
+        reset_fields();
 
         // Ayrıştır
         JsonParser parser(content.data(), content.size());
         JsonVal root;
         if (!parser.parse(root) || root.type != JsonVal::Obj) {
-            std::cerr << "[SCENARIO] JSON ayrıştırma hatası: " << path << "\n";
+            std::cerr << "[SCENARIO] JSON ayrıştırma hatası: " << origin_label << "\n";
             return false;
         }
 
@@ -579,7 +571,7 @@ public:
         signature         = root["signature"].as_s();
 
         if (!verify_signature_gate(root, signature, sig_status, sig_scheme)) {
-            std::cerr << "[SCENARIO] Paket imzası reddedildi: " << path << "\n";
+            std::cerr << "[SCENARIO] Paket imzası reddedildi: " << origin_label << "\n";
             return false;
         }
         verified_canonical_payload_ = canonical_signed_payload(root);
@@ -757,6 +749,31 @@ public:
 
 private:
     std::string verified_canonical_payload_;
+
+    /** load() / load_from_memory() ortak ön-temizliği. */
+    void reset_fields() {
+        loaded = false;
+        schema_version.clear();
+        id.clear();
+        blackswan_class.clear();
+        sector.clear();
+        min_caelus_engine.clear();
+        signature.clear();
+        sig_status.clear();
+        sig_scheme.clear();
+        title.clear();
+        region.clear();
+        tick_minutes = 15;
+        horizon_hours = 240;
+        nodes.clear();
+        edges.clear();
+        loops.clear();
+        levers.clear();
+        hysteresis.clear();
+        risk_profile = caelus::intel::OperationalRiskProfile{};
+        intel_sequence.clear();
+        verified_canonical_payload_.clear();
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // CAELUS_TRUSTED_PUBKEY — Pinlenmiş üretim imzalama pubkey'i (32 bayt).

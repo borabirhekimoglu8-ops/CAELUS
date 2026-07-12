@@ -145,6 +145,27 @@ public:
         }
     }
 
+    /**
+     * configure_with_package — configure using an already-verified package.
+     *
+     * The package can only reach ModelLoadStatus::Loaded through the
+     * NeuralModelLoader verification chain (private construction), so this
+     * grants no trust-bypass: an unverified package simply keeps the
+     * controller in the rejected/fallback path exactly like configure().
+     * Used by hosts that receive package bytes instead of a directory
+     * (mobile bridge document imports).
+     */
+    void configure_with_package(
+        uint32_t mode,
+        NeuralModelPackage package,
+        const std::string& scenario_id,
+        const std::array<uint8_t, CAELUS_NEURAL_HASH_BYTES_V1>& scenario_hash) {
+        configure(mode, std::string(), scenario_id, scenario_hash);
+        if (mode == CAELUS_NEURAL_MODE_ASSURANCE) {
+            model_ = std::move(package);
+        }
+    }
+
     bool enabled() const noexcept {
         return policy_.mode != CAELUS_NEURAL_MODE_SYMBOLIC_ONLY;
     }

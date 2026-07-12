@@ -28,6 +28,7 @@
 #include "scenario_pack.h"
 #include "audit_log.h"
 #include "neural_host.h"
+#include "neural_tick_runner.h"
 
 // ─── Cross-platform env-var setter (for --det-mode seed injection) ───────────
 static inline void caelus_setenv(const char* name, const char* value) {
@@ -431,77 +432,27 @@ static bool ProcessNeuralTick(
     bool det_mode) {
     if (!controller.enabled()) return true;
 
-    auto evidence = controller.evaluate(engine, !det_mode);
-    const std::string inference_event =
-        caelus::neural::neural_inference_audit_event(
-            controller, evidence, audit_session_id);
-    if (!g_audit.is_open() || !g_audit.append(inference_event)) {
-        std::cerr << "[NEURAL] AUDIT_FAILURE: inference evidence could not be "
-                     "committed; switching to symbolic-only fallback.\n";
-        controller.mark_symbolic_fallback(
-            evidence, "inference audit event could not be committed");
-        controller.force_symbolic_fallback();
-        g_emitter.emit(caelus::neural::neural_war_room_event(
-            controller, evidence));
+    caelus::neural::NeuralTickEvidenceV1 evidence;
+    const auto outcome = caelus::neural::run_neural_tick(
+        controller, engine, g_audit, audit_session_id, !det_mode,
+        [](const std::string& event_json) { g_emitter.emit(event_json); },
+        [](const std::string& message) {
+            std::cerr << "[NEURAL] " << message << "\n";
+        },
+        &evidence);
+
+    if (outcome == caelus::neural::NeuralTickOutcome::FatalRollbackFailed) {
+        std::cerr << "[NEURAL] FATAL: symbolic pre-state could not be "
+                     "restored; fail-stop prevents execution with "
+                     "unaudited neural mutation.\n";
+        if (g_audit.is_open()) g_audit.seal();
+        g_emitter.stop();
+        std::abort();
+    }
+    if (outcome != caelus::neural::NeuralTickOutcome::Committed) {
         return false;
     }
 
-    if (evidence.authority_record_required) {
-        if (!controller.commit_authority(engine, evidence)) {
-            std::cerr << "[NEURAL] Symbolic authority rejected the bounded "
-                         "transaction; neural changes were not applied.\n";
-            const std::string rejected_event =
-                caelus::neural::neural_authority_resolution_audit_event(
-                    controller, evidence, audit_session_id,
-                    "NEURAL_AUTHORITY_REJECTED_V1");
-            if (rejected_event.empty() || !g_audit.append(rejected_event)) {
-                std::cerr << "[NEURAL] AUDIT_FAILURE: authority rejection "
-                             "resolution could not be committed.\n";
-            }
-            controller.force_symbolic_fallback();
-            g_emitter.emit(caelus::neural::neural_war_room_event(
-                controller, evidence));
-            return false;
-        }
-        const std::string authority_event =
-            caelus::neural::neural_authority_audit_event(
-                controller, evidence, audit_session_id);
-        if (authority_event.empty() || !g_audit.append(authority_event)) {
-            const bool rolled_back =
-                controller.rollback_authority(engine, evidence);
-            controller.mark_symbolic_fallback(
-                evidence,
-                rolled_back
-                    ? "authority audit failed; bounded transaction rolled back"
-                    : "authority audit failed and symbolic rollback failed");
-            const std::string rollback_event =
-                caelus::neural::neural_authority_resolution_audit_event(
-                    controller, evidence, audit_session_id,
-                    "NEURAL_AUTHORITY_ROLLBACK_V1");
-            const bool rollback_audited =
-                !rollback_event.empty() && g_audit.append(rollback_event);
-            std::cerr << "[NEURAL] AUDIT_FAILURE: authority event could not be "
-                         "committed; bounded trust transaction "
-                      << (rolled_back ? "rolled back" : "ROLLBACK FAILED")
-                      << "; rollback evidence "
-                      << (rollback_audited ? "committed" : "NOT COMMITTED")
-                      << ". Symbolic-only fallback is now active.\n";
-            controller.force_symbolic_fallback();
-            g_emitter.emit(caelus::neural::neural_war_room_event(
-                controller, evidence));
-            if (!rolled_back) {
-                std::cerr << "[NEURAL] FATAL: symbolic pre-state could not be "
-                             "restored; fail-stop prevents execution with "
-                             "unaudited neural mutation.\n";
-                if (g_audit.is_open()) g_audit.seal();
-                g_emitter.stop();
-                std::abort();
-            }
-            return false;
-        }
-    }
-
-    g_emitter.emit(caelus::neural::neural_war_room_event(controller, evidence));
     std::cout << "[NEURAL] tick=" << evidence.tick
               << " model=" << caelus::neural::model_load_status_name(
                      controller.model().status())

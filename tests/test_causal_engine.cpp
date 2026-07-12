@@ -1161,3 +1161,252 @@ TEST_CASE("JsonParser strictly handles unicode escapes") {
         CHECK(!parser.parse(root));
     }
 }
+
+// ─── Shared-core mobile enablers ─────────────────────────────────────────────
+
+namespace {
+
+// Small deterministic crisis graph used by the checkpoint round-trip tests.
+CausalEngine build_checkpoint_fixture_engine() {
+    CausalEngine engine;
+    engine.set_prng_seed(UINT64_C(0xCAE105DEADBEEF00));
+
+    auto mk_node = [&](const char* id, NodeKind kind, double state,
+                       double weight, double trust, int32_t deadline) {
+        Node n;
+        n.id = id;
+        n.kind = kind;
+        n.capacity_fp = FP_ONE;
+        n.state_fp = d_to_fp(state);
+        n.reported_state_fp = d_to_fp(state * 0.5);
+        n.weight_fp = d_to_fp(weight);
+        n.trust_fp = d_to_fp(trust);
+        n.deadline_tick = deadline;
+        engine.add_node(std::move(n));
+    };
+    mk_node("Gate_A", NodeKind::Gate, 0.60, 0.30, 0.90, -1);
+    mk_node("Actor_B", NodeKind::Service, 0.40, 0.35, 0.80, 24);
+    mk_node("Queue_C", NodeKind::Queue, 0.20, 0.20, 1.00, -1);
+
+    Edge e;
+    e.from = "Gate_A";
+    e.to = "Actor_B";
+    e.multiplier_fp = d_to_fp(1.20);
+    engine.add_edge(e);
+    Edge agg;
+    agg.from = "Queue_C";
+    agg.to = "";
+    agg.multiplier_fp = d_to_fp(0.40);
+    engine.add_edge(agg);
+
+    FeedbackLoop loop;
+    loop.id = "FL-CHK";
+    loop.path = {"Gate_A", "Actor_B"};
+    loop.gain_fp = d_to_fp(1.25);
+    engine.add_loop(loop);
+
+    Lever lever;
+    lever.id = "LEVER_CHK";
+    lever.target = "Actor_B";
+    lever.success_p_fp = d_to_fp(0.75);
+    lever.cost_ticks = 2;
+    lever.lockout_ticks = 3;
+    lever.on_success.target_node_id = "Actor_B";
+    lever.on_success.state_delta_fp = d_to_fp(-0.20);
+    lever.on_failure.target_node_id = "Actor_B";
+    lever.on_failure.state_delta_fp = d_to_fp(0.05);
+    engine.add_lever(lever);
+
+    Hysteresis hyst;
+    hyst.id = "HYST_CHK";
+    hyst.threshold_tick = 6;
+    hyst.reversible = false;
+    hyst.permanent_loss_fp = d_to_fp(0.15);
+    engine.add_hysteresis(hyst);
+    return engine;
+}
+
+bool snapshots_equal(const EngineSnapshot& a, const EngineSnapshot& b) {
+    return a.tick == b.tick &&
+           a.raw_friction_fp == b.raw_friction_fp &&
+           a.clamped_friction_fp == b.clamped_friction_fp &&
+           a.regime_exceeded == b.regime_exceeded &&
+           a.any_deadline_missed == b.any_deadline_missed &&
+           a.any_hysteresis_flip == b.any_hysteresis_flip &&
+           a.outage_active == b.outage_active &&
+           a.throughput_ratio_fp == b.throughput_ratio_fp;
+}
+
+} // namespace
+
+TEST_CASE("engine state export/restore is a bit-exact resume point") {
+    CausalEngine original = build_checkpoint_fixture_engine();
+    (void)original.run_ticks(4);
+    (void)original.apply_lever("LEVER_CHK", UINT64_C(42));
+
+    const EngineStateV1 state = original.export_state();
+
+    CausalEngine restored;
+    REQUIRE(restored.restore_state(state));
+    CHECK(restored.current_tick() == original.current_tick());
+    CHECK(restored.friction_fp() == original.friction_fp());
+    CHECK(restored.outage_active() == original.outage_active());
+    CHECK(restored.regime_exceeded() == original.regime_exceeded());
+
+    // Both engines must evolve identically after the restore point,
+    // including lever RNG behaviour (prng_seed is part of the state).
+    for (int step = 0; step < 8; ++step) {
+        const auto snap_a = original.tick();
+        const auto snap_b = restored.tick();
+        CHECK(snapshots_equal(snap_a, snap_b));
+    }
+    const bool lever_a = original.apply_lever("LEVER_CHK");
+    const bool lever_b = restored.apply_lever("LEVER_CHK");
+    CHECK(lever_a == lever_b);
+    const auto final_a = original.tick();
+    const auto final_b = restored.tick();
+    CHECK(snapshots_equal(final_a, final_b));
+    REQUIRE(original.nodes().size() == restored.nodes().size());
+    for (size_t i = 0; i < original.nodes().size(); ++i) {
+        CHECK(original.nodes()[i].state_fp == restored.nodes()[i].state_fp);
+        CHECK(original.nodes()[i].reported_state_fp ==
+              restored.nodes()[i].reported_state_fp);
+        CHECK(original.nodes()[i].trust_fp == restored.nodes()[i].trust_fp);
+    }
+}
+
+TEST_CASE("engine restore_state rejects invariant-violating states") {
+    CausalEngine engine = build_checkpoint_fixture_engine();
+    (void)engine.run_ticks(2);
+    const EngineStateV1 good = engine.export_state();
+
+    {
+        EngineStateV1 bad = good;
+        bad.nodes[0].trust_fp = FP_ONE + 1;
+        CausalEngine target;
+        CHECK(!target.restore_state(bad));
+    }
+    {
+        EngineStateV1 bad = good;
+        bad.nodes[0].state_fp = bad.nodes[0].capacity_fp + 1;
+        CausalEngine target;
+        CHECK(!target.restore_state(bad));
+    }
+    {
+        EngineStateV1 bad = good;
+        bad.nodes[1].id = bad.nodes[0].id; // duplicate identifier
+        CausalEngine target;
+        CHECK(!target.restore_state(bad));
+    }
+    {
+        EngineStateV1 bad = good;
+        bad.levers[0].remaining_lockout = -1;
+        CausalEngine target;
+        CHECK(!target.restore_state(bad));
+    }
+    {
+        EngineStateV1 bad = good;
+        bad.nodes[0].reported_state_fp = -1;
+        CausalEngine target;
+        CHECK(!target.restore_state(bad));
+    }
+
+    // A rejected restore must leave the target untouched (still empty).
+    CausalEngine untouched;
+    EngineStateV1 bad = good;
+    bad.nodes[0].trust_fp = -1;
+    CHECK(!untouched.restore_state(bad));
+    CHECK(untouched.nodes().empty());
+
+    // And the unmodified export must always restore.
+    CausalEngine target;
+    CHECK(target.restore_state(good));
+}
+
+TEST_CASE("ScenarioPack load_from_memory matches the file loader") {
+    set_env_flag("CAELUS_ALLOW_DEV_SCENARIOS", false);
+    set_env_flag("CAELUS_TRUST_ANY_PUBKEY", false);
+    g_stub_ed25519_result = 1;
+
+    const std::string sig =
+        std::string("ed25519:") + kTrustedPubHex + ":" + kSigHex;
+    const std::string content = std::string("{\"signature\":\"") + sig + "\"," +
+        "\"schema_version\":\"2.0\",\"id\":\"MEM-01\"," +
+        "\"extended_causal_model\":{\"nodes\":[{\"id\":\"N1\"," +
+        "\"kind\":\"service\",\"capacity_fp\":1000000,\"state_fp\":250000," +
+        "\"weight_fp\":300000}],\"edges\":[],\"levers\":[" +
+        "{\"id\":\"L1\",\"target\":\"N1\",\"success_p_fp\":900000}]}," +
+        "\"v1_engine_bridge\":{\"intel_feed_sequence\":[" +
+        "{\"t_hour\":0,\"friction_coefficient\":0.5,\"crisis_level\":2," +
+        "\"memo\":\"mem\"}]}}";
+
+    caelus::ScenarioPack from_memory;
+    REQUIRE(from_memory.load_from_memory(content, "unit-test-buffer"));
+    CHECK(from_memory.loaded);
+    CHECK(from_memory.id == "MEM-01");
+    CHECK(from_memory.sig_status == "VERIFIED");
+    CHECK(from_memory.nodes.size() == 1);
+    CHECK(from_memory.levers.size() == 1);
+    CHECK(from_memory.intel_sequence.size() == 1);
+    CHECK(!from_memory.verified_canonical_payload().empty());
+
+    // The canonical signed payload must be identical to the static helper —
+    // this is the value the neural/audit commitments hash.
+    std::string expected_payload;
+    REQUIRE(caelus::ScenarioPack::canonical_signed_payload_from_json(
+        content, expected_payload));
+    CHECK(from_memory.verified_canonical_payload() == expected_payload);
+
+    // Rejection path: tampered signature math must fail closed.
+    g_stub_ed25519_result = 0;
+    caelus::ScenarioPack rejected;
+    CHECK(!rejected.load_from_memory(content, "unit-test-buffer"));
+    CHECK(!rejected.loaded);
+    g_stub_ed25519_result = 1;
+}
+
+TEST_CASE("neural model load_from_memory enforces the same trust chain") {
+    using namespace caelus::neural;
+    g_stub_ed25519_result = 1;
+
+    // Buffers that are over the size limit or empty are rejected before any
+    // signature parsing.
+    {
+        const std::vector<uint8_t> empty;
+        const std::vector<uint8_t> sig(64, 0x11);
+        auto package = NeuralModelLoader::load_from_memory(
+            empty, std::vector<uint8_t>{0x01}, sig,
+            kEngineVersionCode, kScenarioSchemaCode);
+        CHECK(!package.trusted());
+        CHECK(package.status() == ModelLoadStatus::Unavailable);
+    }
+
+    // Malformed signature container is rejected as SignatureMalformed.
+    {
+        const std::vector<uint8_t> manifest{'{', '}'};
+        const std::vector<uint8_t> weights{0x00, 0x01};
+        const std::vector<uint8_t> bad_sig{'z', 'z'};
+        auto package = NeuralModelLoader::load_from_memory(
+            manifest, weights, bad_sig,
+            kEngineVersionCode, kScenarioSchemaCode);
+        CHECK(!package.trusted());
+        CHECK(package.status() == ModelLoadStatus::SignatureMalformed);
+    }
+
+    // A signer that is not the pinned neural trust anchor is rejected even
+    // when the ed25519 math would pass (stub returns 1 here).
+    {
+        const std::vector<uint8_t> manifest{'{', '}'};
+        const std::vector<uint8_t> weights{0x00, 0x01};
+        // model.sig format: "ed25519:<pub_hex64>:<sig_hex128>\n"
+        const std::string sig_text =
+            std::string("ed25519:") + std::string(64, '1') + ":" +
+            std::string(128, '2') + "\n";
+        std::vector<uint8_t> sig(sig_text.begin(), sig_text.end());
+        auto package = NeuralModelLoader::load_from_memory(
+            manifest, weights, sig,
+            kEngineVersionCode, kScenarioSchemaCode);
+        CHECK(!package.trusted());
+        CHECK(package.status() == ModelLoadStatus::SignerUntrusted);
+    }
+}
