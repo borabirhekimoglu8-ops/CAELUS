@@ -158,7 +158,7 @@ echo -e "${BOLD}[AŞAMA 2/3] Rust Shadow-Mesh Derlemesi (LTO + opt-z)${RESET}"
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
 
 pushd "$ROOT" > /dev/null
-cargo build --release 2>&1 | sed 's/^/   /'
+cargo build --release --locked 2>&1 | sed 's/^/   /'
 if [[ ! -f "$RUST_LIB" ]]; then
     die "Beklenen statik kütüphane bulunamadı: $RUST_LIB"
 fi
@@ -236,7 +236,7 @@ echo -e "${BOLD}═════════════════════�
 echo -e "Çıktı   : ${CYAN}$OUT_EXE${RESET}"
 echo -e "Boyut   : ${EXE_SIZE_KB} KB  (~${EXE_SIZE_MB} MB)"
 
-if (( EXE_SIZE_MB < 50 )); then
+if (( EXE_SIZE_BYTES < 50 * 1024 * 1024 )); then
     echo -e "Hedef   : ${GREEN}<50 MB ✓  BAŞARILI${RESET}"
 else
     echo -e "Hedef   : ${RED}<50 MB ✗  AŞILDI${RESET} — UPX sıkıştırması deneyin: upx --best $OUT_EXE"
