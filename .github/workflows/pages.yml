@@ -41,6 +41,13 @@ jobs:
           --target wasm32-unknown-unknown
           --manifest-path caelus_wasm/Cargo.toml
 
+      - name: Validate universal scenario compiler
+        run: |
+          node --check ui/scenario_compiler.js
+          node --check ui/app.js
+          node --test tests/universal_scenario_compiler.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
+
       - name: Assemble offline-first iPhone package
         run: python3 tools/build_standalone.py
 
@@ -51,6 +58,7 @@ jobs:
           test -s dist/manifest.webmanifest
           test -s dist/sw.js
           grep -q 'CAELUS_WASM_B64' dist/index.html
+          grep -q 'CaelusScenarioCompiler' dist/index.html
           grep -q 'BS-01_SAHTE_UFUK' dist/index.html
           grep -q 'BS-02_GOLGE_ARSIV' dist/index.html
           grep -q 'BS-03_KUM_SAATI' dist/index.html

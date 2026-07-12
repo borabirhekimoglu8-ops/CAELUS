@@ -7,8 +7,8 @@
  * - No engine: the interface stays explicitly offline and never fabricates a
  *   decision report.
  *
- * Security: user scenario text is read only via .toLowerCase()/.includes()
- * for keyword routing — it is NEVER interpolated into innerHTML.
+ * Security: user scenario text is compiled locally into a bounded data model;
+ * it is NEVER interpolated into innerHTML.
  * All dynamic HTML is built with pre-authored static strings or
  * document.createElement / textContent assignments (no XSS vectors).
  */
@@ -30,6 +30,7 @@ const CFG = {
   OTP_SLOTS:         4,
   SPARKLINE_POINTS:  20,
   TICK_HISTORY_MAX:  500,
+  REALTIME_TICK_MS:  2200,
 };
 
 // Gauge SVG geometry (semicircle: 180° from left through top to right)
@@ -87,6 +88,7 @@ const state = {
   activeLeftTab:     'mesh',
   ctScrollOffset:    0,     // crisis timeline horizontal scroll offset
   engineLevers:      [],
+  generatedScenario: null,
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1642,8 +1644,10 @@ function applySnapshotEvent(data) {
     el.causalEmpty.style.display = state.causalNodes.length ? 'none' : '';
   }
 
-  addCryptoLog('info', `Snapshot: ${state.causalNodes.length} node, ${state.causalEdges.length} edge alındı`);
-  addLcOutput(`snapshot: ${state.causalNodes.length} node, ${state.causalEdges.length} edge`, 'ok');
+  if (!data._quiet) {
+    addCryptoLog('info', `Snapshot: ${state.causalNodes.length} node, ${state.causalEdges.length} edge alındı`);
+    addLcOutput(`snapshot: ${state.causalNodes.length} node, ${state.causalEdges.length} edge`, 'ok');
+  }
 
   // Update tick history from snapshot
   if (data.tick !== undefined) {
@@ -2314,6 +2318,9 @@ function handleEngineEvent(ev) {
 const LocalEngine = (function () {
   let ex = null;                 // wasm exports
   let scenarioId = null;
+  let activePack = null;
+  let realtimeTimer = null;
+  let realtimeEnabled = false;
   const feed = (obj) => handleEngineEvent({ data: JSON.stringify(obj) });
 
   function u8() { return new Uint8Array(ex.memory.buffer); } // her çağrıda YENİDEN al (detach güvenliği)
@@ -2330,20 +2337,53 @@ const LocalEngine = (function () {
   }
   function snapshot() { return JSON.parse(readBuf(ex.cae_snapshot())); }
 
-  function emitStateFrom(snap) {
+  function emitStateFrom(snap, quiet) {
     feed({ type:'engine_state', state: scenarioId, scenario_id: scenarioId,
            tick: snap.tick, friction_mult: snap.clamped_friction,
            throughput_ratio: snap.throughput_ratio, outage_active: snap.outage_active,
            any_hysteresis_flip: snap.any_hysteresis_flip,
-           any_deadline_missed: snap.any_deadline_missed });
+           any_deadline_missed: snap.any_deadline_missed, _quiet:!!quiet });
   }
-  function pushSnapshotAndState() {
+  function pushSnapshotAndState(quiet = false) {
     const snap = snapshot();
-    emitStateFrom(snap);
-    feed(snap);              // nodes/edges → causal graph + analiz paneli
+    emitStateFrom(snap, quiet);
+    feed({ ...snap, _quiet:quiet }); // nodes/edges → causal graph + analiz paneli
     return snap;
   }
   function pushLevers() { feed(JSON.parse(readBuf(ex.cae_levers()))); }
+
+  function stopRealtime() {
+    if (realtimeTimer) clearInterval(realtimeTimer);
+    realtimeTimer = null;
+    realtimeEnabled = false;
+  }
+
+  function startRealtime() {
+    stopRealtime();
+    if (!ex || !activePack) return false;
+    realtimeEnabled = true;
+    realtimeTimer = setInterval(() => {
+      if (!realtimeEnabled || document.hidden || !ex) return;
+      ex.cae_tick(1);
+      const snap = pushSnapshotAndState(true);
+      if (snap.tick % 10 === 0) {
+        addLcOutput(`canlı akış: t=${snap.tick} · μ=${snap.clamped_friction.toFixed(2)}× · throughput=%${(snap.throughput_ratio * 100).toFixed(0)}`, 'info');
+      }
+    }, CFG.REALTIME_TICK_MS);
+    return true;
+  }
+
+  function upsertScenarioOption(id, generated) {
+    if (!el.scenarioSelect) return;
+    let option = Array.from(el.scenarioSelect.options).find(item => item.value === id);
+    if (!option) {
+      option = document.createElement('option');
+      option.value = id;
+      el.scenarioSelect.prepend(option);
+    }
+    option.textContent = generated ? `CANLI · ${id}` : id;
+    el.scenarioSelect.value = id;
+  }
 
   return {
     get ready() { return !!ex; },
@@ -2356,24 +2396,68 @@ const LocalEngine = (function () {
       return true;
     },
     scenarios() { return Object.keys(window.CAELUS_SCENARIOS || {}); },
-    load(id) {
-      const json = (window.CAELUS_SCENARIOS || {})[id];
-      if (!json || !ex) return false;
+    loadPack(pack, options = {}) {
+      if (!pack || typeof pack !== 'object' || !ex) return false;
+      const model = pack.extended_causal_model;
+      if (!model || !Array.isArray(model.nodes) || model.nodes.length === 0) {
+        addLcOutput('WASM motor: ScenarioPack düğüm modeli geçersiz', 'err');
+        return false;
+      }
+      const json = JSON.stringify(pack);
       const rc = ex.cae_load(writeBuf(json));
       if (rc !== 0) { addLcOutput('WASM motor: senaryo yüklenemedi', 'err'); return false; }
-      scenarioId = id;
+      stopRealtime();
+      scenarioId = String(pack.id || options.id || 'USER-SCENARIO');
+      activePack = JSON.parse(json);
+      state.generatedScenario = options.analysis || null;
       state.tickHistory = [];
       state.engineLevers = [];
-      let sector = 'UNIVERSAL';
-      try { sector = (JSON.parse(json).sector) || sector; } catch(_) {}
-      feed({ type:'scenario_loaded', scenario_id: id, sector, sig_status:'CI-VERIFIED' });
+      const sector = String(pack.sector || 'UNIVERSAL');
+      const generated = options.source === 'generated';
+      feed({
+        type:'scenario_loaded', scenario_id:scenarioId, sector,
+        labels:pack.labels || {}, sig_status:options.sigStatus || (generated ? 'LOCAL-DETERMINISTIC' : 'LOCAL-PACK'),
+        scenario_pack:{ id:scenarioId, sector, labels:pack.labels || {}, nodes:model.nodes }
+      });
       pushSnapshotAndState();
       pushLevers();
       setLiveStatus('live');
-      if (el.scenarioSelect) el.scenarioSelect.value = id;
-      addCryptoLog('ok', `YEREL MOTOR (WASM): ${id} yüklendi — CI doğrulamalı paket`);
-      addLcOutput(`Aktif senaryo: ${id}`, 'ok');
+      upsertScenarioOption(scenarioId, generated);
+      const sourceLabel = generated ? 'metinden deterministik üretildi' : 'paket yüklendi';
+      addCryptoLog('ok', `YEREL MOTOR (WASM): ${scenarioId} — ${sourceLabel}`);
+      addLcOutput(`Aktif senaryo: ${scenarioId} · ${sector}`, 'ok');
+      if (options.realtime) startRealtime();
       return true;
+    },
+    load(id) {
+      const json = (window.CAELUS_SCENARIOS || {})[id];
+      if (!ex) return false;
+      if (!json) return id === scenarioId ? this.reload() : false;
+      try {
+        return this.loadPack(JSON.parse(json), { source:'signed', sigStatus:'CI-VERIFIED' });
+      } catch (_) {
+        addLcOutput(`WASM motor: ${id} paketi ayrıştırılamadı`, 'err');
+        return false;
+      }
+    },
+    step(n = 1, quiet = false) {
+      if (!ex) return null;
+      const count = Math.max(1, Math.min(10000, Number(n) || 1));
+      ex.cae_tick(count);
+      return pushSnapshotAndState(quiet);
+    },
+    startRealtime,
+    stopRealtime,
+    get realtime() { return realtimeEnabled; },
+    reload() {
+      if (!activePack) return false;
+      const keepRealtime = realtimeEnabled;
+      return this.loadPack(activePack, {
+        source:state.generatedScenario ? 'generated' : 'signed',
+        sigStatus:state.generatedScenario ? 'LOCAL-DETERMINISTIC' : 'CI-VERIFIED',
+        analysis:state.generatedScenario,
+        realtime:keepRealtime
+      });
     },
     // WS komut arayüzüyle aynı: "tick N" | "lever X" | "status" | "list levers"
     command(cmd) {
@@ -2382,8 +2466,7 @@ const LocalEngine = (function () {
       const c = (parts[0] || '').toLowerCase();
       if (c === 'tick') {
         let n = parseInt(parts[1] || '1', 10); if (!(n > 0)) n = 1; n = Math.min(n, 10000);
-        ex.cae_tick(n);
-        const snap = pushSnapshotAndState();
+        const snap = this.step(n);
         addLcOutput(`→ yerel motor: ${n} tick (t=${snap.tick}, sürtünme=${snap.clamped_friction.toFixed(2)}×)`, 'ok');
       } else if (c === 'lever') {
         const id = parts[1] || '';
@@ -2404,7 +2487,7 @@ const LocalEngine = (function () {
         }
         return this.load(found);
       } else if (c === 'reset') {
-        return scenarioId ? this.load(scenarioId) : false;
+        return this.reload();
       } else {
         addLcOutput(`yerel motor: bilinmeyen komut "${cmd}"`, 'err');
       }
@@ -2597,7 +2680,8 @@ function typewriteBriefing(container, briefing, onDone) {
     container.scrollTop = container.scrollHeight;
     if (idx % 3 === 0) SFX.tick();
     idx++;
-    state.typingTimer = setTimeout(typeNext, 11);
+    const delay = charBuf.length > 900 ? 2 : 7;
+    state.typingTimer = setTimeout(typeNext, delay);
   }
   typeNext();
 }
@@ -2628,10 +2712,45 @@ el.cmdInput.addEventListener('keydown', e => {
   if (e.key === 'Escape')             { el.cmdInput.value = ''; el.cmdCounter.textContent = '0 / 400'; }
 });
 
-// GERÇEK analiz: motor zaten imzalı bir senaryoyu koşuyor. "ANALİZ ET",
-// motordan taze bir snapshot ister (WS 'status' komutu → engine emit_ws_snapshot)
-// ve raporu motorun CANLI verisinden üretir. Math.random / sahte CP-SAT yok.
-// Motor çevrimdışıysa uydurma yapmaz, dürüstçe bunu söyler.
+function packAnalysisFromJson(pack) {
+  const model = pack.extended_causal_model || {};
+  const nodes = Array.isArray(model.nodes) ? model.nodes : [];
+  const levers = Array.isArray(model.levers) ? model.levers : [];
+  const meta = pack.meta || {};
+  return {
+    sourceText:safeLabel(meta.synopsis || meta.title || `ScenarioPack ${pack.id || ''}`, 260),
+    fingerprint:safeLabel(meta.compiler_fingerprint || 'JSON-PACK', 32),
+    scenarioId:safeLabel(pack.id || 'USER-JSON-PACK', 64),
+    sector:safeLabel(pack.sector || 'UNIVERSAL', 64),
+    sectorLabel:safeLabel(pack.sector || 'UNIVERSAL', 64),
+    title:safeLabel(meta.title || pack.id || 'Kullanıcı ScenarioPack', 120),
+    synopsis:safeLabel(meta.synopsis || 'Kullanıcının sağladığı ScenarioPack doğrudan motora yüklendi.', 280),
+    concepts:[],
+    severity:Number(meta.severity || 0),
+    nodeLabels:Object.fromEntries(nodes.map(node => [String(node.id || ''), safeLabel(node.label || node.notes || node.id, 72)])),
+    leverNarratives:levers.map(lever => `${safeLabel(lever.label || lever.id, 80)}: ${safeLabel(lever.target, 80)}`)
+  };
+}
+
+function scenarioFromInput(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (text.startsWith('{')) {
+    const parsed = JSON.parse(text);
+    const pack = parsed.scenario_pack || parsed.scenarioPack || parsed.pack || parsed;
+    if (!pack || typeof pack !== 'object') throw new Error('ScenarioPack JSON nesnesi bulunamadı.');
+    return { pack, analysis:packAnalysisFromJson(pack), source:'json', sigStatus:'UNSIGNED-LOCAL' };
+  }
+  const compiler = window.CaelusScenarioCompiler;
+  if (!compiler || typeof compiler.compile !== 'function') {
+    throw new Error('Evrensel senaryo derleyicisi yüklenemedi.');
+  }
+  const compiled = compiler.compile(text);
+  return { ...compiled, source:'generated', sigStatus:'LOCAL-DETERMINISTIC' };
+}
+
+// Serbest metin önce deterministik ScenarioPack'e çevrilir, sonra paket gerçek
+// caelus_core WASM motoruna yüklenir. Rapor yalnız motor snapshot'ından çıkar.
 function runAnalysis() {
   const live = engineLive();
   if (!live) {
@@ -2641,11 +2760,40 @@ function runAnalysis() {
     return;
   }
 
+  const rawInput = el.cmdInput.value.trim();
+  if (state.typingTimer) clearTimeout(state.typingTimer);
   el.btnExecute.disabled = true;
   el.cmdInput.disabled   = true;
   setEngineState('processing');
-  setFeedback('Motordan canlı snapshot isteniyor...', 'var(--amber)');
+  setFeedback(rawInput ? 'Metin nedensel ScenarioPack’e derleniyor...' : 'Motordan canlı snapshot isteniyor...', 'var(--amber)');
   SFX.chirp();
+
+  if (rawInput) {
+    try {
+      if (!LocalEngine.ready) throw new Error('Tarayıcı WASM motoru henüz hazır değil.');
+      const compiled = scenarioFromInput(rawInput);
+      const loaded = LocalEngine.loadPack(compiled.pack, {
+        source:compiled.source,
+        sigStatus:compiled.sigStatus,
+        analysis:compiled.analysis,
+        realtime:true
+      });
+      if (!loaded) throw new Error('Üretilen ScenarioPack motora yüklenemedi.');
+      LocalEngine.step(4, true);
+      switchLeftTab('causal');
+      addLcOutput(`metin → ScenarioPack → WASM: ${compiled.analysis.scenarioId}`, 'ok');
+      addCryptoLog('ok', `EVRENSEL DERLEYİCİ: ${compiled.analysis.fingerprint} · ${compiled.analysis.sector}`);
+    } catch (error) {
+      el.btnExecute.disabled = false;
+      el.cmdInput.disabled = false;
+      setEngineState('error');
+      const message = error instanceof Error ? error.message : String(error);
+      setFeedback(`Senaryo üretilemedi: ${message}`, 'var(--crisis)');
+      addLcOutput(`SENARYO DERLEME HATASI: ${message}`, 'err');
+      SFX.alarm();
+      return;
+    }
+  }
 
   // Motora gerçek komut: taze snapshot + lever listesi yayınlat.
   sendReplCommand('status');
@@ -2665,9 +2813,16 @@ function runAnalysis() {
     el.btnExecute.disabled = false;
     el.cmdInput.disabled   = false;
     setEngineState('done');
-    setFeedback('Analiz motorun canlı verisinden üretildi.', 'var(--green)');
+    setFeedback(LocalEngine.realtime
+      ? 'Konuya özel senaryo çalışıyor · canlı otomatik tick açık.'
+      : 'Analiz motorun canlı verisinden üretildi.', 'var(--green)');
     SFX.confirm();
-    setTimeout(() => { setEngineState('ready'); setFeedback('Motor komut bekliyor...', ''); }, 3500);
+    setTimeout(() => {
+      setEngineState('ready');
+      setFeedback(LocalEngine.realtime
+        ? `Canlı akış sürüyor · tick ${state.currentTick} · graf ve metrikler anlık güncelleniyor.`
+        : 'Motor komut bekliyor...', LocalEngine.realtime ? 'var(--green)' : '');
+    }, 3500);
   }, 650);
 }
 
@@ -2679,35 +2834,50 @@ function renderLiveBriefing() {
   const outage= !!state.outageActive;
   const tick  = state.currentTick || 0;
   const sid   = state.scenarioMeta.scenarioId || '—';
+  const generated = state.generatedScenario;
+  const labelFor = id => generated?.nodeLabels?.[id] || id;
 
   // Gerçek düğümlerden risk sıralaması: düşük güven veya yüksek sürtünme.
   const ranked = nodes.slice().sort((a,b) =>
     (b.friction_fp - a.friction_fp) || (a.state_fp - b.state_fp));
   const compromised = nodes.filter(n => n.trust_fp < 0.9 || n.irrecoverable);
   const topFriction = ranked.slice(0, 3).map(n =>
-    `${n.id} (durum ${n.state_fp.toFixed(2)}, güven ${n.trust_fp.toFixed(2)})`);
+    `${labelFor(n.id)} (durum ${n.state_fp.toFixed(2)}, güven ${n.trust_fp.toFixed(2)})`);
+
+  const generatedActions = Array.isArray(generated?.leverNarratives)
+    ? generated.leverNarratives.slice(0, 4)
+    : [];
+  const sourceExcerpt = safeLabel(generated?.sourceText, 220);
+  const sectorLabel = safeLabel(generated?.sectorLabel || state.scenarioMeta.sector, 64);
 
   const briefing = {
-    title: `CANLI CAUSAL ANALİZ // ${sid} · tick ${tick}`,
-    background: nodes.length
-      ? `Motor ${nodes.length} düğüm / ${(state.causalEdges||[]).length} kenarlık nedensel grafı canlı işliyor. Sürtünme çarpanı ${fr.toFixed(2)}×; throughput %${(state.throughputRatio*100).toFixed(1)}.`
-      : 'Motor bağlı ancak henüz düğüm yayınlanmadı; imzalı senaryo enjeksiyonu bekleniyor.',
+    title: generated
+      ? `CANLI EVRENSEL SENARYO // ${sectorLabel} · tick ${tick}`
+      : `CANLI CAUSAL ANALİZ // ${sid} · tick ${tick}`,
+    background: generated
+      ? `Girdi: “${sourceExcerpt}” ${generated.synopsis} Gerçek WASM motoru ${nodes.length} düğüm / ${(state.causalEdges||[]).length} kenarlık grafı anlık çalıştırıyor; sürtünme ${fr.toFixed(2)}×, throughput %${(state.throughputRatio*100).toFixed(1)}.`
+      : (nodes.length
+        ? `Motor ${nodes.length} düğüm / ${(state.causalEdges||[]).length} kenarlık nedensel grafı canlı işliyor. Sürtünme çarpanı ${fr.toFixed(2)}×; throughput %${(state.throughputRatio*100).toFixed(1)}.`
+        : 'Motor bağlı ancak henüz düğüm yayınlanmadı; imzalı senaryo enjeksiyonu bekleniyor.'),
     alert: outage
       ? `KRİTİK: Outage latch aktif — throughput 0. Geri dönüş yalnız başarılı recovery lever'ı ile mümkün.`
-      : (fr >= 2 ? `UYARI: Sürtünme rejim tavanına yakın (${fr.toFixed(2)}×). Gözlemlenebilirlik sapması izleniyor.`
-                 : `Sistem nominal aralıkta: sürtünme ${fr.toFixed(2)}×, aktif outage yok.`),
-    actions: (compromised.length
-      ? compromised.slice(0,3).map(n => `${n.id}: güven ${n.trust_fp.toFixed(2)} — raporlanan/gerçek durum sapması doğrulanmalı.`)
+      : (fr >= 2 ? `UYARI: Senaryo sürtünmesi yüksek (${fr.toFixed(2)}×). Otomatik akış baskı ve gecikme etkilerini her tick yeniden hesaplıyor.`
+                 : `Sistem nominal aralıkta: sürtünme ${fr.toFixed(2)}×, aktif outage yok; canlı akış ${LocalEngine.realtime ? 'açık' : 'kapalı'}.`),
+    actions: generatedActions.length ? generatedActions : (compromised.length
+      ? compromised.slice(0,3).map(n => `${labelFor(n.id)}: güven ${n.trust_fp.toFixed(2)} — raporlanan/gerçek durum sapması doğrulanmalı.`)
       : ['Düğüm güven katsayıları nominal; gözlemlenebilirlik saldırısı sinyali yok.']),
     stats: [
       ['Sürtünme', fr.toFixed(2)+'×'],
       ['Throughput', '%'+(state.throughputRatio*100).toFixed(0)],
       ['Tick', String(tick)],
-      ['Riskli düğüm', String(compromised.length)]
+      [generated ? 'Şiddet' : 'Riskli düğüm', generated ? `%${Math.round((generated.severity || 0) * 100)}` : String(compromised.length)]
     ],
-    conclusion: topFriction.length
+    conclusion: generated
+      ? `Derleyici izi ${generated.fingerprint}. En yüksek sürtünme katkısı: ${topFriction.join(' · ')}. Aynı metin aynı ScenarioPack'i üretir; tüm sonuçlar motor snapshot'ından gelir.`
+      : (topFriction.length
       ? `En yüksek sürtünme katkısı: ${topFriction.join(' · ')}. Kaynak: motorun canlı snapshot'ı.`
       : 'Motorun canlı snapshot\'ı alındı.'
+      )
   };
   typewriteBriefing(el.reportOutput, briefing, () => {
     addCryptoLog('ok', `Canlı rapor ${el.reportId.textContent} üretildi (kaynak: motor snapshot)`);

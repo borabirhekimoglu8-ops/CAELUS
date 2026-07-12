@@ -1393,7 +1393,7 @@ body {
             id="cmd-input"
             class="cmd-textarea"
             maxlength="400"
-            placeholder="ScenarioPack JSON veya senaryo parametrelerini girin..."
+            placeholder="Herhangi bir durumu yazın: ör. Samos seferleri fırtına nedeniyle 48 saat durursa..."
           ></textarea>
           <div class="cmd-action-bar">
             <div class="cmd-info">
@@ -1405,7 +1405,7 @@ body {
               <button class="btn btn--primary" id="btn-execute">ANALİZ ET [EXE]</button>
             </div>
           </div>
-          <div class="cmd-feedback" id="cmd-feedback">Causal Engine ScenarioPack veya analiz girdisi bekliyor...</div>
+          <div class="cmd-feedback" id="cmd-feedback">Metni yazın; CAELUS anında nedensel ScenarioPack üretip gerçek WASM motorda çalıştırır.</div>
         </div>
 
         <!-- Output report -->
@@ -1421,8 +1421,8 @@ body {
           <div class="output-body" id="report-output">
             <div class="output-idle" id="output-idle">
               <div class="output-idle-icon">⬡</div>
-              <div>ScenarioPack JSON veya senaryo girerek analizi başlatın</div>
-              <div class="output-idle-hint">Dinamik etiketler: labels · sector · scenario_id · nodes</div>
+              <div>Bir durum yazın; CAELUS konuya özel senaryoyu anında kursun</div>
+              <div class="output-idle-hint">Serbest metin veya ScenarioPack JSON · çevrimdışı · deterministik · canlı akış</div>
             </div>
           </div>
         </div>
@@ -1537,6 +1537,7 @@ body {
 
 </div><!-- /shell -->
 
+<script src="scenario_compiler.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

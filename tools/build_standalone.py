@@ -36,6 +36,7 @@ def main() -> int:
         return 1
 
     idx = (ROOT / "ui/index.html").read_text(encoding="utf-8")
+    compilerjs = (ROOT / "ui/scenario_compiler.js").read_text(encoding="utf-8")
     appjs = (ROOT / "ui/app.js").read_text(encoding="utf-8")
     wasm_b64 = base64.b64encode(WASM.read_bytes()).decode("ascii")
     trusted_pubkey = (ROOT / "tools/caelus_trusted_pubkey.txt").read_text(encoding="ascii").strip().lower()
@@ -71,8 +72,15 @@ def main() -> int:
               "window.CAELUS_SCENARIOS=" + json.dumps(scen) + ";\n"
               "window.CAELUS_BUILD_SHA=" + json.dumps(build_sha) + ";\n"
               "</script>\n")
-    out = idx.replace('<script src="app.js"></script>',
-                      inject + "<script>\n" + appjs + "\n</script>")
+    out = idx.replace(
+        '<script src="scenario_compiler.js"></script>\n<script src="app.js"></script>',
+        inject
+        + "<script>\n" + compilerjs + "\n</script>\n"
+        + "<script>\n" + appjs + "\n</script>",
+    )
+    if '<script src="app.js"></script>' in out:
+        print("HATA: standalone JS gömme işaretçisi bulunamadı", file=sys.stderr)
+        return 1
 
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
