@@ -43,6 +43,14 @@ blake3 = "=1.8.2"
 # O_NOFOLLOW for race-resistant offline private-key opening on Unix.
 libc = "=0.2.186"
 
+# iOS/iPadOS: force the pure-Rust Blake3 backend.  The default NEON backend
+# compiles C sources through `cc`, dragging an Apple C toolchain into every
+# Rust build of the mobile core.  The pure backend is the same algorithm with
+# identical output (Blake3 is fully specified), removes the cross-toolchain
+# dependency, and keeps the audit-chain code path 100% Rust on device.
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "watchos"))'.dependencies]
+blake3 = { version = "=1.8.2", features = ["pure"] }
+
 [profile.release]
 # Minimize binary size — target < 50MB static binary
 opt-level = "z"          # Optimize for size
