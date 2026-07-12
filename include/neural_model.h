@@ -372,7 +372,8 @@ inline bool parse_manifest(const std::vector<uint8_t>& bytes,
         error = "manifest is not strict JSON object";
         return false;
     }
-    for (const auto& field : root.o) {
+    for (size_t index = 0; index < root.o.size(); ++index) {
+        const auto& field = root.o[index];
         if (!known_top_level_field(field.first)) {
             status = ModelLoadStatus::UnknownManifestField;
             error = "unknown manifest field: " + field.first;
@@ -567,6 +568,59 @@ inline bool parse_signature(const std::vector<uint8_t>& raw,
            decode_hex(text.substr(separator + 1u), signature);
 }
 
+inline bool validate_manifest_compatibility(
+    const NeuralModelManifestV1& manifest,
+    const std::array<uint8_t, 32>& trusted_public_key,
+    uint32_t engine_version,
+    uint32_t scenario_schema,
+    ModelLoadStatus& status,
+    std::string& error) {
+    if (manifest.signer_identity !=
+        hex_encode(trusted_public_key.data(), trusted_public_key.size())) {
+        status = ModelLoadStatus::SignerUntrusted;
+        error = "manifest signer_identity does not match neural trust anchor";
+        return false;
+    }
+    if (manifest.manifest_version != CAELUS_NN_MANIFEST_V1 ||
+        manifest.neural_abi_version != CAELUS_NEURAL_ABI_V1 ||
+        manifest.feature_schema_version != CAELUS_FEATURE_SCHEMA_V1 ||
+        manifest.output_schema_version != CAELUS_NEURAL_OUTPUT_V1 ||
+        manifest.architecture_id != "caelus_temporal_mp_int8_v1" ||
+        manifest.weight_format != "int8_le_v1" ||
+        manifest.accumulator_format != "int64" ||
+        manifest.fixed_point_scale != CAELUS_NEURAL_FP_SCALE ||
+        manifest.rounding_policy != "toward_zero" ||
+        manifest.saturation_policy != "explicit_int64_saturating" ||
+        manifest.weight_scale_denominator == 0u ||
+        manifest.activation_min_fp != 0 ||
+        manifest.activation_max_fp != CAELUS_NEURAL_FP_SCALE) {
+        status = ModelLoadStatus::UnsupportedManifest;
+        error = "manifest ABI, architecture, arithmetic, or activation is unsupported";
+        return false;
+    }
+    if (manifest.history_ticks != CAELUS_NEURAL_HISTORY_TICKS_V1 ||
+        manifest.input_features != CAELUS_NEURAL_FEATURES_V1 ||
+        manifest.hidden_dimensions != CAELUS_NEURAL_HIDDEN_V1 ||
+        manifest.message_passing_layers != 2u ||
+        manifest.weight_count != kExpectedWeightCountV1 ||
+        manifest.bias_count != kExpectedBiasCountV1) {
+        status = ModelLoadStatus::DimensionMismatch;
+        error = "manifest tensor dimensions do not match V1 runtime";
+        return false;
+    }
+    if (manifest.engine_version_min > manifest.engine_version_max ||
+        manifest.scenario_schema_min > manifest.scenario_schema_max ||
+        manifest.engine_version_min > engine_version ||
+        manifest.engine_version_max < engine_version ||
+        manifest.scenario_schema_min > scenario_schema ||
+        manifest.scenario_schema_max < scenario_schema) {
+        status = ModelLoadStatus::UnsupportedSchema;
+        error = "model does not support this engine/scenario schema";
+        return false;
+    }
+    return true;
+}
+
 } // namespace model_detail
 
 inline bool default_trusted_neural_pubkey(std::array<uint8_t, 32>& out) noexcept {
@@ -653,47 +707,9 @@ inline NeuralModelPackage NeuralModelLoader::load_with_key(
             return package;
         }
         const auto& m = package.manifest_;
-        if (m.signer_identity !=
-            model_detail::hex_encode(
-                trusted_public_key.data(), trusted_public_key.size())) {
-            package.status_ = ModelLoadStatus::SignerUntrusted;
-            package.error_ = "manifest signer_identity does not match neural trust anchor";
-            return package;
-        }
-        if (m.manifest_version != CAELUS_NN_MANIFEST_V1 ||
-            m.neural_abi_version != CAELUS_NEURAL_ABI_V1 ||
-            m.feature_schema_version != CAELUS_FEATURE_SCHEMA_V1 ||
-            m.output_schema_version != CAELUS_NEURAL_OUTPUT_V1 ||
-            m.architecture_id != "caelus_temporal_mp_int8_v1" ||
-            m.weight_format != "int8_le_v1" ||
-            m.accumulator_format != "int64" ||
-            m.fixed_point_scale != CAELUS_NEURAL_FP_SCALE ||
-            m.rounding_policy != "toward_zero" ||
-            m.saturation_policy != "explicit_int64_saturating" ||
-            m.weight_scale_denominator == 0u ||
-            m.activation_min_fp != 0 ||
-            m.activation_max_fp != CAELUS_NEURAL_FP_SCALE) {
-            package.status_ = ModelLoadStatus::UnsupportedManifest;
-            package.error_ = "manifest ABI, architecture, arithmetic, or activation is unsupported";
-            return package;
-        }
-        if (m.history_ticks != CAELUS_NEURAL_HISTORY_TICKS_V1 ||
-            m.input_features != CAELUS_NEURAL_FEATURES_V1 ||
-            m.hidden_dimensions != CAELUS_NEURAL_HIDDEN_V1 ||
-            m.message_passing_layers != 2u ||
-            m.weight_count != kExpectedWeightCountV1 ||
-            m.bias_count != kExpectedBiasCountV1) {
-            package.status_ = ModelLoadStatus::DimensionMismatch;
-            package.error_ = "manifest tensor dimensions do not match V1 runtime";
-            return package;
-        }
-        if (m.engine_version_min > m.engine_version_max ||
-            m.scenario_schema_min > m.scenario_schema_max ||
-            m.engine_version_min > engine_version || m.engine_version_max < engine_version ||
-            m.scenario_schema_min > scenario_schema ||
-            m.scenario_schema_max < scenario_schema) {
-            package.status_ = ModelLoadStatus::UnsupportedSchema;
-            package.error_ = "model does not support this engine/scenario schema";
+        if (!model_detail::validate_manifest_compatibility(
+                m, trusted_public_key, engine_version, scenario_schema,
+                package.status_, package.error_)) {
             return package;
         }
         if (!model_detail::validate_weights_header(package.weights_, m, package.error_)) {

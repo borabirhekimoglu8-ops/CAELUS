@@ -27,7 +27,7 @@ using namespace caelus::causal;
 // controllable stub so the signature-gate branches (math pass/fail, pin match,
 // dev bypass) can be exercised deterministically. The *real* ed25519 math is
 // covered separately by the Rust suite and by the Python end-to-end tamper test
-// (tests/run_signature_negative.py), which run against the real signing path.
+// (tests/run_security_negative.py), which run against the real signing path.
 static int g_stub_ed25519_result = 1;
 
 extern "C" uint8_t caelus_verify_scenario_signature(
@@ -525,6 +525,91 @@ TEST_CASE("neural model manifest rejects unknown critical fields") {
     CHECK(status == caelus::neural::ModelLoadStatus::UnknownManifestField);
 }
 
+TEST_CASE("neural model manifest rejects duplicate top-level fields") {
+    const std::string manifest =
+        R"JSON({"manifest_version":1,"manifest_version":1})JSON";
+    std::vector<uint8_t> bytes(manifest.begin(), manifest.end());
+    caelus::neural::NeuralModelManifestV1 parsed;
+    caelus::neural::ModelLoadStatus status =
+        caelus::neural::ModelLoadStatus::Unavailable;
+    std::string error;
+    CHECK(!caelus::neural::model_detail::parse_manifest(
+        bytes, parsed, status, error));
+    CHECK(status == caelus::neural::ModelLoadStatus::ManifestMalformed);
+}
+
+TEST_CASE("neural model manifest rejects unsupported operators") {
+    const std::string manifest = R"JSON({"accumulator_format":"int64","architecture_id":"caelus_temporal_mp_int8_v1","bias_count":105,"creation_metadata":{"created_utc":"2026-07-10T00:00:00Z","generator":"test","synthetic_only":true},"engine_version_max":20000,"engine_version_min":20000,"external_data":[],"feature_schema_version":1,"fixed_point_scale":1000000,"hidden_dimensions":32,"history_ticks":8,"input_features":16,"manifest_version":1,"message_passing_layers":2,"model_hash":"44609fc02d32b3ec250b621b5833f03791a83b9a5d3337878e22aa1480c2807c","model_id":"test-model","model_version":"1.0.0","neural_abi_version":65536,"operators":["native_extension","integer_message_sum","bias_add","clamped_relu","hard_sigmoid","mean_pool"],"output_schema_version":1,"quantization":{"accumulator_dtype":"int64","activation_max_fp":1000000,"activation_min_fp":0,"weight_dtype":"int8","weight_scale_denominator":64},"rounding_policy":"toward_zero","saturation_policy":"explicit_int64_saturating","scenario_schema_max":200,"scenario_schema_min":200,"signer_identity":"c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f","training_config_hash":"8c7bd4f3aaa7acaca74cbf698629a640555e7dca077d78c7809e225c85365534","training_dataset_hash":"d6df489c205f6bb0fcca2c2563efe7c96bbfd16ce120a4b869c643c28e75a25d","weight_count":4899,"weight_format":"int8_le_v1","weights_hash":"44609fc02d32b3ec250b621b5833f03791a83b9a5d3337878e22aa1480c2807c","weights_size":5367})JSON";
+    std::vector<uint8_t> bytes(manifest.begin(), manifest.end());
+    caelus::neural::NeuralModelManifestV1 parsed;
+    caelus::neural::ModelLoadStatus status =
+        caelus::neural::ModelLoadStatus::Unavailable;
+    std::string error;
+    CHECK(!caelus::neural::model_detail::parse_manifest(
+        bytes, parsed, status, error));
+    CHECK(status == caelus::neural::ModelLoadStatus::UnsupportedOperator);
+}
+
+TEST_CASE("neural manifest compatibility rejects version dimensions and schema") {
+    using namespace caelus::neural;
+    std::array<uint8_t, 32> trusted_key{};
+    REQUIRE(default_trusted_neural_pubkey(trusted_key));
+
+    NeuralModelManifestV1 manifest;
+    manifest.manifest_version = CAELUS_NN_MANIFEST_V1;
+    manifest.neural_abi_version = CAELUS_NEURAL_ABI_V1;
+    manifest.feature_schema_version = CAELUS_FEATURE_SCHEMA_V1;
+    manifest.output_schema_version = CAELUS_NEURAL_OUTPUT_V1;
+    manifest.architecture_id = "caelus_temporal_mp_int8_v1";
+    manifest.weight_format = "int8_le_v1";
+    manifest.accumulator_format = "int64";
+    manifest.fixed_point_scale = CAELUS_NEURAL_FP_SCALE;
+    manifest.rounding_policy = "toward_zero";
+    manifest.saturation_policy = "explicit_int64_saturating";
+    manifest.weight_scale_denominator = 64;
+    manifest.activation_min_fp = 0;
+    manifest.activation_max_fp = CAELUS_NEURAL_FP_SCALE;
+    manifest.history_ticks = CAELUS_NEURAL_HISTORY_TICKS_V1;
+    manifest.input_features = CAELUS_NEURAL_FEATURES_V1;
+    manifest.hidden_dimensions = CAELUS_NEURAL_HIDDEN_V1;
+    manifest.message_passing_layers = 2;
+    manifest.weight_count = kExpectedWeightCountV1;
+    manifest.bias_count = kExpectedBiasCountV1;
+    manifest.engine_version_min = kEngineVersionCode;
+    manifest.engine_version_max = kEngineVersionCode;
+    manifest.scenario_schema_min = kScenarioSchemaCode;
+    manifest.scenario_schema_max = kScenarioSchemaCode;
+    manifest.signer_identity =
+        model_detail::hex_encode(trusted_key.data(), trusted_key.size());
+
+    ModelLoadStatus status = ModelLoadStatus::Unavailable;
+    std::string error;
+    REQUIRE(model_detail::validate_manifest_compatibility(
+        manifest, trusted_key, kEngineVersionCode, kScenarioSchemaCode,
+        status, error));
+
+    manifest.manifest_version = CAELUS_NN_MANIFEST_V1 + 1u;
+    CHECK(!model_detail::validate_manifest_compatibility(
+        manifest, trusted_key, kEngineVersionCode, kScenarioSchemaCode,
+        status, error));
+    CHECK(status == ModelLoadStatus::UnsupportedManifest);
+
+    manifest.manifest_version = CAELUS_NN_MANIFEST_V1;
+    manifest.hidden_dimensions = CAELUS_NEURAL_HIDDEN_V1 + 1u;
+    CHECK(!model_detail::validate_manifest_compatibility(
+        manifest, trusted_key, kEngineVersionCode, kScenarioSchemaCode,
+        status, error));
+    CHECK(status == ModelLoadStatus::DimensionMismatch);
+
+    manifest.hidden_dimensions = CAELUS_NEURAL_HIDDEN_V1;
+    manifest.engine_version_min = kEngineVersionCode + 1u;
+    manifest.engine_version_max = kEngineVersionCode + 1u;
+    CHECK(!model_detail::validate_manifest_compatibility(
+        manifest, trusted_key, kEngineVersionCode, kScenarioSchemaCode,
+        status, error));
+    CHECK(status == ModelLoadStatus::UnsupportedSchema);
+}
+
 TEST_CASE("neural weights header validates exact tensor dimensions and size") {
     using namespace caelus::neural;
     NeuralModelManifestV1 manifest;
@@ -747,10 +832,34 @@ TEST_CASE("central neural gate enforces confidence OOD and symbolic-only policy"
         model, snapshot, output, policy);
     CHECK(gate.decision == CAELUS_NEURAL_GATE_REJECTED_OOD);
 
+    policy.maximum_ood_fp = FP_ONE;
+    output.nodes[0].out_of_distribution_score_fp = 0;
+    output.nodes[0].estimated_true_state_fp =
+        fixture.nodes[0].capacity_fp + 1;
+    gate = caelus::neural::NeuralGateV1::evaluate(
+        model, snapshot, output, policy);
+    CHECK(gate.decision == CAELUS_NEURAL_GATE_REJECTED_RANGE);
+    output.nodes[0].estimated_true_state_fp =
+        fixture.nodes[0].capacity_fp;
+
     policy.mode = CAELUS_NEURAL_MODE_SYMBOLIC_ONLY;
     gate = caelus::neural::NeuralGateV1::evaluate(
         model, snapshot, output, policy);
     CHECK(gate.decision == CAELUS_NEURAL_GATE_SYMBOLIC_FALLBACK);
+}
+
+TEST_CASE("neural integer saturation is explicit and counted") {
+    uint32_t saturations = 0;
+    CHECK(caelus::neural::runtime_detail::sat_add_i64(
+              (std::numeric_limits<int64_t>::max)(), 1, saturations) ==
+          (std::numeric_limits<int64_t>::max)());
+    CHECK(saturations == 1u);
+    CHECK(caelus::neural::runtime_detail::clamp_activation(
+              FP_ONE + 1, 0, FP_ONE, saturations) == FP_ONE);
+    CHECK(saturations == 2u);
+    CHECK(caelus::neural::runtime_detail::hard_sigmoid_fp(
+              (std::numeric_limits<int64_t>::min)(), saturations) == 0);
+    CHECK(saturations >= 3u);
 }
 
 TEST_CASE("neural missing masks zero unavailable features and obey policy count") {
@@ -841,14 +950,17 @@ TEST_CASE("neural host consumes graph history and safely rejects unavailable mod
     controller.configure(
         CAELUS_NEURAL_MODE_ASSURANCE, "", "TEST_SCENARIO", scenario_hash);
     REQUIRE(controller.initialise_history(engine));
-    engine.tick();
-    REQUIRE(controller.observe_tick(engine));
+    for (uint32_t tick = 0; tick < CAELUS_NEURAL_HISTORY_TICKS_V1; ++tick) {
+        engine.tick();
+        REQUIRE(controller.observe_tick(engine));
+    }
 
     const int64_t trust_before = engine.nodes()[0].trust_fp;
     auto evidence = controller.evaluate(engine, false);
     CHECK(evidence.attempted);
     CHECK(evidence.snapshot_valid);
-    CHECK(evidence.observed_history_ticks == 1u);
+    CHECK(evidence.observed_history_ticks == CAELUS_NEURAL_HISTORY_TICKS_V1);
+    REQUIRE(evidence.nodes.size() == 2u);
     CHECK(evidence.gate.decision == CAELUS_NEURAL_GATE_REJECTED_MODEL_TRUST);
     CHECK(evidence.applied_proposals.empty());
     CHECK(!evidence.authority_record_required);

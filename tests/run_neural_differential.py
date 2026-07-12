@@ -21,6 +21,7 @@ DEFAULT_MODEL = ROOT / "models" / "assurance_v1"
 DEFAULT_GOLDEN = ROOT / "tests" / "golden" / "neural_v1_differential.json"
 MAX_OUTPUT_BYTES = 1_000_000
 MAX_PROCESS_STREAM_BYTES = 2_000_000
+MAX_PROCESS_STDIN_BYTES = 64 * 1024
 HEX_32 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -229,7 +230,13 @@ def run_bounded(
     environment: dict[str, str],
     *,
     timeout: int = 60,
+    stdin_data: bytes | None = None,
+    working_directory: Path = ROOT,
 ) -> tuple[bytes, bytes]:
+    if stdin_data is not None and len(stdin_data) > MAX_PROCESS_STDIN_BYTES:
+        raise RuntimeError(
+            f"{label} stdin exceeds {MAX_PROCESS_STDIN_BYTES} bytes"
+        )
     creation_flags = 0
     start_new_session = os.name != "nt"
     if os.name == "nt":
@@ -239,9 +246,9 @@ def run_bounded(
         )
     process = subprocess.Popen(
         command,
-        cwd=ROOT,
+        cwd=working_directory,
         env=environment,
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=start_new_session,
@@ -261,6 +268,7 @@ def run_bounded(
     stdout = bytearray()
     stderr = bytearray()
     overflow: list[str] = []
+    stdin_errors: list[str] = []
     termination_lock = threading.Lock()
 
     def terminate() -> None:
@@ -288,6 +296,21 @@ def run_bounded(
                 terminate()
                 return
 
+    def feed_stdin() -> None:
+        assert process.stdin is not None
+        try:
+            process.stdin.write(stdin_data or b"")
+            process.stdin.flush()
+        except BrokenPipeError:
+            pass
+        except OSError as error:
+            stdin_errors.append(str(error))
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+
     threads = [
         threading.Thread(
             target=drain, args=(process.stdout, stdout, "stdout"), daemon=True
@@ -296,6 +319,8 @@ def run_bounded(
             target=drain, args=(process.stderr, stderr, "stderr"), daemon=True
         ),
     ]
+    if stdin_data is not None:
+        threads.append(threading.Thread(target=feed_stdin, daemon=True))
     for thread in threads:
         thread.start()
     try:
@@ -313,6 +338,8 @@ def run_bounded(
 
     if overflow:
         raise RuntimeError(f"{label} exceeded bounded {'/'.join(overflow)}")
+    if stdin_errors:
+        raise RuntimeError(f"{label} stdin write failed: {stdin_errors[0]}")
     if return_code != 0:
         detail = bytes(stderr[:8192]).decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"{label} failed with exit {return_code}: {detail}")

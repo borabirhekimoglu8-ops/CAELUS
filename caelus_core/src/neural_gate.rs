@@ -221,7 +221,7 @@ mod tests {
     };
 
     #[test]
-    fn low_confidence_and_ood_are_explicit_rejections() {
+    fn confidence_ood_and_range_failures_are_explicit_rejections() {
         let model = verified_fixture_model();
         let input = fixture_input();
         let policy = NeuralPolicy::assurance_default();
@@ -281,6 +281,12 @@ mod tests {
         assert_eq!(
             evaluate(&model, &input, &output, &policy).decision,
             GateDecision::RejectedOod
+        );
+        output.nodes[0].out_of_distribution_score_fp = policy.maximum_ood_fp;
+        output.nodes[0].estimated_true_state_fp = input.nodes[0].capacity_fp + 1;
+        assert_eq!(
+            evaluate(&model, &input, &output, &policy).decision,
+            GateDecision::RejectedRange
         );
     }
 }
