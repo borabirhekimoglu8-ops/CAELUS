@@ -1,0 +1,12 @@
+{
+  "name": "CAELUS NeuroCausal Mobile",
+  "short_name": "CAELUS NCM",
+  "description": "Cihaz-içi sinir ağı ve deterministik Rust/WASM nedensel karar motoru",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#05070a",
+  "theme_color": "#05070a",
+  "lang": "tr"
+}
