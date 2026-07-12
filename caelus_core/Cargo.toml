@@ -16,6 +16,13 @@ default = []
 # Harness bin'i ve testler std ister; çekirdek lib no_std + alloc'tur.
 std = []
 
+[lints.rust]
+# tests/neural_reference/build.rs bu cfg'yi kendi derlemesinde tanımlar;
+# çekirdek tek başına derlenirken de bilinen bir ad olarak kaydedilmeli.
+unexpected_cfgs = { level = "warn", check-cfg = [
+    "cfg(caelus_neural_differential_harness)",
+] }
+
 [lib]
 name = "caelus_core"
 

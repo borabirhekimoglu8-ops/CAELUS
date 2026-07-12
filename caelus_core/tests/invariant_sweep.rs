@@ -99,7 +99,7 @@ fn build_random_engine(seed: u64) -> CausalEngine {
         l.success_p_fp = pick(&mut rng, FP_ONE as u64 + 1) as i64;
         l.lockout_ticks = pick(&mut rng, 3) as i32;
         l.cost_ticks = 1 + pick(&mut rng, 4) as i32;
-        let mut mk_outcome = |rng: &mut DetRng| {
+        let mk_outcome = |rng: &mut DetRng| {
             let mut o = LeverOutcome::default();
             if pick(rng, 10) < 7 {
                 o.target_node_id = node_id(pick(rng, node_count));
