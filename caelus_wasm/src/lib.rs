@@ -53,16 +53,16 @@ pub extern "C" fn cae_buf_cap() -> usize {
 fn buf_str(len: usize) -> String {
     let n = len.min(BUF_CAP);
     // SAFETY: JS yalnız geçerli UTF-8 (JSON/id) yazar; hatalıysa kayıpsız kurtar.
-    let bytes = unsafe { &(*BUF.get())[..n] };
+    let buffer: &[u8; BUF_CAP] = unsafe { &*BUF.get() };
+    let bytes = &buffer[..n];
     String::from_utf8_lossy(bytes).into_owned()
 }
 
 fn write_buf(s: &str) -> usize {
     let b = s.as_bytes();
     let n = b.len().min(BUF_CAP);
-    unsafe {
-        (*BUF.get())[..n].copy_from_slice(&b[..n]);
-    }
+    let buffer: &mut [u8; BUF_CAP] = unsafe { &mut *BUF.get() };
+    buffer[..n].copy_from_slice(&b[..n]);
     n
 }
 
