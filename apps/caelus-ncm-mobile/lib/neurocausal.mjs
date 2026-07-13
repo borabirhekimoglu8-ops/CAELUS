@@ -9,10 +9,11 @@ import {
 } from "./ncm2/temporal-observer.mjs";
 import { buildContextualActions, buildDeepExplanation } from "./ncm2/explain.mjs";
 import { NCM3_VERSION, reasonWithEvidence } from "./ncm3/evidence-reasoner.mjs";
+import { augmentGroundingWithVault } from "./ncm3/evidence-augmentation.mjs";
 
 const INPUT = NEURO_WEIGHTS.input;
 const SECTORS = NEURO_WEIGHTS.sectors;
-const NCM3_ARCHITECTURE = `${NEURO_WEIGHTS.architecture}+EVIDENCE_LEDGER+DIMENSIONAL_SOLVERS+FAIL_CLOSED_TRUTH_GATE+RUST_WASM_SCENARIOPACK_STATE_VALIDATOR`;
+const NCM3_ARCHITECTURE = `${NEURO_WEIGHTS.architecture}+OPEN_EVIDENCE_MESH+EVIDENCE_LEDGER+DIMENSIONAL_SOLVERS+FAIL_CLOSED_TRUTH_GATE+RUST_WASM_SCENARIOPACK_STATE_VALIDATOR`;
 const NCM2_VERSION = "NCM-2.0.0";
 const NCM2_ARCHITECTURE = `${NEURO_WEIGHTS.architecture}+${TEMPORAL_MODEL_INFO.architecture}+DETERMINISTIC_NEURAL_GATE`;
 const STOP_WORDS = new Set([
@@ -643,6 +644,13 @@ function observeNcm2Snapshot(scenario, snapshot) {
 }
 
 function truthEvidenceSpan(item) {
+  if (item?.source === "public_source" || item?.source === "user_file") {
+    return {
+      ...item,
+      source: item.source,
+      text: String(item.text || item.title || "Kaynak kanıtı"),
+    };
+  }
   const source = item?.source === "input"
     ? "input"
     : item?.source === "rule" ? "knowledge" : item?.source === "safety" ? "safety" : "engine";
@@ -666,7 +674,18 @@ function sectorFromGrounding(grounding) {
 }
 
 function buildTruthGate(grounding) {
-  const provenanceCount = grounding.claims.filter((claim) => Array.isArray(claim.evidence) && claim.evidence.length > 0).length;
+  const validReference = (item) => {
+    if (!item || typeof item !== "object") return false;
+    if (item.source === "rule") return Boolean(item.ruleId && item.text);
+    if (item.source === "input") return Boolean(item.text) && Number.isInteger(item.start) && Number.isInteger(item.end) && item.end > item.start;
+    if (item.source === "safety" || item.source === "engine") return Boolean(item.text || item.ruleId);
+    if (item.source === "public_source" || item.source === "user_file") {
+      return item.verified === true && Boolean(item.documentId && item.sourceId && item.fingerprint && item.locator && item.text);
+    }
+    return false;
+  };
+  const provenanceCount = grounding.claims.filter((claim) =>
+    Array.isArray(claim.evidence) && claim.evidence.length > 0 && claim.evidence.every(validReference)).length;
   const provenanceValid = provenanceCount === grounding.claims.length;
   const unsupportedCount = grounding.claims.filter((claim) => !["FACT", "DEDUCTION", "CALCULATION", "UNKNOWN", "SAFETY"].includes(claim.type)).length;
   const calculationsValid = grounding.calculations.every((item) => item.expression && item.unit && item.result !== undefined && item.result !== null);
@@ -767,14 +786,15 @@ function groundedLabels(grounding) {
   return { nodeLabels: labels.slice(0, 6), visibleLabels: visible.slice(0, 6) };
 }
 
-export function compileNeuralScenario(input) {
+export function compileNeuralScenario(input, options = {}) {
   const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 1_200);
   if (sourceText.length < 8) throw new Error("NCM-3 için olay, miktar, süre veya karar sorusu içeren daha açıklayıcı bir durum yazın.");
 
   // The local encoder is an advisory route proposal only. Its output is kept
   // outside the answer, claim ledger, graph state, and Truth Gate decision.
   const neuralAdvisory = runNeuralInference(sourceText);
-  const grounding = reasonWithEvidence(sourceText, { sourceTime: null });
+  const baseGrounding = reasonWithEvidence(sourceText, { sourceTime: null });
+  const grounding = augmentGroundingWithVault(baseGrounding, sourceText, options.evidenceRecords || []);
   const gateAudit = buildTruthGate(grounding);
   const sector = sectorFromGrounding(grounding);
   const primaryDomain = DOMAIN[sector] || DOMAIN.UNIVERSAL;

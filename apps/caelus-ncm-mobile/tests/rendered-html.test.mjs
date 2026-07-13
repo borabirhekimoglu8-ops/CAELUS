@@ -27,8 +27,10 @@ test("mobil kanıt arayüzü ve geliştirme metadatası render edilir", async ()
   assert.match(html, /NCM/);
   assert.match(html, /GROUNDED CAUSAL ENGINE/);
   assert.match(html, /KANIT MOTORU YEREL/);
-  assert.match(html, /BULUT KAPALI/);
-  assert.match(html, /TRUTH GATE \+ WASM/);
+  assert.match(html, /LLM \/ BULUT ÇIKARIM YOK/);
+  assert.match(html, /AÇIK KAYNAK → YEREL KASA/);
+  assert.match(html, /Açık kaynaklarda otomatik ara/);
+  assert.match(html, /Wikipedia, Wikidata, Crossref, Europe PMC ve GDELT/);
   assert.match(html, /Kanıta bağlı analiz yap/);
   assert.doesNotMatch(html, /SİNİR AĞI CİHAZDA/);
   assert.doesNotMatch(html, /window\.location\.replace\("\/caelus\.html"\)/);
@@ -110,10 +112,38 @@ test("çevrimdışı paket gerekli yerel varlıkları taşır", async () => {
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../public/caelus_wasm.wasm", import.meta.url)),
   ]);
-  assert.match(serviceWorker, /caelus-grounded-mobile-v7-ncm3-truth/);
+  assert.match(serviceWorker, /caelus-evidence-mesh-mobile-v8/);
   assert.match(serviceWorker, /clients\.matchAll/);
   assert.match(serviceWorker, /client\.navigate\(client\.url\)/);
   assert.match(serviceWorker, /caelus_wasm\.wasm/);
+  assert.match(serviceWorker, /requestUrl\.origin !== self\.location\.origin/);
+  assert.doesNotMatch(serviceWorker, /network\.catch\(\(\) => caches\.match\("\/"\)\)/);
   assert.equal(JSON.parse(manifest).display, "standalone");
   assert.ok(wasm.byteLength > 90_000);
+});
+
+test("yerel kaynak kasası sekme değişiminde bağlı kalır ve açılışta hydrate olur", async () => {
+  const [pageSource, vaultSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/SourceVault.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(pageSource, /<div className="source-tab" hidden=\{activeTab !== "sources"\}>/);
+  assert.doesNotMatch(pageSource, /activeTab === "sources"\s*\?/);
+  assert.match(pageSource, /useState\(false\)/);
+  assert.match(pageSource, /caelus:source-sync-consent:v1/);
+  assert.match(pageSource, /executeRunRef\.current !== runId/);
+  assert.match(pageSource, /handleSourceSyncChange/);
+  assert.match(pageSource, /vaultBusy > 0/);
+  assert.match(pageSource, /let automaticEvidence: EvidenceRecord\[\] = \[\]/);
+  assert.match(pageSource, /kind: "public_source"/);
+  assert.doesNotMatch(pageSource, /let automaticEvidence = automaticRecords/);
+  assert.match(vaultSource, /MAX_FILE_BATCH_COUNT = 8/);
+  assert.match(vaultSource, /MAX_TOTAL_RECORDS = 10_000/);
+  assert.match(vaultSource, /indexedDB/);
+  assert.match(vaultSource, /assertSafeXlsxFile\(file\)/);
+  assert.match(vaultSource, /spreadsheetSheetsToJson\(sheets\)/);
+  assert.match(vaultSource, /Yayıncı \/ kurum/);
+  assert.match(vaultSource, /for \(const \{ file, format, id, createdAt \} of accepted\)/);
+  assert.doesNotMatch(vaultSource, /Promise\.all\(accepted\.map/);
+  assert.doesNotMatch(vaultSource, /import\("read-excel-file\/browser"\)/);
 });

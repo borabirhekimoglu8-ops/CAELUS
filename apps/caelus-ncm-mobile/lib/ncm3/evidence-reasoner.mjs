@@ -139,7 +139,7 @@ function extractQueueFacts(normalized) {
   return { startMinutes, changeMinutes, arrivalRate, initialCapacity, changedCapacity };
 }
 
-function findEvidence(input, phrases, label) {
+function findEvidence(input, phrases) {
   const source = String(input);
   const lower = source.toLocaleLowerCase("tr-TR");
   for (const phrase of phrases) {
@@ -149,7 +149,10 @@ function findEvidence(input, phrases, label) {
       return { source: "input", text: source.slice(start, start + needle.length), start, end: start + needle.length };
     }
   }
-  return { source: "input", text: label || source, start: 0, end: source.length };
+  // Never widen a missing phrase to the whole prompt. A solver that cannot
+  // resolve its claimed span must fail closed instead of manufacturing
+  // provenance.
+  return null;
 }
 
 function rule(ruleId, text) {
@@ -172,12 +175,13 @@ function makeResult(input, spec) {
   const claims = [];
 
   for (const item of observations) {
+    const fallbackEvidence = findEvidence(input, [item.statement], item.statement);
     claims.push({
       id: item.id,
       type: "FACT",
       statement: item.statement,
       basis: item.basis || "Girdide açıkça belirtilen gözlem",
-      evidence: item.evidence || [findEvidence(input, [item.statement], item.statement)],
+      evidence: item.evidence || (fallbackEvidence ? [fallbackEvidence] : []),
     });
   }
   for (const item of calculations) {
@@ -217,7 +221,18 @@ function makeResult(input, spec) {
     });
   }
 
-  if (!claims.every((claim) => CLAIM_TYPES.has(claim.type) && claim.evidence?.length)) {
+  const validEvidence = (evidence) => {
+    if (!evidence || typeof evidence !== "object") return false;
+    if (evidence.source === "rule") return Boolean(evidence.ruleId && evidence.text);
+    if (evidence.source === "safety") return Boolean(evidence.text || evidence.ruleId);
+    if (evidence.source === "input") {
+      return Boolean(evidence.text) && Number.isInteger(evidence.start) && Number.isInteger(evidence.end)
+        && evidence.start >= 0 && evidence.end > evidence.start && evidence.end <= String(input).length;
+    }
+    return false;
+  };
+
+  if (!claims.every((claim) => CLAIM_TYPES.has(claim.type) && claim.evidence?.length && claim.evidence.every(validEvidence))) {
     throw new Error("NCM-3 invariant failed: every claim needs a valid type and evidence.");
   }
 
@@ -317,7 +332,7 @@ function maritimeReasoner(input, facts) {
     title: `${route} hattında ${windowLabel} hizmet kesintisi${hypothetical ? " koşulu" : ""}`,
     directAnswer: `${firstSentence} ${impactSentences.join(" ")}`,
     observations: [
-      fact("OBS-STORM", "Fırtına, adı verilen sefer durdurmasının nedenidir.", input, ["fırtına nedeniyle"]),
+      fact("OBS-STORM", "Fırtına, adı verilen sefer durdurmasının nedenidir.", input, ["fırtına nedeniyle", "fırtına yüzünden", "fırtına"]),
       hypothetical
         ? fact("OBS-ROUTE-STOP-CONDITION", `Girdi, ${route} feribot seferlerinin ${windowLabel} durmasını varsayımsal koşul olarak veriyor.`, input, [stopPhrase, String(duration)], "Varsayımsal koşul")
         : fact("OBS-ROUTE-STOP", `${route} feribot seferleri ${windowLabel} durdurulmuştur.`, input, [stopPhrase, String(duration)]),
@@ -862,17 +877,17 @@ function invoiceReasoner(input) {
 }
 
 function liveUnknownReasoner(input, context) {
-  const now = findEvidence(input, ["Şu anda"], "şu an");
-  const port = findEvidence(input, ["Samos limanında kaç gemi var"], "Samos limanındaki gemi sayısı");
-  const cancellation = findEvidence(input, ["bir sonraki feribot meteorolojiye göre iptal mi"], "sonraki sefer iptal durumu");
+  const now = findEvidence(input, ["Şu anda", "şu an"]);
+  const port = findEvidence(input, ["Samos limanında kaç gemi var", "Samos limanında", "kaç gemi"]);
+  const cancellation = findEvidence(input, ["bir sonraki feribot meteorolojiye göre iptal mi", "sefer iptal mi", "iptal mi"]);
   const liveRule = rule("NCM3-LIVE-SOURCE-GATE", "Canlı durum yalnız zaman damgalı yetkili kaynaklarla cevaplanır");
   return makeResult(input, {
     mode: "insufficient",
     title: "Canlı Samos limanı ve sefer durumu için kaynak gerekli",
     directAnswer: "Yerel bilgi paketinde zaman damgalı AIS/liman verisi, feribot işletmecisi sefer durumu ve meteoroloji gözlem/tahmini yoktur. Bu nedenle şu anki gemi sayısını veya bir sonraki feribotun iptal durumunu söyleyemem.",
-    observations: [fact("OBS-LIVE-REQUEST", "Soru Samos limanının şu anki gemi sayısını ve sonraki feribotun iptal durumunu soruyor.", input, ["Şu anda Samos limanında kaç gemi var ve bir sonraki feribot meteorolojiye göre iptal mi"] )],
+    observations: [fact("OBS-LIVE-REQUEST", "Soru Samos limanının güncel gemi sayısını ve sefer iptal durumunu soruyor.", input, [input])],
     calculations: [],
-    deductions: [deduction("DED-LIVE-ABSTAIN", "Zaman damgalı canlı kaynak olmadan gemi sayısı, hava veya iptal durumu hakkında olumlu ya da olumsuz iddia kurulamaz.", [now, port, cancellation, liveRule])],
+    deductions: [deduction("DED-LIVE-ABSTAIN", "Zaman damgalı canlı kaynak olmadan gemi sayısı, hava veya iptal durumu hakkında olumlu ya da olumsuz iddia kurulamaz.", [now, port, cancellation, liveRule].filter(Boolean))],
     assumptions: [],
     unknowns: [
       unknown("UNK-LIVE-VESSEL-COUNT", "Samos limanındaki güncel gemi sayısı bilinmiyor.", "Zaman damgalı AIS ve/veya liman başkanlığı hareket kaydı"),

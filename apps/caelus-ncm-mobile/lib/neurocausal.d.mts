@@ -1,7 +1,14 @@
 export type EvidenceSpan = {
-  source: "input" | "ontology" | "engine" | "knowledge" | "calculation" | "safety";
+  source: "input" | "ontology" | "engine" | "knowledge" | "calculation" | "safety" | "public_source" | "user_file";
   text: string;
   ruleId?: string;
+  uri?: string | null;
+  publisher?: string | null;
+  title?: string;
+  publishedAt?: string | null;
+  retrievedAt?: string | null;
+  fingerprint?: string;
+  locator?: Record<string, unknown>;
 };
 
 export type NeuralRelation = {
@@ -180,7 +187,7 @@ export type NeuralScenario = {
   analysis: NeuralAnalysis;
 };
 
-export function compileNeuralScenario(input: string): NeuralScenario;
+export function compileNeuralScenario(input: string, options?: { evidenceRecords?: import("./evidence-vault.mjs").EvidenceRecord[] }): NeuralScenario;
 export function compileLegacyScenario(input: string): NeuralScenario;
 export function observeTemporalSnapshot(scenario: NeuralScenario, snapshot: unknown): NeuralScenario;
 export function runNeuralInference(input: string): Record<string, unknown>;

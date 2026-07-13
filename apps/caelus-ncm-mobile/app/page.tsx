@@ -9,7 +9,18 @@ import { EvidenceLedger } from "./components/EvidenceLedger";
 import { HorizonPanel } from "./components/HorizonPanel";
 import { MetricRing } from "./components/MetricRing";
 import { NeuralGateCard } from "./components/NeuralGateCard";
+import { SourceVault, type SourceVaultImportResult } from "./components/SourceVault";
 import { CaelusWasmEngine, type EngineLever, type EngineSnapshot } from "../lib/caelus-wasm";
+import {
+  mergeEvidenceRecords,
+  parseEvidenceFileText,
+  type EvidenceRecord,
+} from "../lib/evidence-vault.mjs";
+import {
+  importOpenUrl,
+  searchOpenSources,
+  type OpenSourceHit,
+} from "../lib/open-source-connectors.mjs";
 import {
   compileNeuralScenario,
   NEURO_MODEL_INFO,
@@ -30,6 +41,7 @@ const EXAMPLES = [
   "Şebeke 90 dakika kesilecek. Jeneratör sürekli 80 kW sağlayabiliyor; sabit yük 100 kW. Batarya ve başka kaynak yok.",
   "08.00'de kuyruk sıfır. Geliş 30 araç/dk, işlem 24 araç/dk. Oranlar sabit. 08.30'da işlem kapasitesi 36 araç/dk oluyor. Kuyruk ne zaman temizlenir?",
 ];
+const SOURCE_SYNC_STORAGE_KEY = "caelus:source-sync-consent:v1";
 
 function now(): string {
   return new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
@@ -44,8 +56,57 @@ function fixedProbability(value: number | undefined): number {
   return Number(value) > 1 ? Number(value) / 1_000_000 : Number(value);
 }
 
+function sourceTier(trustTier: string): "institutional" | "reputable" | "community" | "unknown" {
+  if (trustTier === "knowledge_graph") return "institutional";
+  if (trustTier === "scholarly_metadata") return "reputable";
+  if (trustTier === "secondary" || trustTier === "discovery_index") return "community";
+  return "unknown";
+}
+
+function hitAsDocument(hit: OpenSourceHit) {
+  return {
+    title: hit.title,
+    url: hit.uri,
+    text: hit.content,
+    format: "txt" as const,
+    publisher: hit.publisher,
+    tier: sourceTier(hit.trustTier),
+    publishedAt: hit.publishedAt ?? undefined,
+    license: hit.license,
+    promotionEligible: hit.promotionEligible,
+  };
+}
+
+function recordsFromHits(hits: OpenSourceHit[]): EvidenceRecord[] {
+  const groups = hits.map((hit) => parseEvidenceFileText(hit.content, {
+    format: "txt",
+    fileName: hit.title || `${hit.sourceId}.txt`,
+    source: {
+      name: hit.title || hit.sourceName,
+      kind: "public_source",
+      uri: hit.uri,
+      publisher: hit.publisher,
+      tier: sourceTier(hit.trustTier),
+      publishedAt: hit.publishedAt ?? undefined,
+      retrievedAt: hit.retrievedAt,
+      license: hit.license,
+      promotionEligible: hit.promotionEligible,
+    },
+    referenceDate: hit.retrievedAt,
+  }).records);
+  return mergeEvidenceRecords(...groups).records;
+}
+
+function isEvidenceRecord(value: unknown): value is EvidenceRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<EvidenceRecord>;
+  return typeof record.id === "string" && typeof record.fingerprint === "string" && typeof record.text === "string";
+}
+
 export default function Home() {
   const engineRef = useRef<CaelusWasmEngine | null>(null);
+  const sourceAbortRef = useRef<AbortController | null>(null);
+  const executeRunRef = useRef(0);
   const logIdRef = useRef(1);
   const [engineStatus, setEngineStatus] = useState<"loading" | "ready" | "running" | "error">("loading");
   const [input, setInput] = useState("");
@@ -56,6 +117,12 @@ export default function Home() {
   const [leverCooldowns, setLeverCooldowns] = useState<Record<string, number>>({});
   const [message, setMessage] = useState("Yerel kanıt motoru ve Rust çekirdeği hazırlanıyor…");
   const [logs, setLogs] = useState<AuditEntry[]>([]);
+  const [vaultRecords, setVaultRecords] = useState<EvidenceRecord[]>([]);
+  const [vaultBusy, setVaultBusy] = useState(0);
+  const [automaticRecords, setAutomaticRecords] = useState<EvidenceRecord[]>([]);
+  const [sourceSyncEnabled, setSourceSyncEnabled] = useState(false);
+  const [sourceConsentHydrated, setSourceConsentHydrated] = useState(false);
+  const [online, setOnline] = useState(true);
 
   const addLog = useCallback((messageText: string, tone: AuditEntry["tone"] = "info") => {
     setLogs((current) => [{ id: logIdRef.current++, time: now(), tone, message: messageText }, ...current].slice(0, 60));
@@ -94,13 +161,85 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      executeRunRef.current += 1;
+      sourceAbortRef.current?.abort();
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.removeEventListener("controllerchange", refreshOnWorkerUpdate);
       }
     };
   }, [addLog]);
 
-  const execute = useCallback(() => {
+  useEffect(() => {
+    const updateConnectivity = () => setOnline(navigator.onLine);
+    updateConnectivity();
+    window.addEventListener("online", updateConnectivity);
+    window.addEventListener("offline", updateConnectivity);
+    return () => {
+      window.removeEventListener("online", updateConnectivity);
+      window.removeEventListener("offline", updateConnectivity);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        setSourceSyncEnabled(window.localStorage.getItem(SOURCE_SYNC_STORAGE_KEY) === "granted");
+      } catch {
+        setSourceSyncEnabled(false);
+      } finally {
+        setSourceConsentHydrated(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sourceConsentHydrated) return;
+    try {
+      window.localStorage.setItem(SOURCE_SYNC_STORAGE_KEY, sourceSyncEnabled ? "granted" : "denied");
+    } catch {
+      // Consent remains valid for this mounted session when storage is unavailable.
+    }
+  }, [sourceConsentHydrated, sourceSyncEnabled]);
+
+  const searchSourceDocuments = useCallback(async (query: string): Promise<SourceVaultImportResult> => {
+    const result = await searchOpenSources(query, { limit: 3, timeoutMs: 12_000 });
+    addLog(`Açık kaynak taraması: ${result.successfulSources}/${result.attemptedSources} bağlayıcı · ${result.hits.length} kayıt`, result.failedSources ? "info" : "ok");
+    return {
+      label: `Açık Kaynak Ağı · ${result.successfulSources}/${result.attemptedSources}`,
+      documents: result.hits.map(hitAsDocument),
+    };
+  }, [addLog]);
+
+  const importSourceUrl = useCallback(async (url: string): Promise<SourceVaultImportResult> => {
+    const hit = await importOpenUrl(url);
+    addLog(`URL kanıtı cihazda ayrıştırıldı: ${hit.publisher}`, "ok");
+    return hitAsDocument(hit);
+  }, [addLog]);
+
+  const handleEvidenceChange = useCallback((payload: { records: unknown[]; busyCount: number }) => {
+    setVaultRecords(payload.records.filter(isEvidenceRecord));
+    setVaultBusy(payload.busyCount);
+  }, []);
+
+  const handleSourceSyncChange = useCallback((enabled: boolean) => {
+    setSourceSyncEnabled(enabled);
+    if (!enabled) setAutomaticRecords([]);
+    if (!enabled && sourceAbortRef.current) {
+      executeRunRef.current += 1;
+      sourceAbortRef.current.abort();
+      sourceAbortRef.current = null;
+      setEngineStatus(engineRef.current?.ready ? "ready" : "loading");
+      setMessage("Açık kaynak taraması iptal edildi; yalnız cihazdaki kanıt kasası kullanılacak.");
+      addLog("Otomatik açık kaynak taraması kullanıcı tarafından durduruldu.", "info");
+    }
+  }, [addLog]);
+
+  const execute = useCallback(async () => {
     const text = input.trim();
     if (!text) {
       setMessage("Önce analiz edilecek durumu yazın.");
@@ -110,31 +249,67 @@ export default function Home() {
       setMessage("Yerel çekirdek henüz hazır değil.");
       return;
     }
+    if (vaultBusy > 0) {
+      setMessage("Kaynak kasası işleniyor; analiz için aktarımın tamamlanmasını bekleyin.");
+      return;
+    }
 
+    const runId = executeRunRef.current + 1;
+    executeRunRef.current = runId;
+    sourceAbortRef.current?.abort();
+    sourceAbortRef.current = null;
     try {
       setEngineStatus("running");
-      setMessage("Yerel kanıt motoru olguları ve birimleri doğruluyor…");
-      const compiled = compileNeuralScenario(text);
+      let automaticEvidence: EvidenceRecord[] = [];
+      setAutomaticRecords([]);
+      if (sourceSyncEnabled && navigator.onLine) {
+        const controller = new AbortController();
+        sourceAbortRef.current = controller;
+        setMessage("Erişilebilir açık kaynaklar taranıyor; sonuçlar cihazda süzülüyor…");
+        try {
+          const sourceResult = await searchOpenSources(text, {
+            limit: 2,
+            timeoutMs: 9_000,
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted || executeRunRef.current !== runId) return;
+          automaticEvidence = recordsFromHits(sourceResult.hits);
+          setAutomaticRecords(automaticEvidence);
+          addLog(`Otomatik kaynak ağı: ${sourceResult.successfulSources}/${sourceResult.attemptedSources} bağlayıcı · ${automaticEvidence.length} yerel kayıt`, sourceResult.failedSources ? "info" : "ok");
+        } catch (error: unknown) {
+          if (controller.signal.aborted || executeRunRef.current !== runId) return;
+          addLog(error instanceof Error ? error.message : "Açık kaynak taraması tamamlanamadı; yerel kasa kullanıldı.", "warn");
+        } finally {
+          if (sourceAbortRef.current === controller) sourceAbortRef.current = null;
+        }
+      }
+
+      if (executeRunRef.current !== runId) return;
+      setMessage("Yerel Truth Gate kaynakları, çelişkileri, olguları ve birimleri doğruluyor…");
+      const availableEvidence = mergeEvidenceRecords(vaultRecords, automaticEvidence).records;
+      const compiled = compileNeuralScenario(text, { evidenceRecords: availableEvidence });
       const next = engineRef.current.load(compiled.pack);
       const engineLevers = engineRef.current.levers();
       const observed = observeTemporalSnapshot(compiled, next);
+      if (executeRunRef.current !== runId) return;
       setScenario(observed);
       setSnapshot(next);
       setLevers(engineLevers);
       setLeverCooldowns({});
       setActiveTab("scenario");
       setEngineStatus("ready");
-      setMessage(`${compiled.analysis.grounding.mode === "grounded" ? "Kanıtlı hesap" : compiled.analysis.grounding.mode === "conditional" ? "Koşullu çıkarım" : "Veri yetersiz"} · ${compiled.analysis.sectorLabel}`);
+      setMessage(`${compiled.analysis.grounding.mode === "grounded" ? "Kanıtlı cevap" : compiled.analysis.grounding.mode === "conditional" ? "Koşullu çıkarım" : "Kanıt bulunamadı/çelişkili"} · ${compiled.analysis.sectorLabel} · ${availableEvidence.length} kaynak kaydı`);
       addLog(`Kanıt motoru: ${compiled.analysis.scenarioId}`, "ok");
       addLog(`Truth Gate: ${compiled.analysis.gateAudit.mode} · kapsam ${percent(compiled.analysis.grounding.coverage.score)}`, compiled.analysis.gateAudit.accepted ? "ok" : "warn");
       addLog("ScenarioPack Rust/WASM şema ve durum kontrolünden geçti", "ok");
     } catch (error: unknown) {
+      if (executeRunRef.current !== runId) return;
       const detail = error instanceof Error ? error.message : "Senaryo oluşturulamadı.";
       setEngineStatus("error");
       setMessage(detail);
       addLog(detail, "warn");
     }
-  }, [addLog, input]);
+  }, [addLog, input, sourceSyncEnabled, vaultBusy, vaultRecords]);
 
   const applyLever = useCallback((lever: EngineLever) => {
     if (!engineRef.current?.ready) return;
@@ -180,8 +355,8 @@ export default function Home() {
 
       <section className="trust-strip" aria-label="Çalışma sınırları">
         <span><i className="trust-dot" /> KANIT MOTORU YEREL</span>
-        <span>BULUT KAPALI</span>
-        <span>TRUTH GATE + WASM KONTROLÜ</span>
+        <span>LLM / BULUT ÇIKARIM YOK</span>
+        <span>AÇIK KAYNAK → YEREL KASA</span>
       </section>
 
       {snapshot && scenario ? (
@@ -204,12 +379,31 @@ export default function Home() {
             input={input}
             onInput={setInput}
             onExecute={execute}
-            disabled={engineStatus === "loading" || engineStatus === "running"}
+            disabled={engineStatus === "loading" || engineStatus === "running" || vaultBusy > 0}
             scenario={scenario?.analysis ?? null}
             snapshot={snapshot}
             onExample={setInput}
+            sourceSyncEnabled={sourceSyncEnabled}
+            onSourceSyncChange={handleSourceSyncChange}
+            online={online}
           />
         ) : null}
+
+        <div className="source-tab" hidden={activeTab !== "sources"}>
+            <section className="source-sync-control" aria-label="Açık kaynak senkronizasyonu">
+              <div>
+                <span className={online ? "source-sync-control__dot" : "source-sync-control__dot source-sync-control__dot--offline"} />
+                <p><strong>{online ? "Açık kaynak erişimi hazır" : "Çevrimdışı kasa modu"}</strong><small>{online ? "Sorgu, erişilebilir bağlayıcılara doğrudan bu cihazdan gider; çıkarım yerelde kalır." : "Daha önce kaydedilen kaynaklar ve yüklenen dosyalar kullanılacak."}</small></p>
+              </div>
+              <label><input type="checkbox" checked={sourceSyncEnabled} onChange={(event) => handleSourceSyncChange(event.target.checked)} /><span>Senaryoda otomatik tara</span></label>
+              {automaticRecords.length ? <em>Son otomatik tarama: {automaticRecords.length} kayıt</em> : null}
+            </section>
+            <SourceVault
+              onEvidenceChange={handleEvidenceChange}
+              onSearchOpenSources={searchSourceDocuments}
+              onImportUrl={importSourceUrl}
+            />
+        </div>
 
         {activeTab === "graph" ? (
           snapshot && scenario && scenario.analysis.strongestRelations.length ? (
@@ -278,7 +472,7 @@ export default function Home() {
         ) : null}
       </section>
 
-      <BottomNav active={activeTab} onChange={setActiveTab} leverCount={resolvedLevers.length} />
+      <BottomNav active={activeTab} onChange={setActiveTab} leverCount={resolvedLevers.length} sourceCount={vaultRecords.length + automaticRecords.length} />
     </main>
   );
 }
@@ -291,9 +485,12 @@ type ScenarioViewProps = {
   scenario: NeuralAnalysis | null;
   snapshot: EngineSnapshot | null;
   onExample(value: string): void;
+  sourceSyncEnabled: boolean;
+  onSourceSyncChange(value: boolean): void;
+  online: boolean;
 };
 
-function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot, onExample }: ScenarioViewProps) {
+function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot, onExample, sourceSyncEnabled, onSourceSyncChange, online }: ScenarioViewProps) {
   const [selectedHorizon, setSelectedHorizon] = useState("immediate");
   const [selectedBranch, setSelectedBranch] = useState("baseline");
 
@@ -316,6 +513,13 @@ function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot,
             {EXAMPLES.map((example, index) => <button type="button" key={example} onClick={() => onExample(example)}>Örnek {index + 1}</button>)}
           </div>
         ) : null}
+        <label className="source-consent">
+          <input type="checkbox" checked={sourceSyncEnabled} onChange={(event) => onSourceSyncChange(event.target.checked)} />
+          <span>
+            <strong>Açık kaynaklarda otomatik ara</strong>
+            <small>{online ? "Sorgu terimleri Wikipedia, Wikidata, Crossref, Europe PMC ve GDELT’e doğrudan gönderilir." : "Çevrimdışı: onay saklanır, yalnız yerel kasa kullanılır."}</small>
+          </span>
+        </label>
         <button className="execute-button" type="button" onClick={onExecute} disabled={disabled || input.trim().length < 8}>
           <span className="execute-button__mark">⌁</span>
           <span><b>Kanıta bağlı analiz yap</b><small>Olgu → hesap/kural → Truth Gate → WASM paket kontrolü</small></span>

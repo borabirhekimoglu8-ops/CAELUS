@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "caelus-grounded-mobile-v7-ncm3-truth";
+const CACHE = "caelus-evidence-mesh-mobile-v8";
 const CORE = ["/", "/manifest.webmanifest", "/caelus_wasm.wasm", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -19,6 +19,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const requestUrl = new URL(event.request.url);
+
+  // Public evidence is fetched directly by the device. Do not proxy or cache
+  // cross-origin responses in the application shell service worker.
+  if (requestUrl.origin !== self.location.origin) return;
+
   if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request)
@@ -33,12 +39,14 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request).then((response) => {
-        if (response.ok && new URL(event.request.url).origin === self.location.origin) {
+        if (response.ok) {
           caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()));
         }
         return response;
       });
-      return cached || network.catch(() => caches.match("/"));
+      // Never turn a failed JSON/module/asset request into the HTML app shell.
+      // Callers must see a real network failure and fail closed.
+      return cached || network;
     }),
   );
 });

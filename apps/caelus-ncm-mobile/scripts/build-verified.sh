@@ -13,10 +13,18 @@ command -v timeout >/dev/null || {
 }
 
 vinext="${SITES_PROJECT_ROOT}/node_modules/.bin/vinext"
+tsc="${SITES_PROJECT_ROOT}/node_modules/.bin/tsc"
 if [[ ! -x "${vinext}" ]]; then
   echo "vinext is unavailable. Run npm run install:ci and wait for it to finish before building." >&2
   exit 69
 fi
+if [[ ! -x "${tsc}" ]]; then
+  echo "TypeScript is unavailable. Run npm run install:ci and wait for it to finish before building." >&2
+  exit 69
+fi
+
+echo "Type-checking the mobile application and evidence contracts..."
+"${tsc}" --project "${SITES_PROJECT_ROOT}/tsconfig.ui.json" --noEmit --pretty false
 
 echo "Running bounded vinext build..."
 timeout \
