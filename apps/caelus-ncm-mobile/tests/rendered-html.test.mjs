@@ -40,7 +40,7 @@ test("eğitilmiş yerel model aynı girdide deterministik, farklı alanda ayrı�
 
   assert.deepEqual(first, replay);
   assert.equal(first.analysis.cloudUsed, false);
-  assert.equal(first.pack.meta.generated_by, "CAELUS_LOCAL_NEUROCAUSAL_MODEL");
+  assert.equal(first.pack.meta.generated_by, "CAELUS_LOCAL_NCM2_TEMPORAL_OBSERVER");
   assert.equal(first.pack.meta.neural_model, NEURO_MODEL_INFO.version);
   assert.equal(first.pack.extended_causal_model.nodes.length, 6);
   assert.ok(first.pack.extended_causal_model.edges.length >= 10);
@@ -50,12 +50,14 @@ test("eğitilmiş yerel model aynı girdide deterministik, farklı alanda ayrı�
   assert.notEqual(first.analysis.scenarioId, other.analysis.scenarioId);
   assert.notEqual(first.analysis.sector, other.analysis.sector);
   assert.ok(first.analysis.strongestRelations.every((relation) => relation.from && relation.to));
+  assert.equal(first.analysis.horizons.length, 3);
+  assert.equal(first.analysis.counterfactuals.length, 3);
+  assert.equal(first.analysis.gateAudit.accepted, true);
 });
 
 test("sinir ağı gerçek ağırlıklarla çok görevli çıkarım yapar", () => {
   const output = runNeuralInference("Uydu enerji sistemi arızalanır ve görev penceresi 12 saat içinde kapanırsa");
-  assert.equal(output.model, NEURO_MODEL_INFO.version);
-  assert.equal(output.architecture, NEURO_MODEL_INFO.architecture);
+  assert.equal(output.model, NEURO_MODEL_INFO.semanticEncoderVersion);
   assert.equal(Array.isArray(output.latent), true);
   assert.equal(output.latent.length, NEURO_MODEL_INFO.hiddenUnits);
   assert.equal(output.nodeStates.length, 6);
@@ -87,7 +89,7 @@ test("çevrimdışı paket gerekli yerel varlıkları taşır", async () => {
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../public/caelus_wasm.wasm", import.meta.url)),
   ]);
-  assert.match(serviceWorker, /caelus-neurocausal-mobile-v3/);
+  assert.match(serviceWorker, /caelus-neurocausal-mobile-v4-ncm2/);
   assert.match(serviceWorker, /caelus_wasm\.wasm/);
   assert.equal(JSON.parse(manifest).display, "standalone");
   assert.ok(wasm.byteLength > 90_000);

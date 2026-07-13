@@ -26,4 +26,4 @@ timeout \
   "${vinext}" build
 
 "${script_dir}/validate-artifact.sh"
-node --test "${SITES_PROJECT_ROOT}/tests/rendered-html.test.mjs"
+node --test "${SITES_PROJECT_ROOT}"/tests/*.test.mjs

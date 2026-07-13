@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "caelus-neurocausal-mobile-v3";
+const CACHE = "caelus-neurocausal-mobile-v4-ncm2";
 const CORE = ["/", "/manifest.webmanifest", "/caelus_wasm.wasm", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {
