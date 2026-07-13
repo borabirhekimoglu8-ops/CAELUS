@@ -1,7 +1,7 @@
 {
-  "name": "CAELUS NeuroCausal Mobile",
-  "short_name": "CAELUS NCM",
-  "description": "Cihaz-içi sinir ağı ve deterministik Rust/WASM nedensel karar motoru",
+  "name": "CAELUS NCM-3 Mobile",
+  "short_name": "CAELUS NCM-3",
+  "description": "Yerel kanıt motoru, Truth Gate ve deterministik Rust/WASM ScenarioPack doğrulayıcısı",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
