@@ -2,10 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BottomNav, type MobileTab } from "./components/BottomNav";
+import { AssumptionDisclosure } from "./components/AssumptionDisclosure";
 import { CausalGraph } from "./components/CausalGraph";
+import { CounterfactualPanel } from "./components/CounterfactualPanel";
+import { HorizonPanel } from "./components/HorizonPanel";
 import { MetricRing } from "./components/MetricRing";
+import { NeuralGateCard } from "./components/NeuralGateCard";
 import { CaelusWasmEngine, type EngineLever, type EngineSnapshot } from "../lib/caelus-wasm";
-import { compileNeuralScenario, NEURO_MODEL_INFO, type NeuralAnalysis, type NeuralScenario } from "../lib/neurocausal.mjs";
+import {
+  compileNeuralScenario,
+  NEURO_MODEL_INFO,
+  observeTemporalSnapshot,
+  type NeuralAnalysis,
+  type NeuralScenario,
+} from "../lib/neurocausal.mjs";
 
 type AuditEntry = {
   id: number;
@@ -85,6 +95,7 @@ export default function Home() {
       try {
         const next = engineRef.current.tick(1);
         setSnapshot(next);
+        setScenario((current) => current ? observeTemporalSnapshot(current, next) : current);
         if (next.tick % 8 === 0) addLog(`Canlı durum güncellendi · tick ${next.tick}`, "info");
       } catch {
         setEngineStatus("error");
@@ -111,7 +122,8 @@ export default function Home() {
       let next = engineRef.current.load(compiled.pack);
       next = engineRef.current.tick(4);
       const engineLevers = engineRef.current.levers();
-      setScenario(compiled);
+      const observed = observeTemporalSnapshot(compiled, next);
+      setScenario(observed);
       setSnapshot(next);
       setLevers(engineLevers);
       setLeverCooldowns({});
@@ -119,6 +131,7 @@ export default function Home() {
       setEngineStatus("ready");
       setMessage(`Canlı model çalışıyor · ${compiled.analysis.sectorLabel}`);
       addLog(`Nöral model: ${compiled.analysis.scenarioId}`, "ok");
+      addLog(`Neural Gate: ${compiled.analysis.gateAudit.mode} · yol ${compiled.analysis.gateAudit.graphDepth}`, compiled.analysis.gateAudit.accepted ? "ok" : "warn");
       addLog(`ScenarioPack WASM çekirdeğinde kabul edildi · güven ${percent(compiled.analysis.confidence)}`, "ok");
       startRealtime();
     } catch (error: unknown) {
@@ -135,6 +148,7 @@ export default function Home() {
       const result = engineRef.current.applyLever(lever.id);
       const lockedUntil = result.snapshot.tick + Math.max(1, lever.lockout_ticks ?? 1);
       setSnapshot(result.snapshot);
+      setScenario((current) => current ? observeTemporalSnapshot(current, result.snapshot) : current);
       setLevers(engineRef.current.levers());
       setLeverCooldowns((current) => ({ ...current, [lever.id]: lockedUntil }));
       setMessage(result.accepted ? "Müdahale çekirdek tarafından uygulandı." : "Müdahale kilitli veya başarısız.");
@@ -191,6 +205,7 @@ export default function Home() {
       <section className="content-deck">
         {activeTab === "scenario" ? (
           <ScenarioView
+            key={scenario?.analysis.scenarioId ?? "empty"}
             input={input}
             onInput={setInput}
             onExecute={execute}
@@ -254,8 +269,9 @@ export default function Home() {
             <div className="panel-heading"><div><span>YEREL DENETİM</span><h2>Çalışma kaydı</h2></div><em>{logs.length} OLAY</em></div>
             <div className="model-card">
               <span>MODEL</span><strong>{NEURO_MODEL_INFO.version}</strong>
-              <small>{NEURO_MODEL_INFO.inputDimensions} giriş · {NEURO_MODEL_INFO.hiddenUnits} gizli nöron · çok görevli grafik başlığı</small>
+              <small>{NEURO_MODEL_INFO.inputDimensions} semantik giriş · {NEURO_MODEL_INFO.hiddenUnits} encoder · Q15 temporal grafik gözlemcisi</small>
             </div>
+            {scenario ? <NeuralGateCard audit={scenario.analysis.gateAudit} observerTick={scenario.analysis.observerTick} /> : null}
             <div className="audit-list">
               {logs.map((entry) => (
                 <div className={`audit-entry audit-entry--${entry.tone}`} key={entry.id}>
@@ -283,6 +299,9 @@ type ScenarioViewProps = {
 };
 
 function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot, onExample }: ScenarioViewProps) {
+  const [selectedHorizon, setSelectedHorizon] = useState("immediate");
+  const [selectedBranch, setSelectedBranch] = useState("baseline");
+
   return (
     <>
       <section className="composer panel">
@@ -315,15 +334,21 @@ function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot,
           <h2>{scenario.concepts[0]} merkezli canlı senaryo</h2>
           <blockquote>“{scenario.sourceText}”</blockquote>
           <p>{scenario.synopsis}</p>
+          <div className="fact-strip" aria-label="Girdiden çıkarılan kavramlar">
+            {scenario.concepts.slice(0, 6).map((concept) => <span key={concept}>{concept}</span>)}
+          </div>
           <div className="impact-banner">
             <div><span>Sürtünme</span><strong>{snapshot.clamped_friction.toFixed(2)}×</strong></div>
             <div><span>Throughput</span><strong>{percent(snapshot.throughput_ratio)}</strong></div>
             <div><span>Tick</span><strong>{snapshot.tick}</strong></div>
           </div>
+          <HorizonPanel horizons={scenario.horizons} selected={selectedHorizon} onSelect={setSelectedHorizon} />
+          <CounterfactualPanel branches={scenario.counterfactuals} selected={selectedBranch} onSelect={setSelectedBranch} />
+          <AssumptionDisclosure assumptions={scenario.assumptions} unknowns={scenario.unknowns} />
           <h3>Öğrenilmiş olay zinciri</h3>
           <ol className="event-chain">
             {scenario.strongestRelations.map((relation, index) => (
-              <li key={`${relation.from}-${relation.to}`}><i>{index + 1}</i><p><b>{relation.from}</b> üzerindeki baskı <b>{relation.to}</b> bileşenine aktarılıyor.</p><em>{percent(relation.confidence)}</em></li>
+              <li key={`${relation.from}-${relation.to}`}><i>{index + 1}</i><p><b>{relation.from}</b> → <b>{relation.to}</b><small>{relation.mechanism} · {relation.lagTicks} tick</small></p><em>{percent(relation.confidence)}</em></li>
             ))}
           </ol>
         </section>

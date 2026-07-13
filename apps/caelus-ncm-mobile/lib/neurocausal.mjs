@@ -1,7 +1,18 @@
 import { NEURO_WEIGHTS } from "./neuro-weights.mjs";
+import { parseSituation } from "./ncm2/frame-parser.mjs";
+import {
+  buildNeuralGate,
+  buildSemanticGraph,
+  runTemporalObserver,
+  snapshotStates,
+  TEMPORAL_MODEL_INFO,
+} from "./ncm2/temporal-observer.mjs";
+import { buildContextualActions, buildDeepExplanation } from "./ncm2/explain.mjs";
 
 const INPUT = NEURO_WEIGHTS.input;
 const SECTORS = NEURO_WEIGHTS.sectors;
+const NCM2_VERSION = "NCM-2.0.0";
+const NCM2_ARCHITECTURE = `${NEURO_WEIGHTS.architecture}+${TEMPORAL_MODEL_INFO.architecture}+DETERMINISTIC_NEURAL_GATE`;
 const STOP_WORDS = new Set([
   "acaba", "ama", "ancak", "artik", "bana", "ben", "bence", "bile", "bir", "biri", "biz", "bu", "buna", "bunu",
   "cok", "daha", "de", "da", "diye", "en", "fakat", "gibi", "icin", "ile", "ise", "ki", "mi", "mu", "mı", "mü",
@@ -187,7 +198,7 @@ function durationHours(text) {
   return amount;
 }
 
-export function compileNeuralScenario(input) {
+export function compileLegacyScenario(input) {
   const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 600);
   if (sourceText.length < 8) throw new Error("Nöro-nedensel model için daha açıklayıcı bir durum yazın.");
   const neural = runNeuralInference(sourceText);
@@ -342,11 +353,303 @@ export function compileNeuralScenario(input) {
   };
 }
 
+function domainLabels() {
+  return Object.fromEntries(Object.entries(DOMAIN).map(([key, value]) => [key, value.label]));
+}
+
+function roleLabel(concept, primaryDomain) {
+  const domain = DOMAIN[concept.domain] || primaryDomain || DOMAIN.UNIVERSAL;
+  return domain.roles[concept.role] || primaryDomain.roles[concept.role] || DOMAIN.UNIVERSAL.roles[concept.role];
+}
+
+function initialPressure(concept, index, situation, neural) {
+  const baseByType = {
+    ACTOR: 0.38,
+    SERVICE: 0.24,
+    DEMAND: 0.28,
+    CAPACITY: 0.22,
+    GATE: 0.26,
+    DEADLINE: 0.20,
+  };
+  const typeBias = baseByType[concept.semanticType] ?? 0.22;
+  const neuralState = neural.nodeStates[index % neural.nodeStates.length] || 0.5;
+  let pressure = typeBias + situation.severity * (concept.semanticType === "ACTOR" ? 0.48 : 0.36) + neuralState * 0.16;
+  if (concept.semanticType === "CAPACITY" && situation.activeMitigation) pressure -= 0.22;
+  if (concept.semanticType === "CAPACITY" && situation.failedMitigation) pressure += 0.20;
+  if (situation.negatedEvents.length && concept.semanticType === "ACTOR") pressure -= 0.24;
+  return clamp(pressure, 0.08, 0.94);
+}
+
+function relationNarrative(edge, nodeByKey) {
+  const from = nodeByKey.get(edge.from);
+  const to = nodeByKey.get(edge.to);
+  return {
+    from: from?.label || edge.from,
+    to: to?.label || edge.to,
+    confidence: edge.confidenceFp / 1_000_000,
+    relation: edge.relation,
+    mechanism: edge.mechanism,
+    lagTicks: edge.lagTicks,
+    polarity: edge.polarity,
+    evidence: edge.evidence,
+  };
+}
+
+export function compileNeuralScenario(input) {
+  const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 600);
+  if (sourceText.length < 8) throw new Error("NCM-2 için aktör, olay veya süre içeren daha açıklayıcı bir durum yazın.");
+
+  const neural = runNeuralInference(sourceText);
+  const situation = parseSituation(sourceText, {
+    fold,
+    hash32,
+    semanticLexicon: NEURO_WEIGHTS.semanticLexicon,
+    neuralProbabilities: neural.probabilities,
+    neuralSeverity: neural.severity,
+  });
+  const primaryDomain = DOMAIN[situation.primarySector] || DOMAIN.UNIVERSAL;
+  const concepts = situation.concepts;
+  const fingerprint = hex(hash32(`${NCM2_VERSION}:${fold(sourceText)}`));
+  const scenarioId = `NCM2-${situation.primarySector}-${fingerprint}`;
+  const tickMinutes = situation.durationHours <= 24 ? 15 : 30;
+  const deadlineTick = Math.max(4, Math.round((situation.durationHours * 60) / tickMinutes));
+
+  const nodes = concepts.map((concept, index) => {
+    const state = initialPressure(concept, index, situation, neural);
+    const nodeId = `${slug(concept.key, `UNSUR${index + 1}`)}_${index + 1}`;
+    concept.nodeId = nodeId;
+    const hiddenRisk = concept.semanticType === "ACTOR" && situation.severity > 0.62 && !situation.negatedEvents.length;
+    return {
+      id: nodeId,
+      label: `${concept.label} · ${roleLabel(concept, primaryDomain)}`,
+      kind: concept.kind,
+      capacity_fp: 1_000_000,
+      state_fp: Math.round(state * 1_000_000),
+      weight_fp: [260_000, 240_000, 220_000, 210_000, 180_000, 230_000][concept.role] || 210_000,
+      reported_state_fp: Math.round(clamp(state - (hiddenRisk ? 0.20 : 0), 0.05, 0.98) * 1_000_000),
+      trust_fp: hiddenRisk ? 700_000 : Math.round((0.86 + situation.coverage * 0.13) * 1_000_000),
+      deadline_tick: concept.semanticType === "DEADLINE" ? deadlineTick : -1,
+      irrecoverable: false,
+      notes: concept.explicit
+        ? `${concept.label} doğrudan kullanıcı girdisinden çıkarıldı.`
+        : `${concept.label} ${concept.evidence[0]?.ruleId || "NCM2-ONTOLOGY"} kuralıyla görünür varsayım olarak eklendi.`,
+    };
+  });
+  const nodeByKey = new Map(concepts.map((concept, index) => [concept.key, nodes[index]]));
+
+  const semanticEdges = buildSemanticGraph(situation, neural, hash32);
+  const gateAudit = buildNeuralGate(situation, semanticEdges);
+  const positiveEdges = semanticEdges.filter((edge) => edge.polarity > 0).slice(0, 9);
+  const edges = positiveEdges.map((edge) => ({
+    from: nodeByKey.get(edge.from).id,
+    to: nodeByKey.get(edge.to).id,
+    multiplier_fp: Math.round((0.42 + edge.strengthFp / 1_000_000) * 1_000_000),
+    lag_ticks: edge.lagTicks,
+    active: true,
+    notes: `${edge.relation}: ${edge.mechanism} | kanıt ${edge.evidence[0]?.source || "ontology"}`,
+  }));
+  nodes.forEach((node, index) => edges.push({
+    from: node.id,
+    to: "",
+    multiplier_fp: Math.round((0.12 + nodes[index].state_fp / 1_000_000 * 0.25) * 1_000_000),
+    lag_ticks: 0,
+    active: true,
+  }));
+
+  const forecasts = runTemporalObserver({
+    concepts,
+    edges: semanticEdges,
+    initialStatesFp: nodes.map((node) => node.state_fp),
+    severity: situation.severity,
+    durationHours: situation.durationHours,
+    activeMitigation: situation.activeMitigation,
+    failedMitigation: situation.failedMitigation,
+  });
+  const deep = buildDeepExplanation({
+    situation,
+    concepts,
+    edges: semanticEdges,
+    forecasts,
+    gateAudit,
+    domainLabels: domainLabels(),
+  });
+  const contextualActions = buildContextualActions({ situation, concepts, forecasts });
+  const levers = contextualActions.map((action, index) => {
+    const targetIndex = Math.max(0, concepts.findIndex((concept) => concept.key === action.targetKey));
+    const targetNode = nodes[targetIndex];
+    return {
+      id: `N2-${index + 1}_${slug(action.label, `HAMLE${index + 1}`).slice(0, 22)}`,
+      label: action.label,
+      target: targetNode.label,
+      success_p_fp: Math.round(action.probability * 1_000_000),
+      cost_ticks: 2 + Math.round((forecasts[0].nodePressureFp[action.targetKey] / 1_000_000) * 8),
+      lockout_ticks: 6 + Math.round(situation.severity * 18),
+      on_success: {
+        target_node_id: targetNode.id,
+        state_delta_fp: -Math.round((0.16 + action.probability * 0.18) * 1_000_000),
+        trust_delta_fp: concepts[targetIndex].semanticType === "GATE" ? 160_000 : 0,
+        friction_delta_fp: -Math.round((0.06 + action.probability * 0.09) * 1_000_000),
+        clear_irrecoverable: concepts[targetIndex].semanticType === "DEADLINE",
+      },
+      on_failure: {
+        target_node_id: targetNode.id,
+        state_delta_fp: Math.round((0.025 + situation.severity * 0.045) * 1_000_000),
+        trust_delta_fp: concepts[targetIndex].semanticType === "GATE" ? -50_000 : 0,
+        friction_delta_fp: 30_000,
+        clear_irrecoverable: false,
+      },
+      notes: `${action.rationale} Observer önerisidir; kabul kararı Rust/WASM çekirdeğindedir.`,
+    };
+  });
+
+  const strongest = positiveEdges[0];
+  const secondary = positiveEdges[1] || strongest;
+  const pack = {
+    schema_version: "2.0",
+    id: scenarioId,
+    blackswan_class: "local_temporal_neurocausal_observer",
+    sector: situation.primarySector,
+    min_caelus_engine: "2.0",
+    labels: {
+      node: nodes[0].label,
+      edge: nodeByKey.get(strongest?.from)?.label || nodes[0].label,
+      actor: nodes.find((node, index) => concepts[index].semanticType === "ACTOR")?.label || nodes[0].label,
+      regulatory_gate: nodes.find((node, index) => concepts[index].semanticType === "GATE")?.label || nodes[2].label,
+      friction: `${concepts[0].label} kaynaklı sistem baskısı`,
+    },
+    meta: {
+      title: `${deep.domainLabel} · ${concepts[0].label} senaryosu`,
+      region: "ON_DEVICE",
+      tick_minutes: tickMinutes,
+      horizon_hours: Math.min(2_160, Math.max(72, Math.ceil(situation.durationHours * 2))),
+      synopsis: sourceText,
+      generated_by: "CAELUS_LOCAL_NCM2_TEMPORAL_OBSERVER",
+      neural_model: NCM2_VERSION,
+      semantic_encoder: NEURO_WEIGHTS.version,
+      neural_architecture: NCM2_ARCHITECTURE,
+      temporal_model: TEMPORAL_MODEL_INFO.version,
+      compiler_fingerprint: fingerprint,
+      neural_confidence: Number(situation.confidence.toFixed(4)),
+      severity: Number(situation.severity.toFixed(4)),
+      observer_gate: gateAudit.mode,
+      observer_authority: "ADVISORY_ONLY",
+      engine_authority: "RUST_WASM",
+      cloud_used: false,
+    },
+    extended_causal_model: {
+      nodes,
+      edges,
+      feedback_loops: [{
+        id: `NCM2-FL-${fingerprint}`,
+        path: [nodeByKey.get(strongest.from).id, nodeByKey.get(strongest.to).id, nodeByKey.get(secondary.to).id],
+        gain_fp: Math.round((1.01 + situation.severity * 0.26) * 1_000_000),
+        notes: "Neural Gate tarafından doğrulanan baskın temporal yayılım yolu.",
+      }],
+      levers,
+      hysteresis: [
+        { id: `NCM2-HYST-${fingerprint}-1`, threshold_tick: Math.max(8, Math.round(deadlineTick * 0.42)), reversible: true, permanent_loss_fp: 0 },
+        { id: `NCM2-HYST-${fingerprint}-2`, threshold_tick: deadlineTick, reversible: false, permanent_loss_fp: Math.round((0.06 + situation.severity * 0.24) * 1_000_000) },
+      ],
+      hard_deadlines: [{
+        node_id: nodes.find((node, index) => concepts[index].semanticType === "DEADLINE")?.id || nodes[nodes.length - 1].id,
+        at_tick: deadlineTick,
+        label: `NCM2-DEADLINE-${fingerprint}`,
+        notes: `${Number(situation.durationHours.toFixed(2))} saatlik girdiden türetilen karar penceresi.`,
+      }],
+    },
+  };
+
+  const strongestRelations = positiveEdges.slice(0, 5).map((edge) => relationNarrative(edge, nodeByKey));
+  const observerProposal = {
+    schema: "ncm-observer/2",
+    modelVersion: NCM2_VERSION,
+    sourceHash: situation.sourceHash,
+    situation,
+    concepts,
+    edges: semanticEdges,
+    forecasts,
+    gateAudit,
+    initialStatesFp: nodes.map((node) => node.state_fp),
+  };
+
+  return {
+    pack,
+    analysis: {
+      sourceText,
+      fingerprint,
+      scenarioId,
+      sector: situation.primarySector,
+      sectorLabel: deep.domainLabel,
+      activeDomains: situation.activeDomains.map((row) => row.sector),
+      confidence: situation.confidence,
+      severity: situation.severity,
+      synopsis: deep.executiveSummary,
+      executiveSummary: deep.executiveSummary,
+      concepts: concepts.map((item) => item.label),
+      strongestRelations,
+      leverNarratives: levers.map((lever) => `${lever.label}: ${lever.target}`),
+      horizons: deep.horizons,
+      counterfactuals: deep.counterfactuals,
+      assumptions: deep.assumptions,
+      unknowns: deep.unknowns,
+      criticalSignals: deep.criticalSignals,
+      gateAudit,
+      evidence: deep.evidence,
+      observerProposal,
+      observerTick: 0,
+      model: NCM2_VERSION,
+      semanticEncoder: NEURO_WEIGHTS.version,
+      architecture: NCM2_ARCHITECTURE,
+      authority: "ADVISORY_OBSERVER_WITH_RUST_WASM_AUTHORITY",
+      cloudUsed: false,
+    },
+  };
+}
+
+export function observeTemporalSnapshot(scenario, snapshot) {
+  const proposal = scenario?.analysis?.observerProposal;
+  if (!proposal || !snapshot) return scenario;
+  const currentStates = snapshotStates(snapshot, proposal.concepts, proposal.initialStatesFp);
+  const forecasts = runTemporalObserver({
+    concepts: proposal.concepts,
+    edges: proposal.edges,
+    initialStatesFp: currentStates,
+    severity: proposal.situation.severity,
+    durationHours: proposal.situation.durationHours,
+    activeMitigation: proposal.situation.activeMitigation,
+    failedMitigation: proposal.situation.failedMitigation,
+  });
+  const deep = buildDeepExplanation({
+    situation: proposal.situation,
+    concepts: proposal.concepts,
+    edges: proposal.edges,
+    forecasts,
+    gateAudit: proposal.gateAudit,
+    domainLabels: domainLabels(),
+  });
+  return {
+    ...scenario,
+    analysis: {
+      ...scenario.analysis,
+      synopsis: deep.executiveSummary,
+      executiveSummary: deep.executiveSummary,
+      horizons: deep.horizons,
+      counterfactuals: deep.counterfactuals,
+      observerTick: Number(snapshot.tick || 0),
+    },
+  };
+}
+
 export const NEURO_MODEL_INFO = Object.freeze({
-  version: NEURO_WEIGHTS.version,
-  architecture: NEURO_WEIGHTS.architecture,
+  version: NCM2_VERSION,
+  semanticEncoderVersion: NEURO_WEIGHTS.version,
+  temporalModelVersion: TEMPORAL_MODEL_INFO.version,
+  architecture: NCM2_ARCHITECTURE,
   inputDimensions: NEURO_WEIGHTS.input,
   hiddenUnits: NEURO_WEIGHTS.hidden,
+  temporalHiddenUnits: 6,
   sectors: [...NEURO_WEIGHTS.sectors],
+  observerAuthority: "advisory",
+  engineAuthority: "rust_wasm",
   cloudUsed: false,
 });
