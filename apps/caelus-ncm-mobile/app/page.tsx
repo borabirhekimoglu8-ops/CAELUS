@@ -5,6 +5,7 @@ import { BottomNav, type MobileTab } from "./components/BottomNav";
 import { AssumptionDisclosure } from "./components/AssumptionDisclosure";
 import { CausalGraph } from "./components/CausalGraph";
 import { CounterfactualPanel } from "./components/CounterfactualPanel";
+import { EvidenceLedger } from "./components/EvidenceLedger";
 import { HorizonPanel } from "./components/HorizonPanel";
 import { MetricRing } from "./components/MetricRing";
 import { NeuralGateCard } from "./components/NeuralGateCard";
@@ -25,9 +26,9 @@ type AuditEntry = {
 };
 
 const EXAMPLES = [
-  "Samos feribot seferleri fırtına nedeniyle 48 saat durursa yolcu ve liman operasyonu nasıl etkilenir?",
-  "Şirket sunucusuna saldırı olur ve müşteri verileri sızarsa servis zinciri nasıl çöker?",
-  "Bir uydu görevinde enerji kapasitesi azalırken kritik iletişim penceresi kapanırsa ne olur?",
+  "Saat 08.00'de başlayan fırtına nedeniyle Kuşadası–Samos feribot seferleri 48 saat durduruldu. Yolcu sayısı ve alternatif sefer bilgisi verilmedi. Etki nedir?",
+  "Şebeke 90 dakika kesilecek. Jeneratör sürekli 80 kW sağlayabiliyor; sabit yük 100 kW. Batarya ve başka kaynak yok.",
+  "08.00'de kuyruk sıfır. Geliş 30 araç/dk, işlem 24 araç/dk. Oranlar sabit. 08.30'da işlem kapasitesi 36 araç/dk oluyor. Kuyruk ne zaman temizlenir?",
 ];
 
 function now(): string {
@@ -45,7 +46,6 @@ function fixedProbability(value: number | undefined): number {
 
 export default function Home() {
   const engineRef = useRef<CaelusWasmEngine | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logIdRef = useRef(1);
   const [engineStatus, setEngineStatus] = useState<"loading" | "ready" | "running" | "error">("loading");
   const [input, setInput] = useState("");
@@ -54,7 +54,7 @@ export default function Home() {
   const [snapshot, setSnapshot] = useState<EngineSnapshot | null>(null);
   const [levers, setLevers] = useState<EngineLever[]>([]);
   const [leverCooldowns, setLeverCooldowns] = useState<Record<string, number>>({});
-  const [message, setMessage] = useState("Yerel sinir ağı ve Rust çekirdeği hazırlanıyor…");
+  const [message, setMessage] = useState("Yerel kanıt motoru ve Rust çekirdeği hazırlanıyor…");
   const [logs, setLogs] = useState<AuditEntry[]>([]);
 
   const addLog = useCallback((messageText: string, tone: AuditEntry["tone"] = "info") => {
@@ -78,30 +78,26 @@ export default function Home() {
       addLog("Yerel çekirdek başlatma hatası", "warn");
     });
 
+    let reloadingForUpdate = false;
+    const hadServiceWorkerController = "serviceWorker" in navigator && Boolean(navigator.serviceWorker.controller);
+    const refreshOnWorkerUpdate = () => {
+      if (!hadServiceWorkerController || reloadingForUpdate) return;
+      reloadingForUpdate = true;
+      window.location.reload();
+    };
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      navigator.serviceWorker.addEventListener("controllerchange", refreshOnWorkerUpdate);
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" })
+        .then((registration) => registration.update())
+        .catch(() => undefined);
     }
 
     return () => {
       cancelled = true;
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [addLog]);
-
-  const startRealtime = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      if (document.hidden || !engineRef.current?.ready) return;
-      try {
-        const next = engineRef.current.tick(1);
-        setSnapshot(next);
-        setScenario((current) => current ? observeTemporalSnapshot(current, next) : current);
-        if (next.tick % 8 === 0) addLog(`Canlı durum güncellendi · tick ${next.tick}`, "info");
-      } catch {
-        setEngineStatus("error");
-        setMessage("Canlı yerel akış durdu.");
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("controllerchange", refreshOnWorkerUpdate);
       }
-    }, 2200);
+    };
   }, [addLog]);
 
   const execute = useCallback(() => {
@@ -117,10 +113,9 @@ export default function Home() {
 
     try {
       setEngineStatus("running");
-      setMessage("Yerel sinir ağı ilişkileri çıkarıyor…");
+      setMessage("Yerel kanıt motoru olguları ve birimleri doğruluyor…");
       const compiled = compileNeuralScenario(text);
-      let next = engineRef.current.load(compiled.pack);
-      next = engineRef.current.tick(4);
+      const next = engineRef.current.load(compiled.pack);
       const engineLevers = engineRef.current.levers();
       const observed = observeTemporalSnapshot(compiled, next);
       setScenario(observed);
@@ -129,18 +124,17 @@ export default function Home() {
       setLeverCooldowns({});
       setActiveTab("scenario");
       setEngineStatus("ready");
-      setMessage(`Canlı model çalışıyor · ${compiled.analysis.sectorLabel}`);
-      addLog(`Nöral model: ${compiled.analysis.scenarioId}`, "ok");
-      addLog(`Neural Gate: ${compiled.analysis.gateAudit.mode} · yol ${compiled.analysis.gateAudit.graphDepth}`, compiled.analysis.gateAudit.accepted ? "ok" : "warn");
-      addLog(`ScenarioPack WASM çekirdeğinde kabul edildi · güven ${percent(compiled.analysis.confidence)}`, "ok");
-      startRealtime();
+      setMessage(`${compiled.analysis.grounding.mode === "grounded" ? "Kanıtlı hesap" : compiled.analysis.grounding.mode === "conditional" ? "Koşullu çıkarım" : "Veri yetersiz"} · ${compiled.analysis.sectorLabel}`);
+      addLog(`Kanıt motoru: ${compiled.analysis.scenarioId}`, "ok");
+      addLog(`Truth Gate: ${compiled.analysis.gateAudit.mode} · kapsam ${percent(compiled.analysis.grounding.coverage.score)}`, compiled.analysis.gateAudit.accepted ? "ok" : "warn");
+      addLog("ScenarioPack Rust/WASM şema ve durum kontrolünden geçti", "ok");
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : "Senaryo oluşturulamadı.";
       setEngineStatus("error");
       setMessage(detail);
       addLog(detail, "warn");
     }
-  }, [addLog, input, startRealtime]);
+  }, [addLog, input]);
 
   const applyLever = useCallback((lever: EngineLever) => {
     if (!engineRef.current?.ready) return;
@@ -166,15 +160,16 @@ export default function Home() {
     });
   }, [levers, scenario]);
 
-  const risk = snapshot ? Math.max(0, Math.min(1, (snapshot.clamped_friction - 1) / 2)) : 0;
-  const throughput = snapshot?.throughput_ratio ?? 0;
-  const confidence = scenario?.analysis.confidence ?? 0;
+  const evidenceCoverage = scenario?.analysis.grounding.coverage.score ?? 0;
+  const calculationCount = scenario?.analysis.grounding.calculations.length ?? 0;
+  const unknownCount = scenario?.analysis.grounding.unknowns.length ?? 0;
+  const claimCount = scenario?.analysis.grounding.claims.length ?? 0;
 
   return (
     <main className="mobile-app">
       <header className="app-header">
         <div>
-          <p className="eyebrow">NEUROCAUSAL OPERATING SYSTEM</p>
+          <p className="eyebrow">GROUNDED CAUSAL ENGINE</p>
           <h1>CAELUS <span>NCM</span></h1>
         </div>
         <div className={`status-orb status-orb--${engineStatus}`} aria-label={`Motor durumu: ${engineStatus}`}>
@@ -184,16 +179,16 @@ export default function Home() {
       </header>
 
       <section className="trust-strip" aria-label="Çalışma sınırları">
-        <span><i className="trust-dot" /> SİNİR AĞI CİHAZDA</span>
+        <span><i className="trust-dot" /> KANIT MOTORU YEREL</span>
         <span>BULUT KAPALI</span>
-        <span>WASM DOĞRULAMA</span>
+        <span>TRUTH GATE + WASM KONTROLÜ</span>
       </section>
 
       {snapshot && scenario ? (
-        <section className="metric-row" aria-label="Canlı motor metrikleri">
-          <MetricRing label="Risk" value={risk} display={percent(risk)} tone={risk > 0.7 ? "red" : "amber"} />
-          <MetricRing label="Akış" value={throughput} display={percent(throughput)} tone="green" />
-          <MetricRing label="Nöral güven" value={confidence} display={percent(confidence)} tone="cyan" />
+        <section className="metric-row" aria-label="Kanıt defteri özeti">
+          <MetricRing label="Kanıt kapsamı" value={evidenceCoverage} display={percent(evidenceCoverage)} tone="cyan" />
+          <MetricRing label="Doğrulanmış hesap" value={claimCount ? calculationCount / claimCount : 0} display={String(calculationCount)} tone="green" />
+          <MetricRing label="Bilinmeyen" value={claimCount ? unknownCount / claimCount : 0} display={String(unknownCount)} tone={unknownCount ? "amber" : "green"} />
         </section>
       ) : null}
 
@@ -217,22 +212,22 @@ export default function Home() {
         ) : null}
 
         {activeTab === "graph" ? (
-          snapshot && scenario ? (
+          snapshot && scenario && scenario.analysis.strongestRelations.length ? (
             <section className="panel graph-panel">
               <div className="panel-heading">
-                <div><span>CANLI TOPOLOJİ</span><h2>Nedensel grafik</h2></div>
-                <em>TICK {snapshot.tick}</em>
+                <div><span>KANIT TOPOLOJİSİ</span><h2>Kaynaklı ilişki grafiği</h2></div>
+                <em>{scenario.analysis.strongestRelations.length} İLİŞKİ</em>
               </div>
               <CausalGraph snapshot={snapshot} nodes={scenario.pack.extended_causal_model.nodes} />
               <div className="relation-list">
                 {scenario.analysis.strongestRelations.map((relation) => (
                   <div key={`${relation.from}-${relation.to}`}>
-                    <span>{relation.from}</span><b>→</b><span>{relation.to}</span><em>{percent(relation.confidence)}</em>
+                    <span>{relation.from}</span><b>→</b><span>{relation.to}</span><em>{relation.evidence[0]?.source === "input" ? "GİRDİ" : "KURAL"}</em>
                   </div>
                 ))}
               </div>
             </section>
-          ) : <EmptyState title="Henüz grafik yok" text="Senaryo sekmesinden bir durum yazıp yerel modeli çalıştırın." />
+          ) : <EmptyState title="Kanıtlı grafik yok" text="Bu girdi için desteklenen bir ilişki bulunmadı; CAELUS kanıtsız zincir üretmedi." />
         ) : null}
 
         {activeTab === "levers" ? (
@@ -261,7 +256,7 @@ export default function Home() {
                 ))}
               </div>
             </section>
-          ) : <EmptyState title="Hamle üretilmedi" text="Önce yerel nöro-nedensel modeli bir durum üzerinde çalıştırın." />
+          ) : <EmptyState title="Hamle üretilmedi" text="Bu yerel bilgi paketi doğrulanmış bir müdahale kuralı sağlamıyor." />
         ) : null}
 
         {activeTab === "audit" ? (
@@ -269,7 +264,7 @@ export default function Home() {
             <div className="panel-heading"><div><span>YEREL DENETİM</span><h2>Çalışma kaydı</h2></div><em>{logs.length} OLAY</em></div>
             <div className="model-card">
               <span>MODEL</span><strong>{NEURO_MODEL_INFO.version}</strong>
-              <small>{NEURO_MODEL_INFO.inputDimensions} semantik giriş · {NEURO_MODEL_INFO.hiddenUnits} encoder · Q15 temporal grafik gözlemcisi</small>
+              <small>Kanıt defteri · deterministik birim/zaman çözücü · yerel semantik yönlendirici · Rust/WASM paket kontrolü</small>
             </div>
             {scenario ? <NeuralGateCard audit={scenario.analysis.gateAudit} observerTick={scenario.analysis.observerTick} /> : null}
             <div className="audit-list">
@@ -307,12 +302,12 @@ function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot,
       <section className="composer panel">
         <div className="panel-heading">
           <div><span>SERBEST DURUM GİRİŞİ</span><h2>Ne olursa ne olur?</h2></div>
-          <em>{input.length}/600</em>
+          <em>{input.length}/1200</em>
         </div>
         <textarea
           value={input}
-          onChange={(event) => onInput(event.target.value.slice(0, 600))}
-          placeholder="Herhangi bir gerçek durumu yazın…"
+          onChange={(event) => onInput(event.target.value.slice(0, 1200))}
+          placeholder="Olayı, süreyi, miktarı, kapasiteyi ve bilinen kısıtları yazın…"
           rows={5}
           aria-label="Analiz edilecek durum"
         />
@@ -323,7 +318,7 @@ function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot,
         ) : null}
         <button className="execute-button" type="button" onClick={onExecute} disabled={disabled || input.trim().length < 8}>
           <span className="execute-button__mark">⌁</span>
-          <span><b>Yerel modeli çalıştır</b><small>Sinir ağı → ScenarioPack → Rust/WASM</small></span>
+          <span><b>Kanıta bağlı analiz yap</b><small>Olgu → hesap/kural → Truth Gate → WASM paket kontrolü</small></span>
           <i>→</i>
         </button>
       </section>
@@ -331,26 +326,30 @@ function ScenarioView({ input, onInput, onExecute, disabled, scenario, snapshot,
       {scenario && snapshot ? (
         <section className="panel result-panel">
           <div className="result-kicker"><span>{scenario.sectorLabel}</span><em>{scenario.model}</em></div>
-          <h2>{scenario.concepts[0]} merkezli canlı senaryo</h2>
+          <h2>{scenario.grounding.title}</h2>
           <blockquote>“{scenario.sourceText}”</blockquote>
-          <p>{scenario.synopsis}</p>
+          <EvidenceLedger reasoning={scenario.grounding} />
           <div className="fact-strip" aria-label="Girdiden çıkarılan kavramlar">
             {scenario.concepts.slice(0, 6).map((concept) => <span key={concept}>{concept}</span>)}
           </div>
           <div className="impact-banner">
-            <div><span>Sürtünme</span><strong>{snapshot.clamped_friction.toFixed(2)}×</strong></div>
-            <div><span>Throughput</span><strong>{percent(snapshot.throughput_ratio)}</strong></div>
-            <div><span>Tick</span><strong>{snapshot.tick}</strong></div>
+            <div><span>Desteklenen iddia</span><strong>{scenario.grounding.coverage.supportedClaimCount}</strong></div>
+            <div><span>Doğrulanmış hesap</span><strong>{scenario.grounding.calculations.length}</strong></div>
+            <div><span>Bilinmeyen</span><strong>{scenario.grounding.coverage.unknownClaimCount}</strong></div>
           </div>
-          <HorizonPanel horizons={scenario.horizons} selected={selectedHorizon} onSelect={setSelectedHorizon} />
-          <CounterfactualPanel branches={scenario.counterfactuals} selected={selectedBranch} onSelect={setSelectedBranch} />
+          {scenario.horizons.length ? <HorizonPanel horizons={scenario.horizons} selected={selectedHorizon} onSelect={setSelectedHorizon} /> : null}
+          {scenario.counterfactuals.length ? <CounterfactualPanel branches={scenario.counterfactuals} selected={selectedBranch} onSelect={setSelectedBranch} /> : null}
           <AssumptionDisclosure assumptions={scenario.assumptions} unknowns={scenario.unknowns} />
-          <h3>Öğrenilmiş olay zinciri</h3>
-          <ol className="event-chain">
-            {scenario.strongestRelations.map((relation, index) => (
-              <li key={`${relation.from}-${relation.to}`}><i>{index + 1}</i><p><b>{relation.from}</b> → <b>{relation.to}</b><small>{relation.mechanism} · {relation.lagTicks} tick</small></p><em>{percent(relation.confidence)}</em></li>
-            ))}
-          </ol>
+          {scenario.strongestRelations.length ? (
+            <>
+              <h3>Kanıtlı nedensel ilişkiler</h3>
+              <ol className="event-chain">
+                {scenario.strongestRelations.map((relation, index) => (
+                  <li key={`${relation.from}-${relation.to}`}><i>{index + 1}</i><p><b>{relation.from}</b> → <b>{relation.to}</b><small>{relation.mechanism}</small></p><em>{relation.evidence[0]?.source === "input" ? "GİRDİ" : "KURAL"}</em></li>
+                ))}
+              </ol>
+            </>
+          ) : null}
         </section>
       ) : null}
     </>
