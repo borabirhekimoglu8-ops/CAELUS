@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CAELUS NeuroCausal Mobile",
-  description: "Bulutsuz çalışan cihaz-içi sinir ağı ve deterministik Rust/WASM nedensel karar motoru.",
-  applicationName: "CAELUS NCM",
+  title: "CAELUS NCM-3 Mobile",
+  description: "Bulutsuz çalışan yerel kanıt motoru, Truth Gate ve deterministik Rust/WASM ScenarioPack doğrulayıcısı.",
+  applicationName: "CAELUS NCM-3",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

@@ -8,9 +8,12 @@ import {
   TEMPORAL_MODEL_INFO,
 } from "./ncm2/temporal-observer.mjs";
 import { buildContextualActions, buildDeepExplanation } from "./ncm2/explain.mjs";
+import { NCM3_VERSION, reasonWithEvidence } from "./ncm3/evidence-reasoner.mjs";
+import { augmentGroundingWithVault } from "./ncm3/evidence-augmentation.mjs";
 
 const INPUT = NEURO_WEIGHTS.input;
 const SECTORS = NEURO_WEIGHTS.sectors;
+const NCM3_ARCHITECTURE = `${NEURO_WEIGHTS.architecture}+OPEN_EVIDENCE_MESH+EVIDENCE_LEDGER+DIMENSIONAL_SOLVERS+FAIL_CLOSED_TRUTH_GATE+RUST_WASM_SCENARIOPACK_STATE_VALIDATOR`;
 const NCM2_VERSION = "NCM-2.0.0";
 const NCM2_ARCHITECTURE = `${NEURO_WEIGHTS.architecture}+${TEMPORAL_MODEL_INFO.architecture}+DETERMINISTIC_NEURAL_GATE`;
 const STOP_WORDS = new Set([
@@ -395,7 +398,7 @@ function relationNarrative(edge, nodeByKey) {
   };
 }
 
-export function compileNeuralScenario(input) {
+export function compileNcm2ScenarioInternal(input) {
   const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 600);
   if (sourceText.length < 8) throw new Error("NCM-2 için aktör, olay veya süre içeren daha açıklayıcı bir durum yazın.");
 
@@ -606,7 +609,7 @@ export function compileNeuralScenario(input) {
   };
 }
 
-export function observeTemporalSnapshot(scenario, snapshot) {
+function observeNcm2Snapshot(scenario, snapshot) {
   const proposal = scenario?.analysis?.observerProposal;
   if (!proposal || !snapshot) return scenario;
   const currentStates = snapshotStates(snapshot, proposal.concepts, proposal.initialStatesFp);
@@ -640,11 +643,332 @@ export function observeTemporalSnapshot(scenario, snapshot) {
   };
 }
 
+function truthEvidenceSpan(item) {
+  if (item?.source === "public_source" || item?.source === "user_file") {
+    return {
+      ...item,
+      source: item.source,
+      text: String(item.text || item.title || "Kaynak kanıtı"),
+    };
+  }
+  const source = item?.source === "input"
+    ? "input"
+    : item?.source === "rule" ? "knowledge" : item?.source === "safety" ? "safety" : "engine";
+  return {
+    source,
+    text: String(item?.text || item?.ruleId || "NCM-3 yerel kanıtı"),
+    ...(item?.ruleId ? { ruleId: item.ruleId } : {}),
+  };
+}
+
+function sectorFromGrounding(grounding) {
+  const pack = grounding.knowledgePack.id;
+  if (/MARITIME|COUNTERFACTUAL-SUFFICIENT-CAUSE/.test(pack)) return "MARITIME";
+  if (/CYBER/.test(pack)) return "CYBER";
+  if (/POWER-ENERGY/.test(pack)) return "ENERGY";
+  if (/OXYGEN|CLINICAL/.test(pack)) return "HEALTH";
+  if (/CASHFLOW|INVOICE/.test(pack)) return "FINANCE";
+  if (/INVENTORY/.test(pack)) return "SUPPLY";
+  if (/QUEUE/.test(pack)) return "BUSINESS";
+  return "UNIVERSAL";
+}
+
+function buildTruthGate(grounding) {
+  const validReference = (item) => {
+    if (!item || typeof item !== "object") return false;
+    if (item.source === "rule") return Boolean(item.ruleId && item.text);
+    if (item.source === "input") return Boolean(item.text) && Number.isInteger(item.start) && Number.isInteger(item.end) && item.end > item.start;
+    if (item.source === "safety" || item.source === "engine") return Boolean(item.text || item.ruleId);
+    if (item.source === "public_source" || item.source === "user_file") {
+      return item.verified === true && Boolean(item.documentId && item.sourceId && item.fingerprint && item.locator && item.text);
+    }
+    return false;
+  };
+  const provenanceCount = grounding.claims.filter((claim) =>
+    Array.isArray(claim.evidence) && claim.evidence.length > 0 && claim.evidence.every(validReference)).length;
+  const provenanceValid = provenanceCount === grounding.claims.length;
+  const unsupportedCount = grounding.claims.filter((claim) => !["FACT", "DEDUCTION", "CALCULATION", "UNKNOWN", "SAFETY"].includes(claim.type)).length;
+  const calculationsValid = grounding.calculations.every((item) => item.expression && item.unit && item.result !== undefined && item.result !== null);
+  const supported = grounding.coverage.supportedClaimCount;
+  const accepted = grounding.mode !== "insufficient" && provenanceValid && calculationsValid && supported >= 2;
+  const graphDepth = grounding.relations.length ? Math.min(6, grounding.relations.length + 1) : 0;
+  return {
+    accepted,
+    mode: accepted ? (grounding.mode === "grounded" ? "evidence_bound" : "conditional") : "symbolic_fallback",
+    fingerprint: hash32(`${NCM3_VERSION}:${grounding.knowledgePack.id}:${grounding.directAnswer}`).toString(16).toUpperCase().padStart(8, "0"),
+    modelVersion: NCM3_VERSION,
+    graphDepth,
+    gates: [
+      {
+        id: "provenance", label: "İddia kaynağı", status: provenanceValid ? "pass" : "fail",
+        value: `${provenanceCount}/${grounding.claims.length} izlenebilir`, threshold: "tümü",
+      },
+      {
+        id: "knowledge", label: "Yerel bilgi paketi", status: grounding.mode === "insufficient" ? "fail" : grounding.mode === "conditional" ? "warn" : "pass",
+        value: grounding.knowledgePack.id, threshold: "eşleşen kapalı çözücü",
+      },
+      {
+        id: "dimensions", label: "Birim ve aritmetik", status: calculationsValid ? "pass" : "fail",
+        value: grounding.calculations.length ? `${grounding.calculations.length} doğrulanmış hesap` : "hesap gerekmiyor", threshold: "boyutsal tutarlılık",
+      },
+      {
+        id: "unsupported", label: "Sözleşme dışı iddia", status: unsupportedCount ? "fail" : "pass",
+        value: `${unsupportedCount}`, threshold: "0",
+      },
+      {
+        id: "unknowns", label: "Belirsizlik açıklaması", status: grounding.unknowns.length || grounding.mode === "grounded" ? "pass" : "warn",
+        value: `${grounding.unknowns.length} bilinmeyen`, threshold: "görünür",
+      },
+    ],
+  };
+}
+
+function normalizeTruthRelations(grounding) {
+  return grounding.relations.map((item) => ({
+    from: item.from,
+    to: item.to,
+    confidence: Number.isFinite(item.confidence) ? item.confidence : 0,
+    relation: item.relation,
+    mechanism: item.mechanism,
+    lagTicks: 0,
+    polarity: /PRESERVES|CAN_DECREASE|DECREASES|DRAINS/.test(item.relation) ? -1 : 1,
+    evidence: (item.evidence || []).map(truthEvidenceSpan),
+  }));
+}
+
+function normalizeTruthHorizons(grounding) {
+  const keys = ["immediate", "near", "extended"];
+  return grounding.horizons.slice(0, 3).map((item, index) => ({
+    key: keys[index],
+    label: item.label || `Ufuk ${index + 1}`,
+    range: item.label || `Ufuk ${index + 1}`,
+    summary: item.statement,
+    risks: [],
+    confidence: grounding.coverage.score,
+    expected: { risk: 0, throughput: 0 },
+    criticalPath: [],
+    calibrated: false,
+  }));
+}
+
+function normalizeTruthCounterfactuals(grounding) {
+  const ids = ["baseline", "contained", "cascade"];
+  const labels = ["Koşul 1", "Koşul 2", "Koşul 3"];
+  return grounding.counterfactuals.slice(0, 3).map((item, index) => ({
+    id: ids[index],
+    label: labels[index],
+    premise: item.condition,
+    outcome: item.outcome,
+    risk: 0,
+    throughput: 0,
+    deltaRisk: 0,
+    deltaThroughput: 0,
+    confidence: grounding.coverage.score,
+    calibrated: false,
+  }));
+}
+
+function groundedLabels(grounding) {
+  const labels = [];
+  const seen = new Set();
+  const add = (value) => {
+    const label = String(value || "").replace(/\s+/g, " ").trim();
+    const key = fold(label);
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    labels.push(label.slice(0, 64));
+  };
+  grounding.relations.forEach((item) => { add(item.from); add(item.to); });
+  grounding.observations.forEach((item) => add(item.statement));
+  grounding.requiredInputs.forEach(add);
+  const visible = [...labels];
+  while (labels.length < 6) add(`Kanıt düğümü ${labels.length + 1}`);
+  return { nodeLabels: labels.slice(0, 6), visibleLabels: visible.slice(0, 6) };
+}
+
+export function compileNeuralScenario(input, options = {}) {
+  const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 1_200);
+  if (sourceText.length < 8) throw new Error("NCM-3 için olay, miktar, süre veya karar sorusu içeren daha açıklayıcı bir durum yazın.");
+
+  // The local encoder is an advisory route proposal only. Its output is kept
+  // outside the answer, claim ledger, graph state, and Truth Gate decision.
+  const neuralAdvisory = runNeuralInference(sourceText);
+  const baseGrounding = reasonWithEvidence(sourceText, { sourceTime: null });
+  const grounding = augmentGroundingWithVault(baseGrounding, sourceText, options.evidenceRecords || []);
+  const gateAudit = buildTruthGate(grounding);
+  const sector = sectorFromGrounding(grounding);
+  const primaryDomain = DOMAIN[sector] || DOMAIN.UNIVERSAL;
+  const fingerprint = hex(hash32(`${NCM3_VERSION}:${fold(sourceText)}`));
+  const scenarioId = `NCM3-${sector}-${fingerprint}`;
+  const explicitDuration = /\d+(?:[.,]\d+)?\s*(?:dakika|saat|gun|hafta|ay|minute|hour|day|week|month)\b/.test(fold(sourceText));
+  const duration = durationHours(sourceText);
+  const tickMinutes = duration <= 24 ? 15 : 30;
+  const { nodeLabels, visibleLabels } = groundedLabels(grounding);
+
+  const nodes = nodeLabels.map((label, index) => {
+    return {
+      id: `${slug(label, `KANIT${index + 1}`)}_${index + 1}`,
+      label,
+      kind: NODE_KINDS[index],
+      capacity_fp: 1_000_000,
+      // The evidence ledger does not provide a calibrated dynamic state. Keep
+      // the WASM state neutral instead of turning advisory MLP activations into
+      // apparent real-world pressure, throughput, or risk.
+      state_fp: 0,
+      weight_fp: 0,
+      reported_state_fp: 0,
+      trust_fp: 1_000_000,
+      // A duration is not necessarily a deadline. NCM-3 must not attach it to an
+      // arbitrary (and potentially schema-filler) node without a grounded target.
+      deadline_tick: -1,
+      irrecoverable: false,
+      notes: label.startsWith("Kanıt düğümü") ? "WASM şema dolgusu; kullanıcıya iddia olarak gösterilmez." : "NCM-3 kanıt defterinden alınmıştır.",
+    };
+  });
+  const nodeByLabel = new Map(nodes.map((node) => [fold(node.label), node]));
+  const relationEdges = grounding.relations.slice(0, 9).flatMap((item) => {
+    const from = nodeByLabel.get(fold(item.from));
+    const to = nodeByLabel.get(fold(item.to));
+    if (!from || !to || from.id === to.id) return [];
+    return [{
+      from: from.id,
+      to: to.id,
+      // This edge records provenance/topology only. NCM-3 has no calibrated
+      // transmission coefficient, so it must not drive synthetic dynamics.
+      multiplier_fp: 0,
+      lag_ticks: 0,
+      active: true,
+      notes: `${item.relation}: ${item.mechanism} · NCM-3 kanıtlı/koşullu ilişki`,
+    }];
+  });
+  const edges = [...relationEdges];
+  nodes.forEach((node) => edges.push({
+    from: node.id,
+    to: "",
+    multiplier_fp: 0,
+    lag_ticks: 0,
+    active: true,
+    notes: "Yerel deterministik düğüm durumu.",
+  }));
+
+  const pack = {
+    schema_version: "2.0",
+    id: scenarioId,
+    blackswan_class: "evidence_bound_local_reasoner",
+    sector,
+    min_caelus_engine: "2.0",
+    labels: {
+      node: nodes[0].label,
+      edge: grounding.relations[0]?.from || nodes[0].label,
+      actor: grounding.relations[0]?.from || nodes[0].label,
+      regulatory_gate: grounding.requiredInputs[0] || nodes[3].label,
+      friction: `${grounding.title} model baskısı`,
+    },
+    meta: {
+      title: grounding.title,
+      region: "ON_DEVICE",
+      tick_minutes: tickMinutes,
+      horizon_hours: explicitDuration ? Math.min(2_160, Math.max(1, Math.ceil(duration))) : 0,
+      synopsis: sourceText,
+      generated_by: "CAELUS_LOCAL_NCM3_EVIDENCE_REASONER",
+      neural_model: NEURO_WEIGHTS.version,
+      reasoner_model: NCM3_VERSION,
+      semantic_encoder: NEURO_WEIGHTS.version,
+      neural_architecture: NEURO_WEIGHTS.architecture,
+      reasoner_architecture: NCM3_ARCHITECTURE,
+      compiler_fingerprint: fingerprint,
+      truth_mode: grounding.mode,
+      knowledge_pack: grounding.knowledgePack.id,
+      evidence_coverage: grounding.coverage.score,
+      calibrated_probability_available: false,
+      observer_gate: gateAudit.mode,
+      observer_authority: "ADVISORY_ONLY",
+      engine_authority: "RUST_WASM",
+      answer_authority: "NCM3_EVIDENCE_REASONER",
+      wasm_role: "SCENARIOPACK_STATE_VALIDATOR",
+      cloud_used: false,
+    },
+    extended_causal_model: {
+      nodes,
+      edges,
+      feedback_loops: [],
+      levers: [],
+      hysteresis: [],
+      hard_deadlines: [],
+    },
+  };
+
+  const strongestRelations = normalizeTruthRelations(grounding);
+  const assumptions = grounding.assumptions.map((item) => ({
+    id: item.id,
+    text: item.statement,
+    source: Array.isArray(item.basis) && item.basis.some((entry) => entry?.source === "input") ? "input" : "inferred",
+    confidence: 0,
+    material: true,
+  }));
+  const evidence = grounding.claims.flatMap((claim) => claim.evidence.map(truthEvidenceSpan));
+
+  return {
+    pack,
+    analysis: {
+      sourceText,
+      fingerprint,
+      scenarioId,
+      sector,
+      sectorLabel: sector === "UNIVERSAL" && grounding.mode === "insufficient" ? "Kanıt paketi bulunamadı" : primaryDomain.label,
+      activeDomains: sector === "UNIVERSAL" ? [] : [sector],
+      confidence: 0,
+      severity: 0,
+      synopsis: grounding.directAnswer,
+      executiveSummary: grounding.directAnswer,
+      concepts: visibleLabels.length ? visibleLabels : [grounding.title],
+      strongestRelations,
+      leverNarratives: [],
+      horizons: normalizeTruthHorizons(grounding),
+      counterfactuals: normalizeTruthCounterfactuals(grounding),
+      assumptions,
+      unknowns: grounding.unknowns.map((item) => item.statement),
+      criticalSignals: grounding.requiredInputs,
+      gateAudit,
+      evidence,
+      grounding,
+      observerProposal: {
+        schema: "ncm-observer/3",
+        modelVersion: NCM3_VERSION,
+        sourceHash: fingerprint,
+        authority: "ADVISORY_ONLY",
+        usedForAnswer: false,
+        semanticRoute: {
+          model: neuralAdvisory.model,
+          sector: neuralAdvisory.sector,
+        },
+        grounding,
+      },
+      observerTick: 0,
+      model: NCM3_VERSION,
+      semanticEncoder: NEURO_WEIGHTS.version,
+      architecture: NCM3_ARCHITECTURE,
+      authority: "NCM3_EVIDENCE_REASONER_WITH_RUST_WASM_STATE_VALIDATOR",
+      cloudUsed: false,
+    },
+  };
+}
+
+export function observeTemporalSnapshot(scenario, snapshot) {
+  if (scenario?.analysis?.grounding?.version === NCM3_VERSION) {
+    return {
+      ...scenario,
+      analysis: { ...scenario.analysis, observerTick: Number(snapshot?.tick || 0) },
+    };
+  }
+  return observeNcm2Snapshot(scenario, snapshot);
+}
+
 export const NEURO_MODEL_INFO = Object.freeze({
-  version: NCM2_VERSION,
+  version: NCM3_VERSION,
   semanticEncoderVersion: NEURO_WEIGHTS.version,
   temporalModelVersion: TEMPORAL_MODEL_INFO.version,
-  architecture: NCM2_ARCHITECTURE,
+  architecture: NCM3_ARCHITECTURE,
   inputDimensions: NEURO_WEIGHTS.input,
   hiddenUnits: NEURO_WEIGHTS.hidden,
   temporalHiddenUnits: 6,

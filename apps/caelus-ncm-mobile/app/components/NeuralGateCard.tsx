@@ -7,9 +7,9 @@ type NeuralGateCardProps = {
 
 export function NeuralGateCard({ audit, observerTick }: NeuralGateCardProps) {
   return (
-    <section className="gate-card" aria-label="Neural Gate doğrulama sonucu">
+    <section className="gate-card" aria-label="Truth Gate doğrulama sonucu">
       <div className="gate-card__title">
-        <div><span>NEURAL GATE</span><strong>{audit.accepted ? "KABUL" : "SYMBOLIC FALLBACK"}</strong></div>
+        <div><span>TRUTH GATE</span><strong>{audit.accepted ? "KANITA BAĞLI" : "ÇEKİMSER MOD"}</strong></div>
         <em>{audit.modelVersion} · T{observerTick}</em>
       </div>
       <dl>
@@ -20,7 +20,7 @@ export function NeuralGateCard({ audit, observerTick }: NeuralGateCardProps) {
           </div>
         ))}
       </dl>
-      <small>Observer danışmandır · state otoritesi Rust/WASM · bulut=false</small>
+      <small>Kanıtsız iddia engellenir · paket/durum kontrolü Rust/WASM · bulut=false</small>
     </section>
   );
 }

@@ -63,6 +63,18 @@ function tokenMatches(token, anchor) {
   return token === anchor || (anchor.length >= 4 && token.startsWith(anchor)) || (token.length >= 5 && anchor.startsWith(token));
 }
 
+function matchesEventTerm(clause, term) {
+  if (term.includes(" ")) return clause.includes(term);
+  const tokens = clause.split(/\s+/).filter(Boolean);
+  if (term === "dur") {
+    return tokens.some((token) => /^(?:dur|durdu|durur|duracak|durma|dursa|durdur)/.test(token) && !/^durum/.test(token));
+  }
+  if (term === "art") {
+    return tokens.some((token) => /^(?:art|artar|artti|artacak|artis|artir)/.test(token) && !/^artik/.test(token));
+  }
+  return tokens.some((token) => token === term || (term.length >= 4 && token.startsWith(term)));
+}
+
 function durationHours(normalized) {
   const match = normalized.match(/(\d{1,4}(?:[.,]\d+)?)\s*(dakika|saat|gun|hafta|ay|minute|hour|day|week|month)/);
   if (!match) return 72;
@@ -77,8 +89,8 @@ function durationHours(normalized) {
 
 function negatesEvent(clause, eventType) {
   if (/devreye girmez|calismaz|basarisiz/.test(clause) && eventType === "PROTECT") return true;
-  if (/saldiri yok|tehdit yok|hack yok/.test(clause) && eventType === "ATTACK") return true;
-  if (/veri(?:ler)?(?:i)? (?:kaybolmayacak|sizmayacak)|veri kaybi yok/.test(clause) && eventType === "LEAK") return true;
+  if (/saldiri (?:yok|olmayacak|olmadi|gerceklesmedi)|tehdit yok|hack yok/.test(clause) && eventType === "ATTACK") return true;
+  if (/veri(?:ler)?(?:i)? (?:kaybolmayacak|sizmayacak)|veri kaybi (?:yok|olmayacak)/.test(clause) && eventType === "LEAK") return true;
   if (/kapanmayacak|durmayacak|iptal edilmeyecek|kesilmeyecek/.test(clause) && eventType === "STOP") return true;
   if (/artmayacak|yukselmeyecek/.test(clause) && eventType === "INCREASE") return true;
   return false;
@@ -196,7 +208,7 @@ export function parseSituation(sourceText, options) {
   const frames = [];
   clauses.forEach((clause, clauseIndex) => {
     EVENT_PATTERNS.forEach((pattern) => {
-      const term = pattern.terms.find((candidate) => clause.includes(candidate));
+      const term = pattern.terms.find((candidate) => matchesEventTerm(clause, candidate));
       if (!term) return;
       const negated = negatesEvent(clause, pattern.type);
       frames.push({

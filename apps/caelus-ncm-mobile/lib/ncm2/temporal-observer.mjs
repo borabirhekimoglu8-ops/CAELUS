@@ -33,38 +33,6 @@ function edgeEvidence(from, to, rule) {
   }];
 }
 
-function ensurePositiveChain(edges, concepts, hash32) {
-  const byType = (type) => concepts.find((concept) => concept.semanticType === type);
-  const ordered = [
-    byType("ACTOR") || concepts[0],
-    byType("GATE") || byType("SERVICE") || concepts[1],
-    byType("SERVICE") || concepts[2],
-    byType("DEMAND") || concepts[3],
-    byType("CAPACITY") || concepts[4],
-    byType("DEADLINE") || concepts[5],
-  ].filter(Boolean);
-  const existing = new Set(edges.map((edge) => `${edge.from}->${edge.to}`));
-  for (let index = 0; index < ordered.length - 1; index += 1) {
-    const from = ordered[index];
-    const to = ordered[index + 1];
-    if (!from || !to || from.key === to.key || existing.has(`${from.key}->${to.key}`)) continue;
-    edges.push({
-      id: `E-FALLBACK-${index + 1}-${hash32(`${from.key}:${to.key}`).toString(16).slice(0, 6)}`,
-      from: from.key,
-      to: to.key,
-      relation: index === 3 ? "DEPLETES" : "CAUSES",
-      polarity: 1,
-      strengthFp: 620_000 - index * 25_000,
-      confidenceFp: 610_000,
-      lagTicks: 1 + index,
-      mechanism: index === 3 ? "biriken talep tampon kapasiteyi tüketir" : "girdideki olay sırası bir sonraki sonucu tetikler",
-      evidence: [{ source: "ontology", text: `${from.label} → ${to.label}`, ruleId: "NCM2-MINIMUM-CAUSAL-PATH" }],
-      fallback: true,
-    });
-    existing.add(`${from.key}->${to.key}`);
-  }
-}
-
 export function buildSemanticGraph(situation, neural, hash32) {
   const concepts = situation.concepts;
   const suppressActor = situation.negatedEvents.includes("ATTACK") && !situation.frames.some((frame) => frame.event === "ATTACK" && !frame.negated);
@@ -106,7 +74,6 @@ export function buildSemanticGraph(situation, neural, hash32) {
     edges.push(edge);
     targetIncoming.set(edge.to, incoming + 1);
   }
-  ensurePositiveChain(edges, concepts, hash32);
   return edges;
 }
 
