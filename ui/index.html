@@ -7169,6 +7169,137 @@ body.theme-light .linear-setting-row {
               </details>
             </div>
           </details>
+
+          <!-- ═════════════════════════════════════════════════════════════════
+               CAELUS KEŞİF VE BİLGİ DEĞERİ MOTORU (DISCOVERY & INFORMATION VALUE ENGINE) — 7 ADIMLI ARAŞTIRMA AKIŞI, HİPOTEZ GÜNLÜĞÜ, MCP KÖPRÜSÜ VE 12 PARÇA TİCARİ ENVANTERİ
+               ═════════════════════════════════════════════════════════════════ -->
+          <details class="expand-box" id="caelus-discovery-value-engine-workspace" open style="margin-top:12px; border-radius:14px; background:rgba(8,14,30,0.92); border:1px solid rgba(56,189,248,0.40);">
+            <summary style="padding:12px 16px; font-size:0.87rem; font-weight:700; color:#38bdf8; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <span>🔭 CAELUS Keşif ve Bilgi Değeri Motoru — Hangi Eksik Bilgi Kararı Değiştirir? (7 Adımlı Araştırma Akışı, Hipotez Günlüğü ve 12 Parça Denetimi)</span>
+              <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <span class="kpi-badge ok" id="dve-header-status-badge" style="font-size:0.68rem;">KARAR DUYARLILIĞI &amp; EIG AKTİF</span>
+                <span class="kpi-badge accent" id="dve-header-mcp-badge" style="font-size:0.68rem;">MCP: 11 Araç (Salt-Okunur Varsayılan)</span>
+              </span>
+            </summary>
+
+            <div style="padding:12px 16px; display:flex; flex-direction:column; gap:12px;">
+              <!-- 7 Adımlı Sade Kullanıcı Araştırma Akışı Rehberi -->
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding-bottom:8px; border-bottom:1px solid rgba(56,189,248,0.18);">
+                <div style="font-size:0.79rem; color:var(--text-2); line-height:1.45;">
+                  <strong>7 Adımlı Keşif Akışı:</strong> (1) Sorumu seç → (2) CAELUS’un bildiklerini gör → (3) Önemli bilinmeyenleri gör → (4) Hangi bilginin kararı değiştirebileceğini incele → (5) Araştırma önerilerini karşılaştır → (6) Yeni kaynak veya veri ekle → (7) Eski ve yeni değerlendirmeyi karşılaştır.
+                </div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap; font-size:0.66rem;" aria-label="Epistemik Dürüstlük Etiketleri">
+                  <span class="kpi-badge ok">Karar Duyarlılığı ≠ Ekonomik EVPI</span>
+                  <span class="kpi-badge accent">Arandı Bulunamadı Kayıtlı</span>
+                  <span class="kpi-badge warn">Dış İçerik: Güvenilmeyen Veri</span>
+                  <span class="kpi-badge">Firecrawl AGPL-3.0: Ticari Paket Dışında</span>
+                </div>
+              </div>
+
+              <!-- Adım 1 & Adım 6 Kontrol Çubuğu -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; align-items:end;">
+                <div class="field-group">
+                  <label class="field-label" for="dve-question-select" style="font-size:0.75rem;">Adım 1 — İncelenen Soru veya Karar Durumu:</label>
+                  <select id="dve-question-select" class="select-enterprise" style="padding:6px 9px; font-size:0.78rem; border-radius:9px;">
+                    <option value="ERCOT_CLEANROOM_VS_FINANCING">Şubat 2021 Teksas ERCOT → Austin Yarı İletken → Otomotiv MCU Gecikmesi: Hangi bilinmeyen kararı değiştirir?</option>
+                    <option value="AEGEAN_PORT_TRANSFORMER_COLDCHAIN">Ege Liman Trafo &amp; Soğuk Zincir Kesintisi: Rıhtım yükü mü yoksa yedek jeneratör yakıt süresi mi kararı değiştirir?</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="dve-new-evidence-select" style="font-size:0.75rem;">Adım 6 — Yeni Araştırma Kaynağı veya Sonucu Ekle:</label>
+                  <select id="dve-new-evidence-select" class="select-enterprise" style="padding:6px 9px; font-size:0.78rem; border-radius:9px;">
+                    <option value="FOUND_NXP_17_MAR_SEC_FILING">Doğrulanmış Kanıt: 17 Mart 2021 NXP 8-K (28 gün temiz oda yeniden kalibrasyon kaybı)</option>
+                    <option value="SEARCHED_NOT_FOUND_PRIVATE_UPW_LOG">Arandı, Bulunamadı: 17 Şubat 2021 Özel Tesis İçi UPW Sensör Günlüğü (Kamuya Açık Değil)</option>
+                    <option value="LOCAL_MARKITDOWN_REPORT">Yerel Belge (MarkItDown Eşdeğeri): Saha Teknik İnceleme Notu (.md/.html)</option>
+                  </select>
+                </div>
+                <div class="field-group" style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-dve-run-workflow">🔭 Bilgi Değeri ve Duyarlılık Analizini Çalıştır</button>
+                  <button type="button" class="btn btn-sm btn-accent" id="btn-dve-record-research">📝 Araştırma Sonucunu Günlüğe Kaydet</button>
+                  <button type="button" class="btn btn-sm" id="btn-dve-test-mcp-security">🛡️ MCP Yetki &amp; Güvenilmeyen Metin Kapısını Sına</button>
+                </div>
+              </div>
+
+              <!-- 6 Ana Görünüm Kartı (Adım 2, 3, 4, 5, 6, 7) -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px;">
+                <!-- Kart 1: Adım 2 & 3 — CAELUS'un Bildikleri ve Önemli Bilinmeyenler -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#38bdf8;">ADIM 2 &amp; 3 — BİLİNENLER VE ÖNEMLİ BİLİNMEYENLER</strong>
+                    <span class="kpi-badge ok" style="font-size:0.65rem;">Bilinen vs Bilinmeyen</span>
+                  </div>
+                  <div id="dve-card-knowns-unknowns" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Bilinen kayıtlar ve bilgi açıkları yükleniyor...
+                  </div>
+                </div>
+
+                <!-- Kart 2: Adım 4 — Hangi Bilginin Kararı Değiştirebileceği (Karar Eşiği ve Duyarlılık) -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#5EC69D;">ADIM 4 — KARARI DEĞİŞTİREN EŞİKLER (SENSİTİVİTE)</strong>
+                    <span class="kpi-badge accent" style="font-size:0.65rem;">Karar Sıralaması Değişimi</span>
+                  </div>
+                  <div id="dve-card-decision-sensitivity" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Karar duyarlılığı ve eşik taraması hesaplanıyor...
+                  </div>
+                </div>
+
+                <!-- Kart 3: Adım 5 — 4 Araştırma Sıralama Yönteminin Karşılaştırması -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#fde68a;">ADIM 5 — ARAŞTIRMA ÖNERİLERİNİ KARŞILAŞTIR (4 YÖNTEM)</strong>
+                    <span class="kpi-badge warn" style="font-size:0.65rem;">Duyarlılık vs Entropi (EIG)</span>
+                  </div>
+                  <div id="dve-card-ranking-comparison" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Rastgele, Basit Kural, CAELUS Karar Duyarlılığı ve Bayesçi EIG karşılaştırılıyor...
+                  </div>
+                </div>
+
+                <!-- Kart 4: Adım 6 — Hipotez ve Araştırma Günlüğü ("Arandı, Bulunamadı" Dahil) -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#f0b45a;">ADIM 6 — HİPOTEZ VE ARAŞTIRMA GÜNLÜĞÜ</strong>
+                    <span class="kpi-badge warn" style="font-size:0.65rem;">Arandı Bulunamadı &amp; Kanıt</span>
+                  </div>
+                  <div id="dve-card-research-journal" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Araştırma günlüğü kayıtları yükleniyor...
+                  </div>
+                </div>
+
+                <!-- Kart 5: Adım 7 — Eski ve Yeni Değerlendirmenin Sürümlü Karşılaştırması -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#a5f3fc;">ADIM 7 — ESKİ VE YENİ DEĞERLENDİRME KARŞILAŞTIRMASI</strong>
+                    <span class="kpi-badge ok" style="font-size:0.65rem;">Eski Sürüm Silinmez</span>
+                  </div>
+                  <div id="dve-card-assessment-diff" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Sürümlü değerlendirme geçmişi yükleniyor...
+                  </div>
+                </div>
+
+                <!-- Kart 6: Kontrollü 4 Araştırma Ajanı ve Kaynak Hakları Özeti -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#c4b5fd;">4 KONTROLLÜ ARAŞTIRMA AJANI &amp; KAYNAK KOŞULLARI</strong>
+                    <span class="kpi-badge" style="font-size:0.65rem;">İnsan / Doğrulama Kapılı</span>
+                  </div>
+                  <div id="dve-card-agents-rights" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Ajan rolleri ve kaynak ticari hakları yükleniyor...
+                  </div>
+                </div>
+              </div>
+
+              <!-- İkinci Katman Teknik Denetim Çekmecesi: 12 Parça Entegrasyon Matrisi, 11 MCP Aracı ve 5 Python Laboratuvar Deneyi -->
+              <details class="expand-box" id="dve-second-layer-audit-drawer" style="margin-top:2px;">
+                <summary style="padding:7px 12px; font-size:0.77rem; color:#38bdf8; cursor:pointer;">
+                  🔬 İkinci Katman Teknik &amp; Ticari Denetim: 12 Parça Entegrasyon Matrisi, 11 MCP Aracı, Firecrawl AGPL-3.0 Kararı ve 5 Laboratuvar Deneyi (BoTorch/GP, DoWhy, River, PyG, Pyro EIG)
+                </summary>
+                <div id="dve-second-layer-audit-body" class="expand-body mono" style="padding:10px 12px; font-size:0.73rem; color:var(--text-2); line-height:1.5;">
+                  12 parça teknik/ticari envanteri ve laboratuvar deney sonuçları yükleniyor...
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -11314,6 +11445,8 @@ body.theme-light .linear-setting-row {
   <script src="scenario_compiler.js"></script>
   <!-- CAELUS YAŞAYAN DÜNYA MODELİ (BITEMPORAL HAFIZA, DÜŞÜNCENİN DEĞİŞİMİ, HİPOTEZ DEFTERİ VE TİCARİ DENETİM) -->
   <script src="living_world_model.js"></script>
+  <!-- CAELUS KEŞİF VE BİLGİ DEĞERİ MOTORU (KARAR DUYARLILIĞI, HİPOTEZ GÜNLÜĞÜ, MCP SUNUCUSU VE 12 PARÇA ENVANTERİ) -->
+  <script src="discovery_value_engine.js"></script>
   <!-- ANA UYGULAMA VE CANLI C++/RUST KÖPRÜSÜ -->
   <script src="app.js"></script>
 </body>

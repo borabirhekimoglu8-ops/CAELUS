@@ -62,9 +62,11 @@ jobs:
           cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
           node --check ui/scenario_compiler.js
           node --check ui/living_world_model.js
+          node --check ui/discovery_value_engine.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
+          node --test tests/discovery_value_engine.test.mjs
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
@@ -118,9 +120,11 @@ jobs:
           cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
           node --check ui/scenario_compiler.js
           node --check ui/living_world_model.js
+          node --check ui/discovery_value_engine.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
+          node --test tests/discovery_value_engine.test.mjs
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
