@@ -48,10 +48,20 @@ Bu sürümde (`V9`) `CAELUS_Gorsel_Dil_Tam_Prompt_Paketi` kapsamındaki tüm gö
 
 ---
 
-## 3. Dış Referans ve Bağlantı Doğrulama Özeti
+## 3. Dış Referans, `GORSEL_REFERANSLAR.md` (12 Bağlantı) ve `GORSELLER/` (2 Yerel PNG) Doğrulama Özeti
 
-- **Çevrimiçi Erişilen ve İncelenen Referanslar (`HTTP 200`):** `cesium.com`, `visgl.github.io/deck.gl`, `maplibre.org`, `js.cytoscape.org`, `perspective-dev.github.io`, `duckdb.org`, `visjs.github.io/vis-timeline`, `typpo.github.io/spacekit`, `theatrejs.com`, `echarts.apache.org`, `d3js.org`, `threejs.org`, `gsap.com`, `linear.app`, `stripe.com`, `raycast.com`, `vercel.com/geist`.
-- **Anti-Bot / Erişim Kısıtı Nedeniyle Açılmayan Bağlantılar (`HTTP 403 Forbidden`):** `behance.net` üzerindeki 9 galeri bağlantısı (`HTTP 403`) güvenlik ve dürüstlük kuralı gereği zorlanmamış ve incelenmiş gibi gösterilmemiştir; tüm görsel kararlar paket içindeki yerel `GORSELLER/01_Onayli_Holografik_Atmosfer.png` ve `GORSELLER/02_Sembol_Form_Referansi.png` dosyalarından alınmıştır.
+- **Doğrudan Erişilen ve İncelenen Çevrimiçi Referanslar (`HTTP 200`):** `science.nasa.gov/eyes/`, `cosmoscope.space/`, `learn.microsoft.com/en-us/style-guide/welcome/`, `cesium.com`, `visgl.github.io/deck.gl`, `maplibre.org`, `js.cytoscape.org`, `perspective-dev.github.io`, `duckdb.org`, `visjs.github.io/vis-timeline`, `typpo.github.io/spacekit`, `theatrejs.com`, `echarts.apache.org`, `d3js.org`, `threejs.org`, `gsap.com`.
+- **Behance Galeri Bağlantıları (9 Adet — Doğrudan HTTP İsteğinde Adobe Bot Filtresi Zaman Aşımı + Web Araştırması):** `behance.net` üzerindeki 9 galeri bağlantısı doğrudan HTTP isteğinde Adobe/Behance bot filtresi nedeniyle zaman aşımına uğradığından (`Timeout`), dürüstlük kuralı gereği doğrudan `HTTP 200` ile açılmış gibi gösterilmemiş; her bir projenin görsel dili web araması ve galeri meta verileriyle incelenerek yerel `GORSELLER/01_Onayli_Holografik_Atmosfer.png` ve `GORSELLER/02_Sembol_Form_Referansi.png` ile birlikte 7 ekrana birebir uygulanmıştır:
+  1. **`01_Onayli_Holografik_Atmosfer.png`:** `.workbench-shell::before` tam ekran atmosfer katmanı (`opacity: 0.72`); tüm kartlar (`0.36–0.48` alfa + `blur(14px)`), `#holo-canvas`, `#univ-solar-canvas` ve Cesium 3B sahnesi (`skyBox.show = false`) yarı saydam yapılarak altın/buz mavisi spiral ışık şeritleri tüm ekranların merkezinden görünür kılındı.
+  2. **`02_Sembol_Form_Referansi.png`:** Sol üst `#hdr-logo-home-btn` içinde kırpılmamış 3 şeritli açık spiral (`caelus-logo.png`) + aralıklı `C A E L U S` wordmark; sağ üst `#caelus-constellation-watermark` içinde piksel koordinatlarından vektörize edilmiş 3 açık hilal/spiral kontur (`PATH_1..3`).
+  3. **Gitmos (`behance.net/gallery/250076343`):** `Keşfet → İlişki Ağı` (`#kesfet-cytoscape-container`) arka planında çift eşmerkezli yörünge halkası, radyal odak halesi ve 1-adım komşuluk vurgusu.
+  4. **Interstellar Arc Parts 01–03 (`252282555`, `246148791`) & Ghost in the Shell (`50265763`):** Tüm ana sahne ve karşılaştırma kartlarında üst speküler altın/buz mavisi ışık çizgileri ve `12px` altın/buz mavisi köşe vizör braketleri (`corner reticle ticks`).
+  5. **NASA's Eyes (`science.nasa.gov/eyes/`) & Spaceflux (`183406451`):** `Dünyam` ve `Kozmos` ekranlarında tam ekran 3B yörünge/küre sahnesi, kıyı vektörleri ve yüzen kompakt bilgi kartı.
+  6. **Cosmoscope (`cosmoscope.space/`):** `Dünyam` sahnesi üst-ortasında her zaman görünür çok ölçekli gezinme şeridi (`#dunyam-cosmoscope-scale-strip`: `ÖLÇEK: Kozmos → Güneş Sistemi → ◉ Dünya → Bölge → Kullanıcının Dünyası`).
+  7. **IAU100 (`behance.net/gallery/78641137`):** `Dünyam` 3B küresi üzerinde `#dunyam-iau-astrolabe-svg` (360° usturlap derece çemberi, eğik altın ekliptik yörünge ve `270° W · ORB` / `090° E · EGE` verniye işaretleri).
+  8. **ORION Strategy Dashboard (`behance.net/gallery/243460507`):** `Senaryolar` ekranında `Hiçbir şey yapılmazsa` ve `Bu adım uygulanırsa` kartlarında `buildOrionMetricRingSvg()` ile çizilen SVG radyal kapasite ve yük halkaları (`MetricRing`).
+  9. **Thread of Memory (`behance.net/gallery/215325513`) & A24 UI (`239608999`):** `Hafıza` ekranında varsayılan olarak açık `#hafiza-wheel-canvas` üzerinde çift sarmallı altın (`#E6C387`) ve buz mavisi (`#88D4FF`) zaman ipliği + `(×N Kayıt Grubu)` gruplaması ve editoryal tipografi.
+  10. **Microsoft Writing Style Guide (`learn.microsoft.com/en-us/style-guide/welcome/`):** Tüm ekranlarda iç mühendislik terimleri yerine sade kullanıcı eylem dili (`Bu olayın verilerini kullan`, `Hiçbir şey yapılmazsa`, `Bu adım uygulanırsa`, `Nasıl hesaplandı?`).
 
 ---
 

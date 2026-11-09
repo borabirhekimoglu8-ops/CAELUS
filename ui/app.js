@@ -2546,6 +2546,23 @@ function renderSideBySideCounterfactual(cfData, ev) {
         : 'Baz Kısıt Durumu')
     : (ba.outage_active ? 'Bu senaryoda kesinti oluştu' : 'Kapasite düşüşü');
 
+  const buildOrionMetricRingSvg = (pctVal, strokeColor, trackColor = 'rgba(136,212,255,0.16)') => {
+    const clamped = Math.max(0, Math.min(100, Math.round(Number(pctVal) || 0)));
+    const r = 17;
+    const c = 2 * Math.PI * r;
+    const dash = ((clamped / 100) * c).toFixed(1);
+    return `<svg class="orion-metric-ring-svg" viewBox="0 0 44 44" aria-hidden="true">
+      <circle cx="22" cy="22" r="${r}" fill="none" stroke="${trackColor}" stroke-width="3.5" />
+      <circle cx="22" cy="22" r="${r}" fill="none" stroke="${strokeColor}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${dash} ${c.toFixed(1)}" transform="rotate(-90 22 22)" />
+      <text x="22" y="25" text-anchor="middle" fill="#F8FAFC" font-size="9.5" font-weight="700" font-family="JetBrains Mono, monospace">%${clamped}</text>
+    </svg>`;
+  };
+
+  const aRingColor = ba.outage_active || baTpPct < 40 ? '#F87171' : '#FBBF24';
+  const bRingColor = bb.outage_active ? '#F87171' : '#34D399';
+  const aLoadPct = targetNode ? Number(targetNode.branchAStatePct ?? 90) : (100 - baTpPct);
+  const bLoadPct = targetNode ? Number(targetNode.branchBStatePct ?? 60) : (100 - bbTpPct);
+
   cardA.innerHTML = `
     <div class="ab-card-header">
       <div>
@@ -2559,15 +2576,25 @@ function renderSideBySideCounterfactual(cfData, ev) {
     <div class="ab-metrics-grid">
       <div class="ab-metric-box">
         <div class="ab-metric-label">Dönem Sonu Çalışma Kapasitesi</div>
-        <div class="ab-metric-val" style="color:${ba.outage_active || baTpPct < 40 ? 'var(--crit)' : 'var(--text-1)'};">%${baTpPct}</div>
-        <div class="ab-metric-sub">${baUnits} / ${Number(fin.baselineUnitsPerHour)} ${escapeHtml(fin.unitName)} (Ort: %${baAvgTpPct})</div>
+        <div class="orion-metric-ring-row">
+          ${buildOrionMetricRingSvg(baTpPct, aRingColor)}
+          <div>
+            <div class="ab-metric-val" style="color:${ba.outage_active || baTpPct < 40 ? 'var(--crit)' : 'var(--text-1)'};">%${baTpPct}</div>
+            <div class="ab-metric-sub">${baUnits} / ${Number(fin.baselineUnitsPerHour)} ${escapeHtml(fin.unitName)} (Ort: %${baAvgTpPct})</div>
+          </div>
+        </div>
       </div>
       <div class="ab-metric-box">
-        <div class="ab-metric-label">Kesinti Süresi ve Eşik Durumu</div>
-        <div class="ab-metric-val" style="color:${ba.outage_active ? 'var(--crit)' : 'var(--text-1)'};">
-          ${ba.outage_active ? `${escapeHtml(baOutageHrs)} Saat Kesinti` : '0 Saat Kesinti'}
+        <div class="ab-metric-label">Kesinti Süresi ve Hedef Yük</div>
+        <div class="orion-metric-ring-row">
+          ${buildOrionMetricRingSvg(aLoadPct, '#F87171')}
+          <div>
+            <div class="ab-metric-val" style="color:${ba.outage_active ? 'var(--crit)' : 'var(--text-1)'};">
+              ${ba.outage_active ? `${escapeHtml(baOutageHrs)} Saat Kesinti` : '0 Saat Kesinti'}
+            </div>
+            <div class="ab-metric-sub">${baOutageTicks} adım kesinti · Kritik Eşik: ${ba.any_deadline_missed ? 'Aşıldı' : 'Korundu'}</div>
+          </div>
         </div>
-        <div class="ab-metric-sub">${baOutageTicks} adım kesinti · Kritik Eşik: ${ba.any_deadline_missed ? 'Aşıldı' : 'Korundu'}</div>
       </div>
       <div class="ab-metric-box">
         <div class="ab-metric-label">Dönem Boyunca Tahmini Kayıp (${escapeHtml(horizonHrs)} Saat)</div>
@@ -2622,15 +2649,25 @@ function renderSideBySideCounterfactual(cfData, ev) {
       <div class="ab-metrics-grid">
         <div class="ab-metric-box">
           <div class="ab-metric-label">Kısıt Sonrası Çalışma Kapasitesi (Eşik ≥ %${planReport.constraints.minAllowedThroughputPct})</div>
-          <div class="ab-metric-val" style="color:var(--ok);">%${bbTpPct} <span style="font-size:15px;">(${deltaTp >= 0 ? '+' : ''}${deltaTp} puan)</span></div>
-          <div class="ab-metric-sub">Planlanan: %${rec.projectedThroughputPct} · Durum: ${rec.constraints.throughputConstraintMet ? 'Sağlandı' : 'Sınırda'}</div>
+          <div class="orion-metric-ring-row">
+            ${buildOrionMetricRingSvg(bbTpPct, bRingColor)}
+            <div>
+              <div class="ab-metric-val" style="color:var(--ok);">%${bbTpPct} <span style="font-size:15px;">(${deltaTp >= 0 ? '+' : ''}${deltaTp} puan)</span></div>
+              <div class="ab-metric-sub">Planlanan: %${rec.projectedThroughputPct} · Durum: ${rec.constraints.throughputConstraintMet ? 'Sağlandı' : 'Sınırda'}</div>
+            </div>
+          </div>
         </div>
         <div class="ab-metric-box">
           <div class="ab-metric-label">Hedef Varlık Yük İndirimi (Eşik ≤ %${planReport.constraints.maxAllowedPeakLoadPct})</div>
-          <div class="ab-metric-val" style="color:${rec.constraints.loadConstraintMet ? 'var(--ok)' : 'var(--warn)'};">
-            %${planReport.targetInitialLoadPct} → %${rec.projectedTargetLoadPct}
+          <div class="orion-metric-ring-row">
+            ${buildOrionMetricRingSvg(rec.projectedTargetLoadPct, '#88D4FF')}
+            <div>
+              <div class="ab-metric-val" style="color:${rec.constraints.loadConstraintMet ? 'var(--ok)' : 'var(--warn)'};">
+                %${planReport.targetInitialLoadPct} → %${rec.projectedTargetLoadPct}
+              </div>
+              <div class="ab-metric-sub">Tepe Yük: %${rec.projectedPeakLoadPct}${escapeHtml(secMetricLine)}</div>
+            </div>
           </div>
-          <div class="ab-metric-sub">Tepe Yük: %${rec.projectedPeakLoadPct}${escapeHtml(secMetricLine)}</div>
         </div>
         <div class="ab-metric-box">
           <div class="ab-metric-label">Net Korunan Değer / Plan Skoru</div>
@@ -2663,15 +2700,25 @@ function renderSideBySideCounterfactual(cfData, ev) {
       <div class="ab-metrics-grid">
         <div class="ab-metric-box">
           <div class="ab-metric-label">Dönem Sonu Çalışma Kapasitesi</div>
-          <div class="ab-metric-val" style="color:var(--ok);">%${bbTpPct} <span style="font-size:15px;">(${deltaTp >= 0 ? '+' : ''}${deltaTp} puan)</span></div>
-          <div class="ab-metric-sub">${bbUnits} / ${Number(fin.baselineUnitsPerHour)} ${escapeHtml(fin.unitName)} (Ort: %${bbAvgTpPct})</div>
+          <div class="orion-metric-ring-row">
+            ${buildOrionMetricRingSvg(bbTpPct, bRingColor)}
+            <div>
+              <div class="ab-metric-val" style="color:var(--ok);">%${bbTpPct} <span style="font-size:15px;">(${deltaTp >= 0 ? '+' : ''}${deltaTp} puan)</span></div>
+              <div class="ab-metric-sub">${bbUnits} / ${Number(fin.baselineUnitsPerHour)} ${escapeHtml(fin.unitName)} (Ort: %${bbAvgTpPct})</div>
+            </div>
+          </div>
         </div>
         <div class="ab-metric-box">
-          <div class="ab-metric-label">Kesinti Süresi ve Eşik Durumu</div>
-          <div class="ab-metric-val" style="color:${bb.outage_active ? 'var(--crit)' : 'var(--ok)'};">
-            ${bb.outage_active ? `${escapeHtml(bbOutageHrs)} Saat Kesinti` : (bPrevented ? '0 Saat (Bu senaryoda kesinti oluşmadı)' : '0 Saat Kesinti')}
+          <div class="ab-metric-label">Kesinti Süresi ve Hedef Yük</div>
+          <div class="orion-metric-ring-row">
+            ${buildOrionMetricRingSvg(bLoadPct, '#88D4FF')}
+            <div>
+              <div class="ab-metric-val" style="color:${bb.outage_active ? 'var(--crit)' : 'var(--ok)'};">
+                ${bb.outage_active ? `${escapeHtml(bbOutageHrs)} Saat Kesinti` : (bPrevented ? '0 Saat (Bu senaryoda kesinti oluşmadı)' : '0 Saat Kesinti')}
+              </div>
+              <div class="ab-metric-sub">Kesinti Farkı: ${bbOutageTicks - baOutageTicks} adım · Kritik Eşik: ${bb.any_deadline_missed ? 'Aşıldı' : 'Korundu'}</div>
+            </div>
           </div>
-          <div class="ab-metric-sub">Kesinti Farkı: ${bbOutageTicks - baOutageTicks} adım · Kritik Eşik: ${bb.any_deadline_missed ? 'Aşıldı' : 'Korundu'}</div>
         </div>
         <div class="ab-metric-box">
           <div class="ab-metric-label">Net Korunan Değer / Yatırım Getirisi (ROI)</div>
@@ -4085,8 +4132,8 @@ function drawCausalGraph() {
     bgGrad.addColorStop(0, '#f8fafc');
     bgGrad.addColorStop(1, '#e2e8f0');
   } else {
-    bgGrad.addColorStop(0, `rgba(14, 30, 58, ${0.45 * glowFactor})`);
-    bgGrad.addColorStop(1, '#050a14');
+    bgGrad.addColorStop(0, `rgba(14, 30, 58, ${0.38 * glowFactor})`);
+    bgGrad.addColorStop(1, 'rgba(4, 9, 20, 0.34)');
   }
   cgCtx.fillStyle = bgGrad;
   cgCtx.fillRect(0, 0, cgW, cgH);
@@ -10123,9 +10170,9 @@ function renderSolarSystemCanvas(ephemeris, selectedPlanetId) {
   const cy = h * 0.52;
 
   const bgGrad = ctx.createRadialGradient(cx, cy, 12, cx, cy, Math.max(w, h) * 0.72);
-  bgGrad.addColorStop(0, 'rgba(18, 38, 74, 0.42)');
-  bgGrad.addColorStop(0.55, 'rgba(5, 11, 24, 0.85)');
-  bgGrad.addColorStop(1, 'rgba(2, 5, 12, 0.98)');
+  bgGrad.addColorStop(0, 'rgba(18, 38, 74, 0.36)');
+  bgGrad.addColorStop(0.55, 'rgba(5, 11, 24, 0.44)');
+  bgGrad.addColorStop(1, 'rgba(2, 5, 12, 0.52)');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, w, h);
 
@@ -12903,7 +12950,7 @@ function updateDunyamStageControlPills() {
   toggleBtn(btnNet, !state.dunyamShowingSolar && layer === 'network');
   toggleBtn(btnTime, !state.dunyamShowingSolar && layer === 'timeline');
 
-  document.querySelectorAll('#dunyam-scale-nav-bar [data-scale-step]').forEach(btn => {
+  document.querySelectorAll('#dunyam-scale-nav-bar [data-scale-step], #dunyam-cosmoscope-scale-strip [data-scale-step]').forEach(btn => {
     const step = btn.getAttribute('data-scale-step');
     btn.classList.toggle('active', step === scaleStep);
   });
@@ -16066,8 +16113,8 @@ function initQuietHolographyUi() {
     });
   }
 
-  // 5-Scale Navigation Bar (#dunyam-scale-nav-bar)
-  document.querySelectorAll('#dunyam-scale-nav-bar [data-scale-step]').forEach(btn => {
+  // 5-Scale Navigation Bar (#dunyam-scale-nav-bar & #dunyam-cosmoscope-scale-strip)
+  document.querySelectorAll('#dunyam-scale-nav-bar [data-scale-step], #dunyam-cosmoscope-scale-strip [data-scale-step]').forEach(btn => {
     btn.addEventListener('click', () => {
       const step = btn.getAttribute('data-scale-step') || 'EARTH';
       state.activeScaleStep = step;
@@ -17215,32 +17262,50 @@ function drawHafizaWheelTimeline(items, selectedIdx) {
   const archH = Math.min(36, h * 0.25);
 
   ctx.save();
-  // İkincil ince kılavuz yay
+  // Thread of Memory: Altın (#E6C387) ve Buz Mavisi (#88D4FF) çift sarmal hafıza ipliği
+  const goldGrad = ctx.createLinearGradient(padX * 0.5, baseY, w - padX * 0.5, baseY);
+  if (isLight) {
+    goldGrad.addColorStop(0, 'rgba(180, 120, 40, 0.22)');
+    goldGrad.addColorStop(0.5, 'rgba(180, 120, 40, 0.72)');
+    goldGrad.addColorStop(1, 'rgba(2, 132, 199, 0.28)');
+  } else {
+    goldGrad.addColorStop(0, 'rgba(230, 195, 135, 0.22)');
+    goldGrad.addColorStop(0.5, 'rgba(230, 195, 135, 0.86)');
+    goldGrad.addColorStop(1, 'rgba(136, 212, 255, 0.32)');
+  }
   ctx.beginPath();
-  ctx.moveTo(padX * 0.5, baseY + 14);
-  ctx.quadraticCurveTo(w * 0.5, baseY - archH + 14, w - padX * 0.5, baseY + 14);
-  ctx.strokeStyle = isLight ? 'rgba(15, 23, 42, 0.08)' : 'rgba(136, 212, 255, 0.12)';
+  ctx.moveTo(padX * 0.5, baseY + 12);
+  ctx.bezierCurveTo(w * 0.32, baseY - archH * 1.9, w * 0.68, baseY + archH * 0.7, w - padX * 0.5, baseY - 6);
+  ctx.strokeStyle = goldGrad;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // İkincil ince kılavuz yay (kesikli yörünge izi)
+  ctx.beginPath();
+  ctx.moveTo(padX * 0.5, baseY + 16);
+  ctx.quadraticCurveTo(w * 0.5, baseY - archH + 16, w - padX * 0.5, baseY + 16);
+  ctx.strokeStyle = isLight ? 'rgba(15, 23, 42, 0.12)' : 'rgba(136, 212, 255, 0.24)';
   ctx.lineWidth = 1;
-  ctx.setLineDash([4, 6]);
+  ctx.setLineDash([3, 6]);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Ana zaman tekeri yayı
+  // Ana zaman ipliği yayı (Buz mavisi -> Zümrüt -> Altın)
   const grad = ctx.createLinearGradient(padX, baseY, w - padX, baseY);
   if (isLight) {
-    grad.addColorStop(0, 'rgba(2, 132, 199, 0.18)');
-    grad.addColorStop(0.5, 'rgba(2, 132, 199, 0.65)');
-    grad.addColorStop(1, 'rgba(13, 148, 136, 0.22)');
+    grad.addColorStop(0, 'rgba(2, 132, 199, 0.24)');
+    grad.addColorStop(0.5, 'rgba(2, 132, 199, 0.75)');
+    grad.addColorStop(1, 'rgba(13, 148, 136, 0.32)');
   } else {
-    grad.addColorStop(0, 'rgba(91, 192, 248, 0.16)');
-    grad.addColorStop(0.5, 'rgba(91, 192, 248, 0.72)');
-    grad.addColorStop(1, 'rgba(61, 214, 140, 0.22)');
+    grad.addColorStop(0, 'rgba(136, 212, 255, 0.28)');
+    grad.addColorStop(0.5, 'rgba(136, 212, 255, 0.92)');
+    grad.addColorStop(1, 'rgba(230, 195, 135, 0.55)');
   }
   ctx.beginPath();
   ctx.moveTo(padX * 0.6, baseY);
   ctx.quadraticCurveTo(w * 0.5, baseY - archH * 1.45, w - padX * 0.6, baseY);
   ctx.strokeStyle = grad;
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.6;
   ctx.stroke();
 
   if (visibleItems.length === 0) {
@@ -19411,7 +19476,16 @@ async function initCaelusCesiumGlobe() {
       }
     });
 
-    // Sirius gece mavisi atmosfer ve derin uzay uyumu
+    // Sirius gece mavisi atmosfer ve derin uzay uyumu (01_Onayli_Holografik_Atmosfer arkadan görünür)
+    if (viewer.scene.skyBox) {
+      viewer.scene.skyBox.show = false;
+    }
+    if (viewer.scene.sun) {
+      viewer.scene.sun.show = false;
+    }
+    if (viewer.scene.moon) {
+      viewer.scene.moon.show = false;
+    }
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#040915').withAlpha(0.0);
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0B2246');
     viewer.scene.globe.enableLighting = false;
