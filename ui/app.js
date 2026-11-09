@@ -25695,6 +25695,584 @@ function initCaelusSpatialInterfaceSystem() {
   window.renderScenariosSixQuestionsAndThreeFutures = renderScenariosSixQuestionsAndThreeFutures;
 }
 
+// ============================================================================
+// CAELUS İLK GERÇEK GÖREV (9 ADIMLI KULLANICI VERİSİ, DÜNYA MODELİ VE RAPOR STÜDYOSU)
+// ============================================================================
+
+const cFirstRealTaskState = {
+  activeCaseId: 'VAKA_A',
+  customReadReport: null,
+  customFileName: null,
+  selectedSheetName: null,
+  selectedDelimiter: '',
+  columnOverrides: {},
+  dedupDecisions: {},
+  questionTr: '',
+  workflowResult: null
+};
+
+function renderFirstRealTaskDrawerUI() {
+  const eng = window.CaelusFirstRealTaskEngine;
+  const drawer = document.getElementById('caelus-first-real-task-drawer');
+  if (!eng || !drawer) return null;
+
+  const wf = eng.runCompleteFirstRealTaskWorkflow({
+    caseId: cFirstRealTaskState.activeCaseId,
+    readReport: cFirstRealTaskState.customReadReport || null,
+    fileName: cFirstRealTaskState.customFileName || undefined,
+    sheetName: cFirstRealTaskState.selectedSheetName || undefined,
+    delimiter: cFirstRealTaskState.selectedDelimiter || undefined,
+    columnOverrides: cFirstRealTaskState.columnOverrides,
+    dedupDecisions: cFirstRealTaskState.dedupDecisions,
+    mergeConfirmedCandidates: false,
+    questionTr: cFirstRealTaskState.questionTr || undefined
+  });
+  cFirstRealTaskState.workflowResult = wf;
+
+  if (!wf.ok) {
+    const summaryEl = document.getElementById('frt-file-summary-strip');
+    if (summaryEl) {
+      summaryEl.innerHTML = `<span style="color:#F87171; font-weight:700;">[✖ DOSYA OKUMA HATASI — ${escapeHtml(wf.read_report?.error_code || 'HATA')}]:</span> ${escapeHtml(wf.read_report?.error_message || 'Dosya okunamadı.')}`;
+    }
+    return wf;
+  }
+
+  // Adım 1: Dosya, Sayfa ve Güvenlik Özeti
+  const fileBadge = document.getElementById('frt-active-file-badge');
+  if (fileBadge) {
+    fileBadge.textContent = `Dosya: ${wf.read_report.source_file} (${wf.selected_sheet_name})`;
+  }
+  const sheetSelect = document.getElementById('frt-sheet-select');
+  if (sheetSelect) {
+    sheetSelect.innerHTML = (wf.read_report.sheet_names || [])
+      .map(
+        (sn) =>
+          `<option value="${escapeHtml(sn)}" ${sn === wf.selected_sheet_name ? 'selected' : ''}>Sayfa: ${escapeHtml(sn)}</option>`
+      )
+      .join('');
+  }
+  const summaryEl = document.getElementById('frt-file-summary-strip');
+  if (summaryEl) {
+    const warnHtml = (wf.read_report.warnings || [])
+      .map((w) => `<div style="color:#FBBF24; margin-top:3px;">[◆ UYARI] ${escapeHtml(w)}</div>`)
+      .join('');
+    summaryEl.innerHTML = `
+      <div>
+        <strong>[● KAYNAK DOSYA]:</strong> <code>${escapeHtml(wf.read_report.source_file)}</code> ·
+        <strong>SHA-256:</strong> <code>${escapeHtml(wf.read_report.source_hash_sha256.slice(0, 20))}…</code> ·
+        <strong>Geçerli Satır:</strong> <strong>${wf.data_package.valid_record_count}</strong> / ${wf.data_package.total_data_rows} ·
+        <strong>Makro Politikası:</strong> <code>${escapeHtml(wf.read_report.macro_policy)}</code>
+      </div>
+      ${warnHtml}
+    `;
+  }
+
+  // Adım 2: Sütun Eşleme Tablosu
+  const mapStatusBadge = document.getElementById('frt-mapping-status-badge');
+  if (mapStatusBadge) {
+    mapStatusBadge.textContent = wf.mapping_result.requiredRolesSatisfied
+      ? '✓ Zorunlu Alanlar Eşlendi'
+      : '⚠ Kaynak Varlık Alanı Seçilmeli';
+    mapStatusBadge.className = 'kpi-badge ' + (wf.mapping_result.requiredRolesSatisfied ? 'ok' : 'warn');
+  }
+  const mapTbody = document.getElementById('frt-mapping-tbody');
+  if (mapTbody) {
+    const roleOptions = wf.mapping_result.availableRoles || [];
+    mapTbody.innerHTML = (wf.mapping_result.proposals || [])
+      .map((p) => {
+        const optsHtml = roleOptions
+          .map(
+            (r) =>
+              `<option value="${escapeHtml(r.roleId)}" ${r.roleId === p.effectiveRole ? 'selected' : ''}>${escapeHtml(r.labelTr)}</option>`
+          )
+          .join('');
+        return `
+          <tr>
+            <td><code>${escapeHtml(p.columnLetter)}</code></td>
+            <td><strong>${escapeHtml(p.originalHeader)}</strong><br/><span style="color:#94A3B8; font-size:0.70rem;">norm: ${escapeHtml(p.normalizedHeader)}</span></td>
+            <td><code>${escapeHtml(p.inferredType)}</code><br/><span style="color:#CBD5E1; font-size:0.70rem;">Örn: ${escapeHtml((p.sampleValues || []).slice(0, 2).join(', '))}</span></td>
+            <td>
+              <select class="select-enterprise frt-role-select" data-col-idx="${p.columnIndex}" aria-label="${escapeHtml(p.originalHeader)} için CAELUS alanı seçin" style="font-size:0.73rem; padding:3px 6px; width:100%;">
+                ${optsHtml}
+              </select>
+            </td>
+            <td>
+              <span class="kpi-badge ${p.mappingMethod === 'USER_OVERRIDE_CONFIRMED' ? 'accent' : 'ok'}" style="font-size:0.66rem;">${escapeHtml(p.confidenceClass)}</span>
+              <div style="margin-top:2px; color:#E2E8F0; font-size:0.71rem;">${escapeHtml(p.ruleExplanationTr)}</div>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    mapTbody.querySelectorAll('.frt-role-select').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const colIdx = Number(sel.getAttribute('data-col-idx'));
+        cFirstRealTaskState.columnOverrides[colIdx] = sel.value;
+        renderFirstRealTaskDrawerUI();
+      });
+    });
+  }
+
+  // Adım 3: Satır Bazlı Doğrulama Hataları ve Formül Denetimi
+  const errBadge = document.getElementById('frt-error-count-badge');
+  if (errBadge) {
+    errBadge.textContent = `[✖ ${wf.data_package.import_errors.length} Doğrulama Hatası (${wf.data_package.error_row_count} Satır İzole)]`;
+  }
+  const errListEl = document.getElementById('frt-errors-list');
+  if (errListEl) {
+    const errItems = (wf.data_package.import_errors || []).map(
+      (err) => `
+        <div style="background:rgba(127,29,29,0.32); border:1px solid rgba(248,113,113,0.45); border-radius:8px; padding:6px 8px;">
+          <div><strong>[✖ Satır ${err.source_row} · ${escapeHtml(err.column_name)}]</strong> <code>${escapeHtml(err.error_code)}</code></div>
+          <div style="color:#FECACA;">${escapeHtml(err.reason_tr)}</div>
+          <div style="color:#FDE68A; font-size:0.71rem;"><strong>Öneri:</strong> ${escapeHtml(err.remediation_tr)}</div>
+        </div>
+      `
+    );
+    const formulaItems = (wf.data_package.formula_audit_entries || [])
+      .filter((f) => f.formula_status === 'FORMULA_UNCOMPUTED')
+      .map(
+        (f) => `
+          <div style="background:rgba(120,53,15,0.32); border:1px solid rgba(251,191,36,0.45); border-radius:8px; padding:6px 8px;">
+            <div><strong>[◆ Hücre ${escapeHtml(f.cell_ref)} · Hesaplanmamış Formül]</strong> <code>${escapeHtml(f.formula_expression)}</code></div>
+            <div style="color:#FDE68A;">${escapeHtml(f.explanation_tr)}</div>
+          </div>
+        `
+      );
+    errListEl.innerHTML =
+      errItems.concat(formulaItems).join('') ||
+      '<div style="color:#4ADE80;">[● TAM DOĞRULANDI] Bu sayfada satır hatası bulunmadı.</div>';
+  }
+
+  // Adım 4: Varlık Tekilleştirme Adayları (Birleştir / Ayrı Tut)
+  const dedupBadge = document.getElementById('frt-dedup-count-badge');
+  if (dedupBadge) {
+    dedupBadge.textContent = `${wf.dedup_report.candidate_count} Aday Küme`;
+  }
+  const dedupListEl = document.getElementById('frt-dedup-list');
+  if (dedupListEl) {
+    dedupListEl.innerHTML =
+      (wf.dedup_report.candidates || [])
+        .map((c) => {
+          const isMerged = c.decision === 'MERGE';
+          const isSeparate = c.decision === 'KEEP_SEPARATE';
+          return `
+            <div style="background:rgba(15,31,58,0.84); border:1px solid rgba(56,189,248,0.38); border-radius:8px; padding:8px 10px; display:flex; flex-direction:column; gap:5px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+                <strong>Kanonik Öneri: ${escapeHtml(c.suggested_canonical_name)}</strong>
+                <span class="kpi-badge ${isMerged ? 'ok' : isSeparate ? 'warn' : 'accent'}" style="font-size:0.68rem;">
+                  Karar: ${isMerged ? 'BİRLEŞTİRİLDİ' : isSeparate ? 'AYRI TUTULDU' : 'KULLANICI ONAYI BEKLİYOR'}
+                </span>
+              </div>
+              <div style="color:#CBD5E1; font-size:0.72rem;">${escapeHtml(c.conflicting_fields.join(' | '))}</div>
+              <div style="color:#93C5FD; font-size:0.71rem;">${escapeHtml(c.rule_explanation_tr)}</div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
+                <button type="button" class="btn btn-sm ${isMerged ? 'btn-primary' : ''}" data-dedup-cluster="${escapeHtml(c.cluster_id)}" data-dedup-action="MERGE">✓ Birleştir (Tek Varlık Yap)</button>
+                <button type="button" class="btn btn-sm ${isSeparate ? 'btn-accent' : ''}" data-dedup-cluster="${escapeHtml(c.cluster_id)}" data-dedup-action="KEEP_SEPARATE">⇄ Ayrı Tut (Farklı Kurumlar)</button>
+              </div>
+            </div>
+          `;
+        })
+        .join('') || '<div style="color:#CBD5E1;">Tekilleştirme gerektiren mükerrer yazımlı varlık bulunmadı.</div>';
+
+    dedupListEl.querySelectorAll('[data-dedup-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const cid = btn.getAttribute('data-dedup-cluster');
+        const act = btn.getAttribute('data-dedup-action');
+        cFirstRealTaskState.dedupDecisions[cid] = act;
+        renderFirstRealTaskDrawerUI();
+      });
+    });
+  }
+
+  // Adım 5 & 6: Dünya Özeti ve Soru
+  const qInput = document.getElementById('frt-question-input');
+  if (qInput && !cFirstRealTaskState.questionTr) {
+    qInput.value = wf.comparison_result.question_tr;
+  }
+  const transferSummaryEl = document.getElementById('frt-world-transfer-summary');
+  if (transferSummaryEl) {
+    transferSummaryEl.innerHTML = `
+      <strong>[● DÜNYA MODELİ HAZIR]:</strong> Dünya Kimliği: <code>${escapeHtml(wf.world_model.world_id)}</code> ·
+      <strong>${wf.world_model.entity_count}</strong> Varlık ·
+      <strong>${wf.world_model.relation_count}</strong> Doğrulanmış İlişki ·
+      <strong>${wf.world_model.assumptions.length}</strong> Açık Varsayım.
+    `;
+  }
+
+  // Adım 7: İki Seçeneği Karşılaştır
+  const recBadge = document.getElementById('frt-recommended-option-badge');
+  if (recBadge) {
+    recBadge.textContent = `Önerilen: ${wf.comparison_result.recommended_option_id}`;
+  }
+  const cmpBox = document.getElementById('frt-comparison-box');
+  if (cmpBox) {
+    const cmp = wf.comparison_result;
+    const nodeRowsHtml = (cmp.node_comparisons || [])
+      .map(
+        (nc) => `
+          <tr>
+            <td><strong>${escapeHtml(nc.node_label)}</strong><br/><code>${escapeHtml(nc.node_id)}</code></td>
+            <td>${nc.baseline_stress}</td>
+            <td><strong>${nc.option1_stress}</strong> (${nc.option1_net_relief})</td>
+            <td><strong>${nc.option2_stress}</strong> (${nc.option2_net_relief})</td>
+            <td><code>[▲ ${escapeHtml(nc.epistemic_class)}]</code></td>
+            <td>${escapeHtml(nc.source_file)}#${escapeHtml(nc.source_sheet)}:Satır [${escapeHtml(nc.source_rows.join(', '))}]<br/><span style="color:#93C5FD;">${escapeHtml(nc.dedup_decision)}</span></td>
+          </tr>
+        `
+      )
+      .join('');
+
+    cmpBox.innerHTML = `
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px;">
+        <div style="background:rgba(15,23,42,0.85); border:1px solid rgba(148,163,184,0.35); border-radius:8px; padding:8px 10px;">
+          <div style="font-size:0.70rem; color:#94A3B8; font-weight:700;">[▲ SİMÜLASYON] MÜDAHALESİZ TEMEL AKIŞ</div>
+          <div style="font-size:1.05rem; font-weight:800; color:#F87171;">Sistem Baskısı: ${cmp.baseline.system_stress_score}</div>
+          <div style="font-size:0.72rem; color:#CBD5E1;">Hiçbir müdahale uygulanmadığında 24 adım sonundaki yayılım</div>
+        </div>
+        <div style="background:rgba(15,38,32,0.85); border:1px solid rgba(74,222,128,0.45); border-radius:8px; padding:8px 10px;">
+          <div style="font-size:0.70rem; color:#4ADE80; font-weight:700;">[▲ SİMÜLASYON] SEÇENEK 1 (ÖNERİLEN)</div>
+          <div style="font-size:1.05rem; font-weight:800; color:#4ADE80;">Baskı: ${cmp.option_1.system_stress_score} (${cmp.option_1.delta_vs_baseline})</div>
+          <div style="font-size:0.72rem; color:#E2E8F0;">${escapeHtml(cmp.option_1.intervention_label)}</div>
+        </div>
+        <div style="background:rgba(15,28,52,0.85); border:1px solid rgba(56,189,248,0.40); border-radius:8px; padding:8px 10px;">
+          <div style="font-size:0.70rem; color:#38BDF8; font-weight:700;">[▲ SİMÜLASYON] SEÇENEK 2 (ALTERNATİF)</div>
+          <div style="font-size:1.05rem; font-weight:800; color:#38BDF8;">Baskı: ${cmp.option_2.system_stress_score} (${cmp.option_2.delta_vs_baseline})</div>
+          <div style="font-size:0.72rem; color:#E2E8F0;">${escapeHtml(cmp.option_2.intervention_label)}</div>
+        </div>
+      </div>
+      <div style="padding:8px 10px; background:rgba(12,24,44,0.85); border-left:3px solid #E6C387; border-radius:6px; color:#F1F5F9;">
+        <strong>Karar Dayanağı:</strong> ${escapeHtml(cmp.recommendation_explanation_tr)}
+      </div>
+      <div class="caelus-frt-table-wrap">
+        <table class="caelus-frt-table">
+          <thead>
+            <tr>
+              <th>Varlık / Düğüm</th>
+              <th>Müdahalesiz</th>
+              <th>Seçenek 1 Sonrası</th>
+              <th>Seçenek 2 Sonrası</th>
+              <th>Bilgi Sınıfı</th>
+              <th>Kaynak Dosya # Sayfa : Satır ve Tekilleştirme</th>
+            </tr>
+          </thead>
+          <tbody>${nodeRowsHtml}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  // Adım 8: Satır Bazlı Kaynak İzi Tablosu
+  const provTbody = document.getElementById('frt-provenance-tbody');
+  if (provTbody) {
+    provTbody.innerHTML = (wf.data_package.records || [])
+      .map(
+        (r) => `
+          <tr>
+            <td><code>[● ${escapeHtml(r.epistemic_status)}]</code></td>
+            <td><strong>${escapeHtml(r.entity_name)}</strong><br/><code>${escapeHtml(r.record_id)}</code></td>
+            <td>${escapeHtml(r.relation_type)} → <strong>${escapeHtml(r.target_entity_name || '-')}</strong><br/>Değer: ${r.value} ${escapeHtml(r.unit)} (Kritiklik: ${r.criticality_weight})</td>
+            <td><code>${escapeHtml(r.source_file)}#${escapeHtml(r.source_sheet)}:Satır ${r.source_row}</code><br/><span style="color:#94A3B8; font-size:0.69rem;">SHA: ${escapeHtml(r.source_hash.slice(0, 14))}…</span></td>
+            <td>Olay: <code>${escapeHtml(r.occurred_at.slice(0, 10))}</code><br/>Öğrenilme: <code>${escapeHtml(r.learned_at.slice(0, 10))}</code></td>
+            <td><code>${escapeHtml(r.mapping_method)}</code><br/>Onay: <strong>${escapeHtml(r.user_confirmation)}</strong></td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  return wf;
+}
+
+function transferFirstRealTaskWorldToStage() {
+  const wf = cFirstRealTaskState.workflowResult || renderFirstRealTaskDrawerUI();
+  if (!wf || !wf.ok) return false;
+
+  const pack = wf.world_model.scenario_pack;
+  if (pack && pack.extended_causal_model) {
+    state.activeScenario = pack.id;
+    state.scenarioPack = pack;
+    state.causalNodes = pack.extended_causal_model.nodes.map((n, idx) => ({
+      id: n.id,
+      label: n.label,
+      kind: n.kind,
+      state: n.state_fp / 1000000,
+      reportedState: n.reported_state_fp / 1000000,
+      trust: n.trust_fp / 1000000,
+      capacity: n.capacity_fp / 1000000,
+      weight: n.weight_fp / 1000000,
+      deadlineTick: n.deadline_tick,
+      irrecoverable: Boolean(n.irrecoverable),
+      notes: n.notes,
+      provenance: n.provenance,
+      x: 0.18 + (idx % 4) * 0.21,
+      y: 0.28 + Math.floor(idx / 4) * 0.36
+    }));
+    state.causalEdges = pack.extended_causal_model.edges
+      .filter((e) => e.to !== '')
+      .map((e) => ({
+        from: e.from,
+        to: e.to,
+        multiplier: e.multiplier_fp / 1000000,
+        lag: e.lag_ticks,
+        active: e.active
+      }));
+  }
+
+  const worldTitleEl = document.getElementById('dunyam-world-title');
+  if (worldTitleEl) {
+    worldTitleEl.textContent = `Kullanıcı Dünya Modeli — ${wf.data_package.source_file}`;
+  }
+  const statusSentEl = document.getElementById('dunyam-status-sentence');
+  if (statusSentEl) {
+    statusSentEl.textContent = `${wf.data_package.source_file} (${wf.selected_sheet_name}) içinden ${wf.world_model.entity_count} varlık ve ${wf.world_model.relation_count} doğrulanmış ilişki sahneye aktarıldı. Önerilen müdahale: ${wf.comparison_result.recommended_option_label}.`;
+  }
+  const srcBadgeEl = document.getElementById('dunyam-source-badge');
+  if (srcBadgeEl) {
+    srcBadgeEl.textContent = `Bilginin kaynağı: Kullanıcı Verisi (${wf.data_package.source_file})`;
+  }
+
+  if (typeof drawCausalGraph === 'function') drawCausalGraph();
+  if (typeof drawDunyamHeroStage === 'function') drawDunyamHeroStage();
+
+  const transferSummaryEl = document.getElementById('frt-world-transfer-summary');
+  if (transferSummaryEl) {
+    transferSummaryEl.innerHTML = `<span style="color:#4ADE80; font-weight:700;">✓ SAHNEYE AKTARILDI:</span> <code>${escapeHtml(wf.world_model.world_id)}</code> (${wf.world_model.entity_count} varlık, ${wf.world_model.relation_count} ilişki) 3B/2B sahneye ve deterministik senaryo motoruna bağlandı.`;
+  }
+  return true;
+}
+
+function toggleFirstRealTaskDrawer(forceOpen) {
+  const drawer = document.getElementById('caelus-first-real-task-drawer');
+  const btn = document.getElementById('btn-stage-first-real-task');
+  if (!drawer) return;
+  const willOpen = typeof forceOpen === 'boolean' ? forceOpen : drawer.classList.contains('hidden');
+  if (willOpen) {
+    drawer.classList.remove('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    renderFirstRealTaskDrawerUI();
+  } else {
+    drawer.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function initCaelusFirstRealTaskSystem() {
+  const eng = window.CaelusFirstRealTaskEngine;
+  if (!eng) return;
+
+  // Varsayılan Vaka A ile ilk durumu hazırla
+  cFirstRealTaskState.dedupDecisions['DEDUP_ALFA_TEKNOLOJI'] = 'MERGE';
+  renderFirstRealTaskDrawerUI();
+
+  const btnOpen = document.getElementById('btn-stage-first-real-task');
+  const btnClose = document.getElementById('btn-close-first-real-task-drawer');
+  if (btnOpen) {
+    btnOpen.addEventListener('click', () => toggleFirstRealTaskDrawer());
+  }
+  if (btnClose) {
+    btnClose.addEventListener('click', () => toggleFirstRealTaskDrawer(false));
+  }
+
+  // Klavye kısayolu: Alt+V
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.key === 'v' || e.key === 'V' || e.code === 'KeyV')) {
+      e.preventDefault();
+      toggleFirstRealTaskDrawer();
+    }
+  });
+
+  // 9 Adım Sekme Gezinmesi
+  document.querySelectorAll('#frt-step-nav-bar [data-frt-step]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#frt-step-nav-bar [data-frt-step]').forEach((b) => {
+        const active = b === btn;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      const stepNum = Number(btn.getAttribute('data-frt-step'));
+      const targetMap = {
+        1: 'frt-step-1-ingest',
+        2: 'frt-step-2-mapping',
+        3: 'frt-step-3-errors',
+        4: 'frt-step-4-dedup',
+        5: 'frt-step-5-6-world-scenario',
+        6: 'frt-step-5-6-world-scenario',
+        7: 'frt-step-7-compare',
+        8: 'frt-step-8-provenance',
+        9: 'frt-step-9-export'
+      };
+      const targetEl = document.getElementById(targetMap[stepNum]);
+      if (targetEl && typeof targetEl.scrollIntoView === 'function') {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  });
+
+  // Vaka A ve Vaka B Yükleme Butonları
+  const btnVakaA = document.getElementById('btn-frt-load-vaka-a');
+  if (btnVakaA) {
+    btnVakaA.addEventListener('click', () => {
+      cFirstRealTaskState.activeCaseId = 'VAKA_A';
+      cFirstRealTaskState.customReadReport = null;
+      cFirstRealTaskState.customFileName = null;
+      cFirstRealTaskState.selectedSheetName = null;
+      cFirstRealTaskState.columnOverrides = {};
+      cFirstRealTaskState.dedupDecisions = { DEDUP_ALFA_TEKNOLOJI: 'MERGE' };
+      cFirstRealTaskState.questionTr = '';
+      renderFirstRealTaskDrawerUI();
+    });
+  }
+
+  const btnVakaB = document.getElementById('btn-frt-load-vaka-b');
+  if (btnVakaB) {
+    btnVakaB.addEventListener('click', () => {
+      cFirstRealTaskState.activeCaseId = 'VAKA_B';
+      cFirstRealTaskState.customReadReport = null;
+      cFirstRealTaskState.customFileName = null;
+      cFirstRealTaskState.selectedSheetName = null;
+      cFirstRealTaskState.columnOverrides = {};
+      cFirstRealTaskState.dedupDecisions = { DEDUP_ULUSAL_VERI_MERKEZI: 'MERGE' };
+      cFirstRealTaskState.questionTr = '';
+      renderFirstRealTaskDrawerUI();
+    });
+  }
+
+  // Bilgisayardan / Telefondan Gerçek Dosya Seçimi (.xlsx / .csv)
+  const fileInput = document.getElementById('frt-file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      cFirstRealTaskState.customFileName = file.name;
+      cFirstRealTaskState.columnOverrides = {};
+      cFirstRealTaskState.dedupDecisions = {};
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.xlsx') || lower.endsWith('.xlsm') || lower.endsWith('.ods')) {
+        const ab = await file.arrayBuffer();
+        cFirstRealTaskState.customReadReport = eng.parseOpenXmlXlsxBytes(new Uint8Array(ab), file.name);
+      } else {
+        const txt = await file.text();
+        cFirstRealTaskState.customReadReport = eng.readCsvContent(txt, {
+          fileName: file.name,
+          delimiter: cFirstRealTaskState.selectedDelimiter || undefined
+        });
+      }
+      cFirstRealTaskState.selectedSheetName =
+        cFirstRealTaskState.customReadReport?.sheet_names?.[0] || null;
+      renderFirstRealTaskDrawerUI();
+    });
+  }
+
+  // Sayfa Seçici ve Ayırıcı Seçici
+  const sheetSelect = document.getElementById('frt-sheet-select');
+  if (sheetSelect) {
+    sheetSelect.addEventListener('change', () => {
+      cFirstRealTaskState.selectedSheetName = sheetSelect.value;
+      renderFirstRealTaskDrawerUI();
+    });
+  }
+  const delimSelect = document.getElementById('frt-delimiter-select');
+  if (delimSelect) {
+    delimSelect.addEventListener('change', () => {
+      cFirstRealTaskState.selectedDelimiter = delimSelect.value;
+      renderFirstRealTaskDrawerUI();
+    });
+  }
+
+  // Adım 5 & 6: Dünyaya Aktar ve Senaryo Karşılaştır
+  const btnTransfer = document.getElementById('btn-frt-transfer-to-world');
+  if (btnTransfer) {
+    btnTransfer.addEventListener('click', () => {
+      transferFirstRealTaskWorldToStage();
+    });
+  }
+  const btnRunCmp = document.getElementById('btn-frt-run-comparison');
+  if (btnRunCmp) {
+    btnRunCmp.addEventListener('click', () => {
+      const qInput = document.getElementById('frt-question-input');
+      if (qInput) cFirstRealTaskState.questionTr = qInput.value.trim();
+      renderFirstRealTaskDrawerUI();
+      transferFirstRealTaskWorldToStage();
+    });
+  }
+
+  // Adım 9: Rapor Dışa Aktarma (.xlsx, HTML/PDF, Güvenli .csv)
+  const statusBanner = document.getElementById('frt-export-status-banner');
+  const btnExportXlsx = document.getElementById('btn-frt-export-xlsx');
+  if (btnExportXlsx) {
+    btnExportXlsx.addEventListener('click', () => {
+      const wf = cFirstRealTaskState.workflowResult || renderFirstRealTaskDrawerUI();
+      if (!wf || !wf.ok) return;
+      const xlsxBytes = wf.export_builders.buildXlsxBytes();
+      const sha = eng.computeSha256Hex(xlsxBytes);
+      try {
+        const blob = new Blob([xlsxBytes], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `CAELUS_Aciklanabilir_Rapor_${wf.data_package.dataset_id}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      } catch (_) {}
+      if (statusBanner) {
+        statusBanner.innerHTML = `<strong>✓ 7 SAYFALI .XLSX RAPOR ÜRETİLDİ:</strong> <code>CAELUS_Aciklanabilir_Rapor_${escapeHtml(wf.data_package.dataset_id)}.xlsx</code> (${xlsxBytes.length} bayt · SHA-256: <code>${sha.slice(0, 16)}…</code> · Sayfalar: ${escapeHtml(wf.workbook_spec.sheet_titles.join(', '))}).`;
+      }
+    });
+  }
+
+  const btnExportHtmlPdf = document.getElementById('btn-frt-export-html-pdf');
+  if (btnExportHtmlPdf) {
+    btnExportHtmlPdf.addEventListener('click', () => {
+      const wf = cFirstRealTaskState.workflowResult || renderFirstRealTaskDrawerUI();
+      if (!wf || !wf.ok) return;
+      const htmlReport = wf.export_builders.buildPrintHtml();
+      const dossierModal = document.getElementById('dossier-modal');
+      const dossierContent = document.getElementById('dossier-content');
+      if (dossierModal && dossierContent) {
+        dossierContent.innerHTML = htmlReport;
+        dossierModal.classList.remove('hidden');
+      }
+      if (statusBanner) {
+        statusBanner.innerHTML = `<strong>✓ ÇOK SAYFALI HTML / PDF BASKI RAPORU AÇILDI:</strong> 7 bölüm ve kaynak izi tabloları (@media print uyumlu, ${htmlReport.length} bayt) görüntülenmeye ve PDF olarak kaydedilmeye hazır.`;
+      }
+    });
+  }
+
+  const btnExportCsv = document.getElementById('btn-frt-export-csv');
+  if (btnExportCsv) {
+    btnExportCsv.addEventListener('click', () => {
+      const wf = cFirstRealTaskState.workflowResult || renderFirstRealTaskDrawerUI();
+      if (!wf || !wf.ok) return;
+      const safeCsv = wf.export_builders.buildSafeCsv();
+      try {
+        const blob = new Blob([safeCsv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `CAELUS_Guvenli_Kaynak_Izli_Rapor_${wf.data_package.dataset_id}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      } catch (_) {}
+      if (statusBanner) {
+        statusBanner.innerHTML = `<strong>✓ GÜVENLİ .CSV RAPOR ÜRETİLDİ:</strong> Formül enjeksiyonuna (=, +, -, @, \\t, \\r) karşı korumalı <code>CAELUS_Guvenli_Kaynak_Izli_Rapor_${escapeHtml(wf.data_package.dataset_id)}.csv</code> (${safeCsv.length} bayt) kaydedildi.`;
+      }
+    });
+  }
+
+  window.toggleFirstRealTaskDrawer = toggleFirstRealTaskDrawer;
+  window.renderFirstRealTaskDrawerUI = renderFirstRealTaskDrawerUI;
+  window.transferFirstRealTaskWorldToStage = transferFirstRealTaskWorldToStage;
+  window.cFirstRealTaskState = cFirstRealTaskState;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
   setInterval(updateClock, 1000);
@@ -25715,6 +26293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initCaelusLivingWorldModelUI();
   initCaelusDiscoveryValueEngineUI();
   initCaelusSpatialInterfaceSystem();
+  initCaelusFirstRealTaskSystem();
 
   addAuditLog('info', 'CAELUS Karar Analitiği Arayüzü başlatıldı. Gerçek motor bağlantısı kontrol ediliyor...');
   addReplLine('Motor konsolu hazır. Komutlar: status, list levers, lever <id>, compare_lever <id> <ufuk> <tohum>, tick <n>, scenario <id>, load_json <json>, reset', 'info');

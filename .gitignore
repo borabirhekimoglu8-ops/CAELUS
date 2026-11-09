@@ -25,8 +25,9 @@ tools/caelus_signing.key
 # Per-device identity seed — generate locally; never commit.
 caelus_identity.key
 
-# WASM build çıktısı (üretilmiş)
+# WASM ve yardımcı araç build çıktıları (üretilmiş)
 caelus_wasm/target/
+tools/caelus_xlsx_engine/target/
 
 # Yerel yedekleme klasörleri ve geçici arşivler
 backups/

@@ -1,0 +1,16 @@
+{
+  "generated_by": "tools/generate_first_real_task_fixtures.py",
+  "vaka_a": {
+    "xlsx_sha256": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+    "csv_sha256": "cf03c248165567d66f82237f1cb6f0b55ae1da8cf90225314bac6855cd2f6615"
+  },
+  "vaka_b": {
+    "xlsx_sha256": "8820a4c23672012aee5458d87aac5f6ccda0043de5159301842be577523ab1d2",
+    "csv_sha256": "8100dc4ce4b6f64611cab42a30df92ba8f7f9c6e905d80f09f552fdc8601b56b"
+  },
+  "edge_cases": {
+    "formula_injection_csv_sha256": "53f06dee006c2cf2bd8c6bbfc23863f09ad74f32e31fdfa0d039b30b6f21b37f",
+    "corrupt_xlsx_sha256": "6346eb23d8790bc23d74502522da157acd52076d20b3d285f7652a668acb5d36",
+    "macro_xlsm_sha256": "5e01212e8a3832dfde962940e7b7c957264efd3ee7a767626ca9f09ae84b66f9"
+  }
+}

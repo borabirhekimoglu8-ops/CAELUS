@@ -5963,14 +5963,23 @@ body.theme-light .linear-setting-row {
       .caelus-compass-wordmark,
       .caelus-compass-kbd,
       .caelus-perf-mode-group,
+      .caelus-spatial-onboarding-hint,
       #btn-stage-time-lens > span:nth-child(2) {
         display: none !important;
       }
 
+      .caelus-stage-top-right-pod {
+        z-index: 1405 !important;
+        gap: 4px !important;
+        right: 8px !important;
+        max-width: calc(100vw - 148px) !important;
+        justify-content: flex-end !important;
+      }
+
       .caelus-spatial-lens-pill {
-        min-height: 38px;
-        padding: 4px 10px;
-        font-size: 0.72rem;
+        min-height: 34px;
+        padding: 3px 7px;
+        font-size: 0.65rem;
       }
 
       .dunyam-hero-top {
@@ -6058,6 +6067,137 @@ body.theme-light .linear-setting-row {
         right: 14px !important;
         width: auto !important;
         z-index: 30 !important;
+      }
+    }
+
+    #dossier-modal {
+      z-index: 1550 !important;
+    }
+
+    /* ── CAELUS İLK GERÇEK GÖREV (9 ADIMLI KULLANICI VERİSİ, DÜNYA MODELİ VE RAPOR STÜDYOSU) ── */
+    .caelus-frt-drawer {
+      position: fixed;
+      top: 66px;
+      right: 18px;
+      width: min(860px, calc(100vw - 36px));
+      max-height: calc(100dvh - 84px);
+      overflow-y: auto;
+      z-index: 1420;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(6, 13, 28, 0.94);
+      border: 1px solid rgba(136, 212, 255, 0.36);
+      box-shadow: 0 24px 64px rgba(2, 6, 16, 0.85), 0 0 28px rgba(136, 212, 255, 0.16);
+      backdrop-filter: blur(22px) saturate(150%);
+      -webkit-backdrop-filter: blur(22px) saturate(150%);
+      color: var(--caelus-text-primary, #F8FAFC);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .caelus-frt-step-bar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    @media (min-width: 780px) {
+      .caelus-frt-step-bar {
+        grid-template-columns: repeat(9, minmax(0, 1fr));
+      }
+    }
+
+    .caelus-frt-step-pill {
+      appearance: none;
+      background: rgba(12, 24, 46, 0.78);
+      border: 1px solid rgba(136, 212, 255, 0.24);
+      border-radius: 10px;
+      padding: 6px 6px;
+      color: #E2E8F0;
+      font-size: 0.71rem;
+      font-weight: 600;
+      line-height: 1.25;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    .caelus-frt-step-pill.active,
+    .caelus-frt-step-pill:focus-visible {
+      background: rgba(24, 58, 104, 0.92);
+      border-color: #E6C387;
+      color: #FFFFFF;
+      outline: none;
+    }
+
+    .caelus-frt-card {
+      background: rgba(10, 20, 38, 0.82);
+      border: 1px solid rgba(136, 212, 255, 0.22);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .caelus-frt-table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid rgba(136, 212, 255, 0.20);
+      border-radius: 10px;
+    }
+
+    .caelus-frt-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.76rem;
+      color: #F1F5F9;
+    }
+
+    .caelus-frt-table th,
+    .caelus-frt-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(136, 212, 255, 0.14);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .caelus-frt-table th {
+      background: rgba(15, 31, 58, 0.92);
+      color: #E6C387;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+      .caelus-frt-drawer {
+        top: auto !important;
+        bottom: 10px !important;
+        left: 8px !important;
+        right: 8px !important;
+        width: calc(100vw - 16px) !important;
+        max-height: 82dvh !important;
+        padding: 12px !important;
+      }
+    }
+
+    @media print {
+      .caelus-spatial-compass,
+      .caelus-stage-top-right-pod,
+      .dunyam-stage-bottom-bar,
+      .dunyam-stage-quick-layers {
+        display: none !important;
+      }
+      .caelus-frt-drawer {
+        position: static !important;
+        width: 100% !important;
+        max-height: none !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        box-shadow: none !important;
+        border: 1px solid #334155 !important;
       }
     }
 
@@ -6239,6 +6379,13 @@ body.theme-light .linear-setting-row {
         <span style="color:#4ADE80;" aria-hidden="true">⚖</span>
         <span>Dayanak</span>
       </button>
+
+      <button type="button" class="caelus-spatial-lens-pill" id="btn-stage-first-real-task"
+        aria-expanded="false" aria-controls="caelus-first-real-task-drawer"
+        title="Kendi verini (.xlsx / .csv) ekle, doğrula, dünya modeline dönüştür, senaryoları karşılaştır ve kaynak izli rapor kaydet (Kısayol: Alt+V)">
+        <span style="color:#38BDF8;" aria-hidden="true">📂</span>
+        <span>Kendi Verim &amp; Görev</span>
+      </button>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
@@ -6293,6 +6440,161 @@ body.theme-light .linear-setting-row {
 
       <div style="display:flex; gap:6px; flex-wrap:wrap; padding-top:6px; border-top:1px solid rgba(136,212,255,0.16);">
         <button type="button" class="btn btn-sm btn-accent" id="btn-provenance-open-baglantilar" style="flex:1; border-radius:999px; font-size:0.75rem;">Tüm Kaynaklar ve Lisans Envanterini Aç ↗</button>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+       CAELUS İLK GERÇEK GÖREV — 9 ADIMLI KULLANICI VERİSİ, DÜNYA MODELİ, SENARYO VE AÇIKLANABİLİR RAPOR STÜDYOSU
+       ═══════════════════════════════════════════════════════════════════════ -->
+    <aside class="caelus-frt-drawer hidden" id="caelus-first-real-task-drawer" role="dialog" aria-modal="false" aria-labelledby="frt-drawer-title">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(136,212,255,0.20); padding-bottom:8px;">
+        <div>
+          <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:#E6C387;">CAELUS İLK GERÇEK GÖREV · KULLANICI VERİSİNDEN AÇIKLANABİLİR KARARA</div>
+          <strong id="frt-drawer-title" style="font-size:0.98rem; color:#F8FAFC;">Dosyamı Ekle → Doğrula → Dünyamı Oluştur → Seçenekleri Karşılaştır → Kaynak İzli Raporu Kaydet</strong>
+        </div>
+        <button type="button" class="dunyam-callout-close-btn" id="btn-close-first-real-task-drawer" aria-label="İlk Gerçek Görev penceresini kapat">✕</button>
+      </div>
+
+      <!-- 9 Adımlı Gezinme Şeridi -->
+      <div class="caelus-frt-step-bar" id="frt-step-nav-bar" role="tablist" aria-label="9 Adımlı Kullanıcı Veri ve Karar Akışı">
+        <button type="button" class="caelus-frt-step-pill active" data-frt-step="1" role="tab" aria-selected="true">1. Veri Ekle</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="2" role="tab" aria-selected="false">2. Sütun Eşle</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="3" role="tab" aria-selected="false">3. Sorunları Gör</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="4" role="tab" aria-selected="false">4. Varlık Onayla</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="5" role="tab" aria-selected="false">5. Dünyaya Aktar</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="6" role="tab" aria-selected="false">6. Senaryo Seç</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="7" role="tab" aria-selected="false">7. Karşılaştır</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="8" role="tab" aria-selected="false">8. Kaynak İzi</button>
+        <button type="button" class="caelus-frt-step-pill" data-frt-step="9" role="tab" aria-selected="false">9. Rapor Kaydet</button>
+      </div>
+
+      <!-- Adım 1: Veri Ekle ve Örnek Vaka Seçimi -->
+      <div class="caelus-frt-card" id="frt-step-1-ingest">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong style="font-size:0.84rem; color:#88D4FF;">1. Veri Ekle (.xlsx, .csv, .tsv) veya Uçtan Uca Vaka Yükle</strong>
+          <span class="kpi-badge ok" id="frt-active-file-badge">Dosya: vaka_a_tedarik_zinciri.csv</span>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button type="button" class="btn btn-sm btn-primary" id="btn-frt-load-vaka-a">Vaka A: Kurumlar ve Tedarik İlişkileri</button>
+          <button type="button" class="btn btn-sm btn-accent" id="btn-frt-load-vaka-b">Vaka B: Kurumlar ve Altyapı Bağımlılıkları</button>
+          <label class="btn btn-sm" style="cursor:pointer; margin:0;" for="frt-file-input">
+            <span>📁 Bilgisayardan / Telefondan Dosya Seç (.xlsx / .csv)</span>
+            <input type="file" id="frt-file-input" accept=".xlsx,.xlsm,.ods,.csv,.tsv,.json" style="display:none;">
+          </label>
+          <select id="frt-sheet-select" class="select-enterprise" aria-label="Çalışma Kitabı Sayfası Seçin" style="font-size:0.75rem; padding:4px 8px;">
+            <option value="Tedarik_Zinciri">Sayfa: Tedarik_Zinciri</option>
+          </select>
+          <select id="frt-delimiter-select" class="select-enterprise" aria-label="CSV Ayırıcı Seçin" style="font-size:0.75rem; padding:4px 8px;">
+            <option value="">Ayırıcı: Otomatik</option>
+            <option value=",">Virgül (,)</option>
+            <option value=";">Noktalı Virgül (;)</option>
+            <option value="&#9;">Sekme (Tab)</option>
+          </select>
+        </div>
+        <div id="frt-file-summary-strip" style="font-size:0.76rem; color:#E2E8F0; line-height:1.45;"></div>
+      </div>
+
+      <!-- Adım 2: Sayfa ve Sütunları İncele / Eşlemeyi Düzenle -->
+      <div class="caelus-frt-card" id="frt-step-2-mapping">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong style="font-size:0.84rem; color:#88D4FF;">2. Sayfa ve Sütunları İncele (Kurallı ve Düzeltilebilir Eşleme — Zorunlu LLM Yok)</strong>
+          <span class="kpi-badge ok" id="frt-mapping-status-badge">Zorunlu Alanlar Eşlendi</span>
+        </div>
+        <div class="caelus-frt-table-wrap">
+          <table class="caelus-frt-table" id="frt-mapping-table">
+            <thead>
+              <tr>
+                <th>Sütun</th>
+                <th>Algılanan Başlık</th>
+                <th>Çıkarılan Tip &amp; Örnek</th>
+                <th>Önerilen / Seçilen CAELUS Alanı</th>
+                <th>Kural Gerekçesi ve Güven</th>
+              </tr>
+            </thead>
+            <tbody id="frt-mapping-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Adım 3 & Adım 4: Doğrulama Hataları ve Varlık Tekilleştirme Onayı -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px;">
+        <div class="caelus-frt-card" id="frt-step-3-errors">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <strong style="font-size:0.84rem; color:#FBBF24;">3. Sorunları Gör (Satır Bazlı Doğrulama Hataları)</strong>
+            <span class="kpi-badge warn" id="frt-error-count-badge">[✖ 2 Hatalı Satır İzole Edildi]</span>
+          </div>
+          <div id="frt-errors-list" style="display:flex; flex-direction:column; gap:6px; font-size:0.75rem; color:#F1F5F9;"></div>
+        </div>
+
+        <div class="caelus-frt-card" id="frt-step-4-dedup">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <strong style="font-size:0.84rem; color:#38BDF8;">4. Varlık Eşleşmelerini Onayla (Sessiz Birleştirme Yok)</strong>
+            <span class="kpi-badge accent" id="frt-dedup-count-badge">Aday Eşleşme</span>
+          </div>
+          <div id="frt-dedup-list" style="display:flex; flex-direction:column; gap:6px; font-size:0.75rem; color:#F1F5F9;"></div>
+        </div>
+      </div>
+
+      <!-- Adım 5 & Adım 6: Dünyaya Aktar ve Senaryo / Soru Seçimi -->
+      <div class="caelus-frt-card" id="frt-step-5-6-world-scenario">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong style="font-size:0.84rem; color:#4ADE80;">5. Dünyaya Aktar &amp; 6. Sorumu Seç / Senaryo Çalıştır</strong>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-frt-transfer-to-world">🌍 Doğrulanmış Veriyi Sahneye Aktar ve Senaryoları Çalıştır</button>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <label for="frt-question-input" style="font-size:0.75rem; font-weight:600; color:#E2E8F0;">Karar Sorusu:</label>
+          <input type="text" id="frt-question-input" class="dt-editor-input" style="flex:1; min-width:240px; font-size:0.76rem; padding:6px 10px;" value="Marmara Yarı İletken Ltd. veya Kuzey Lojistik A.Ş. hattındaki kesintide hangi müdahale seçeneği toplam sistem baskısını daha fazla düşürür?" />
+          <button type="button" class="btn btn-sm btn-accent" id="btn-frt-run-comparison">⚖ Seçenekleri Yeniden Karşılaştır</button>
+        </div>
+        <div id="frt-world-transfer-summary" style="font-size:0.75rem; color:#E2E8F0;"></div>
+      </div>
+
+      <!-- Adım 7: İki Seçeneği Karşılaştır -->
+      <div class="caelus-frt-card" id="frt-step-7-compare">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong style="font-size:0.84rem; color:#E6C387;">7. İki Seçeneği Karşılaştır ([▲ SİMÜLASYON] vs [◆ VARSAYIM] vs [● KULLANICI VERİSİ])</strong>
+          <span class="kpi-badge ok" id="frt-recommended-option-badge">Önerilen Seçenek</span>
+        </div>
+        <div id="frt-comparison-box" style="display:flex; flex-direction:column; gap:8px; font-size:0.76rem;"></div>
+      </div>
+
+      <!-- Adım 8: Kaynağı ve Dayanağı İncele -->
+      <div class="caelus-frt-card" id="frt-step-8-provenance">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong style="font-size:0.84rem; color:#88D4FF;">8. Kaynağı ve Dayanağı İncele (Dosya # Sayfa : Satır ve Çift Zamanlı Zincir)</strong>
+          <span class="kpi-badge" id="frt-contract-badge">Sözleşme: CAELUS_DATA_PACKAGE_V1 (v1.0.0)</span>
+        </div>
+        <div class="caelus-frt-table-wrap">
+          <table class="caelus-frt-table" id="frt-provenance-table">
+            <thead>
+              <tr>
+                <th>Bilgi Sınıfı</th>
+                <th>Kayıt / Varlık</th>
+                <th>İlişki ve Değer</th>
+                <th>Kaynak Dosya # Sayfa : Satır</th>
+                <th>Olay / Öğrenilme Zamanı</th>
+                <th>Eşleme ve Onay</th>
+              </tr>
+            </thead>
+            <tbody id="frt-provenance-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Adım 9: Raporu Kaydet (.xlsx, HTML/PDF, Güvenli .csv) -->
+      <div class="caelus-frt-card" id="frt-step-9-export">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong style="font-size:0.84rem; color:#4ADE80;">9. Raporu Kaydet (7 Sayfalı .XLSX, Çok Sayfalı HTML/PDF Baskı, Formül Enjeksiyon Korumalı .CSV)</strong>
+          <span class="kpi-badge ok" id="frt-export-ready-badge">7 Sayfalı Rapor Hazır</span>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm btn-primary" id="btn-frt-export-xlsx">📊 7 Sayfalı .XLSX Rapor Kaydet</button>
+          <button type="button" class="btn btn-sm btn-accent" id="btn-frt-export-html-pdf">🖨 Çok Sayfalı HTML / PDF Rapor Aç &amp; Yazdır</button>
+          <button type="button" class="btn btn-sm" id="btn-frt-export-csv">🛡 Güvenli .CSV İndir (Formül Korumalı)</button>
+        </div>
+        <div id="frt-export-status-banner" style="font-size:0.75rem; color:#E2E8F0; background:rgba(15,31,58,0.75); border:1px solid rgba(136,212,255,0.22); border-radius:8px; padding:8px 10px;">
+          Rapor dışa aktarıma hazır: 1. Özet · 2. Varlıklar · 3. İlişkiler · 4. Senaryo Karşılaştırması · 5. Varsayımlar · 6. Hatalar ve Eksik Veriler · 7. Kaynak İzleri.
+        </div>
       </div>
     </aside>
 
@@ -12199,6 +12501,8 @@ body.theme-light .linear-setting-row {
   <script src="living_world_model.js"></script>
   <!-- CAELUS KEŞİF VE BİLGİ DEĞERİ MOTORU (KARAR DUYARLILIĞI, HİPOTEZ GÜNLÜĞÜ, MCP SUNUCUSU VE 12 PARÇA ENVANTERİ) -->
   <script src="discovery_value_engine.js"></script>
+  <!-- CAELUS İLK GERÇEK GÖREV MOTORU (DOSYA OKUMA, SÜTUN EŞLEME, SÖZLEŞME DOĞRULAMA, TEKİLLEŞTİRME, SENARYO VE 7 SAYFALI XLSX/PDF RAPOR) -->
+  <script src="first_real_task_engine.js"></script>
   <!-- ANA UYGULAMA VE CANLI C++/RUST KÖPRÜSÜ -->
   <script src="app.js"></script>
 </body>

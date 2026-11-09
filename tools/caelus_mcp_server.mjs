@@ -18,9 +18,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const discoveryEngine = require(path.join(__dirname, "..", "ui", "discovery_value_engine.js"));
+const firstTaskEngine = require(path.join(__dirname, "..", "ui", "first_real_task_engine.js"));
 
 export function createStandaloneCaelusMcpJsonRpcHandler(options = {}) {
   const mcpServer = discoveryEngine.createCaelusMcpServer(options);
+  const firstTaskMcp = firstTaskEngine.createFirstRealTaskMcpController({
+    allowExport: options.allowExport !== false,
+    defaultCaseId: options.defaultCaseId || "VAKA_A",
+  });
+  const firstTaskToolNames = new Set(firstTaskMcp.toolsCatalog.map((t) => t.name));
+  const combinedToolsCatalog = [...mcpServer.toolsCatalog, ...firstTaskMcp.toolsCatalog];
 
   function handleJsonRpcRequest(rpcRequest) {
     const id = rpcRequest && rpcRequest.id !== undefined ? rpcRequest.id : null;
@@ -45,11 +52,19 @@ export function createStandaloneCaelusMcpJsonRpcHandler(options = {}) {
     }
 
     if (method === "tools/list") {
+      const includeAll =
+        Boolean(options.includeFirstRealTaskTools) ||
+        params.scope === "all" ||
+        params.includeFirstRealTaskTools === true;
       return {
         jsonrpc: "2.0",
         id,
         result: {
-          tools: mcpServer.toolsCatalog,
+          tools: includeAll ? combinedToolsCatalog : mcpServer.toolsCatalog,
+          firstRealTaskTools: firstTaskMcp.toolsCatalog,
+          combinedToolsCatalog,
+          discoveryToolsCount: mcpServer.toolsCatalog.length,
+          firstRealTaskToolsCount: firstTaskMcp.toolsCatalog.length,
         },
       };
     }
@@ -58,11 +73,17 @@ export function createStandaloneCaelusMcpJsonRpcHandler(options = {}) {
       const toolName = params.name || "";
       const args = params.arguments || {};
       const callerRole = params.callerRole || mcpServer.defaultRole;
-      const callRes = mcpServer.invokeTool({
-        toolName,
-        callerRole,
-        arguments: args,
-      });
+      const callRes = firstTaskToolNames.has(toolName)
+        ? firstTaskMcp.invokeFirstTaskTool({
+            toolName,
+            callerRole,
+            arguments: args,
+          })
+        : mcpServer.invokeTool({
+            toolName,
+            callerRole,
+            arguments: args,
+          });
       if (!callRes.ok) {
         return {
           jsonrpc: "2.0",
@@ -101,6 +122,8 @@ export function createStandaloneCaelusMcpJsonRpcHandler(options = {}) {
 
   return {
     mcpServer,
+    firstTaskMcp,
+    combinedToolsCatalog,
     handleJsonRpcRequest,
   };
 }
@@ -123,16 +146,32 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
         arguments: { method: "caelus_decision_sensitivity" },
       },
     });
+    const callFirstTaskResp = handler.handleJsonRpcRequest({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "inspect_imported_dataset",
+        arguments: { caseId: "VAKA_A" },
+      },
+    });
     process.stdout.write(
       JSON.stringify(
         {
           selfTestPassed:
             Array.isArray(listResp.result?.tools) &&
             listResp.result.tools.length === 11 &&
-            Boolean(callResp.result?.structuredResult),
-          toolCount: listResp.result?.tools?.length || 0,
+            Array.isArray(listResp.result?.firstRealTaskTools) &&
+            listResp.result.firstRealTaskTools.length === 10 &&
+            Boolean(callResp.result?.structuredResult) &&
+            Boolean(callFirstTaskResp.result?.structuredResult?.ok),
+          toolCount: listResp.result?.combinedToolsCatalog?.length || 0,
+          discoveryToolsCount: listResp.result?.discoveryToolsCount || 0,
+          firstRealTaskToolsCount: listResp.result?.firstRealTaskToolsCount || 0,
           topRankedUnknownId:
             callResp.result?.structuredResult?.rankedNeeds?.[0]?.variableId || null,
+          inspectedDatasetId:
+            callFirstTaskResp.result?.structuredResult?.dataset_id || null,
         },
         null,
         2
