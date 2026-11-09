@@ -84,16 +84,44 @@ jobs:
           grep -q 'BS-02_GOLGE_ARSIV' dist/index.html
           grep -q 'BS-03_KUM_SAATI' dist/index.html
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Upload offline-first standalone bundle artifact
+        uses: actions/upload-artifact@v4
         with:
-          enablement: true
+          name: caelus-pages-dist
+          path: dist
+          if-no-files-found: error
+
+      # Not: actions/configure-pages@v5 içinde `enablement: true` kullanıldığında
+      # GITHUB_TOKEN depo ayarlarını değiştirmeye (Pages sitesi oluşturmaya) çalışır
+      # ve entegrasyon yetkisi (403 Resource not accessible by integration) hatası verir.
+      # Bu nedenle `enablement: true` kaldırılmıştır. Depo yöneticisi GitHub arayüzünden
+      # Settings -> Pages -> Build and deployment -> Source: GitHub Actions ayarını
+      # bir kez etkinleştirdiğinde aşağıdaki adımlar otomatik yayın yapar.
+      - name: Configure GitHub Pages
+        id: configure_pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Report GitHub Pages repository setting requirement if not yet enabled
+        if: steps.configure_pages.outcome != 'success'
+        run: |
+          echo "::notice title=GitHub Pages Ayarı Gerekli::Depoda GitHub Pages henüz etkinleştirilmemiş. Paket (caelus-pages-dist) üretildi ve doğrulandı; canlı Pages yayını için depo ayarlarından Settings -> Pages -> Source: GitHub Actions seçilmelidir."
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### GitHub Pages Yayın Durumu"
+              echo "- **Derleme ve Doğrulama:** Başarılı (\`dist/index.html\`, \`dist/caelus_standalone.html\`, \`caelus-pages-dist\` artifact hazır)."
+              echo "- **Canlı Pages Yayını:** Atlandı (\`actions/configure-pages@v5\` depo ayarlarında GitHub Pages kaynağı etkinleştirilmediği için tamamlanmadı)."
+              echo "- **Gerekli Yönetici İşlemi:** GitHub depo arayüzünde **Settings → Pages → Build and deployment → Source: GitHub Actions** seçilmelidir."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload Pages artifact
+        if: steps.configure_pages.outcome == 'success'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
       - name: Deploy
         id: deployment
+        if: steps.configure_pages.outcome == 'success'
         uses: actions/deploy-pages@v4

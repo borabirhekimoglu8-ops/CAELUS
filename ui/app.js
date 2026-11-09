@@ -15509,7 +15509,8 @@ function renderDunyamOverview(evInput) {
 
 function applyQuietLocale(localeCode, savePref = true) {
   const i18n = window.CaelusI18n;
-  const code = String(localeCode || 'tr-TR').trim();
+  const rawCode = String(localeCode || 'tr-TR').trim();
+  const code = rawCode === 'zh-CN' ? 'zh-Hans' : rawCode;
   const isRtl = i18n && typeof i18n.isRtlLocale === 'function'
     ? i18n.isRtlLocale(code)
     : (code.startsWith('ar') || code.startsWith('he'));
@@ -15519,7 +15520,7 @@ function applyQuietLocale(localeCode, savePref = true) {
   }
 
   state.activeLocaleCode = code;
-  document.documentElement.lang = code.split('-')[0] || 'tr';
+  document.documentElement.lang = code === 'zh-Hans' ? 'zh-Hans' : (code.split('-')[0] || 'tr');
   document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
   document.body.classList.toggle('rtl-layout', isRtl);
 
@@ -15527,7 +15528,7 @@ function applyQuietLocale(localeCode, savePref = true) {
     document.querySelectorAll('[data-i18n]').forEach(node => {
       const key = node.getAttribute('data-i18n');
       if (key) {
-        const res = i18n.translate(key);
+        const res = i18n.translate(key, { locale: code });
         const txt = typeof res === 'string' ? res : (res && res.text ? res.text : '');
         if (txt && txt !== key) {
           node.textContent = txt;
@@ -15537,7 +15538,7 @@ function applyQuietLocale(localeCode, savePref = true) {
     document.querySelectorAll('[data-i18n-placeholder]').forEach(node => {
       const key = node.getAttribute('data-i18n-placeholder');
       if (key) {
-        const res = i18n.translate(key);
+        const res = i18n.translate(key, { locale: code });
         const txt = typeof res === 'string' ? res : (res && res.text ? res.text : '');
         if (txt && txt !== key) {
           node.setAttribute('placeholder', txt);
@@ -15546,57 +15547,639 @@ function applyQuietLocale(localeCode, savePref = true) {
     });
   }
 
-  // Tam ekran canlı dil değişimi (TR / EN / AR / HE) — tüm 7 ana çalışma alanı başlıkları, alt başlıkları ve eylem düğmeleri
-  const isEn = code.startsWith('en');
-  const isAr = code.startsWith('ar');
-  const isHe = code.startsWith('he');
-  const pickLoc = (tr, en, ar, he) => isAr ? (ar || en) : isHe ? (he || en) : isEn ? en : tr;
+  // 12 dil için ana sahne, pusula, çalışma alanları ve İlk Gerçek Görev çekmecesi canlı çeviri sözlüğü
+  const UI_LOCALE_TEXT_MAP = {
+    'tr-TR': {
+      livePill: '● Canlı Hesaplama',
+      reportBtn: '▤ Rapor',
+      onboardingSub: 'Dünyayı keşfet, bilgilerin kaynağını incele ve farklı olasılıkları değerlendir.',
+      layersBtn: '☰ Katmanlar ve Görünüm',
+      calloutEyebrow: '1. OLAY VE VARLIK ODAĞI',
+      openWorldBtn: '🕸 İlişkileri Gör',
+      interveneBtn: '⚖ Senaryolar ↗',
+      snapshotBtn: 'Bu olayın verilerini kullan',
+      flyAegean: '📍 Ege / İzmir',
+      flyGlobal: '🌍 Küresel',
+      cinematicFocus: '🎬 Sinematik Odak',
+      toggleGibs: '🛰 Uydu',
+      toggleWind: '💨 Rüzgâr',
+      toggleEvents: '🌋 Deprem ve Konumlar',
+      toggleEonet: '🔥 Doğal Olaylar',
+      firstTaskBtn: 'Kendi Dosyanı Kullan',
+      provenanceBtn: 'Dayanak',
+      timeLensPrefix: 'Zaman Merceği:',
+      sceneControlsBtn: 'Sahne & Ölçek',
+      focusPillLabel: 'Olaylar, Katmanlar & Ölçek',
+      returnStageBtn: 'Sahneye Dön',
+      qa1: '1. Bir durumu incele',
+      qa2: '2. Seçenekleri karşılaştır',
+      qa3: '3. Kendi dosyanı kullan',
+      qa4: '4. Önceki çalışmalarını aç',
+      kesfetEyebrow: 'KEŞFET · KONUMLAR, SÜREÇ NOKTALARI VE OLAY KAYITLARI',
+      kesfetTitle: 'Harita, İlişki Ağı ve Gözlem Kayıtlarını İnceleyin',
+      senaryolarEyebrow: 'SENARYOLAR · 4 ADIMDA SEÇENEKLERİ VE OLASI SONUÇLARI KARŞILAŞTIRIN',
+      senaryolarTitle: 'Ne olmasını incelemek istersin?',
+      hafizaEyebrow: 'HAFIZA · ETKİLEŞİMLİ ZAMAN EKSENİ VE KAYIT DEFTERİ',
+      hafizaTitle: 'Geçmiş Olaylar, Veri Kaynakları ve Kaydedilmiş Senaryolar',
+      baglantilarEyebrow: 'BAĞLANTILAR · VERİ KAYNAKLARI, BÖLGE EŞLEŞTİRME VE GÜVEN MERKEZİ',
+      baglantilarTitle: 'İzinli Açık Veri Kaynakları, Güncellik ve Bağlantı Durumu',
+      ayarlarEyebrow: 'AYARLAR · GÖRÜNÜM, GÖRSEL KALİTE, DİL VE VERİ TAKİBİ',
+      ayarlarTitle: 'Kişisel Çalışma Ortamı ve Performans Tercihleri',
+      compareLeverBtn: '⚖ İki Olasılığı Yan Yana Karşılaştır',
+      saveScenarioBtn: '💾 Bu Senaryoyu Hafızaya Kaydet',
+      applyTargetBtn: 'Uygula ve Karşılaştır',
+      step1: '1. Durumu seç',
+      step2: '2. Değişikliği seç',
+      step3: '3. Karşılaştır',
+      step4: '4. Sonucu ve dayanağını incele',
+      frtDrawerTitle: 'Dosyamı Ekle → Doğrula → Dünyamı Oluştur → Seçenekleri Karşılaştır → Kaynak İzli Raporu Kaydet',
+      frtExportXlsx: '📊 7 Sayfalı .XLSX Rapor Kaydet',
+      frtExportHtml: '🖨 Çok Sayfalı HTML / PDF Rapor Aç & Yazdır',
+      frtExportCsv: '🛡 Güvenli .CSV İndir (Formül Korumalı)'
+    },
+    'en-US': {
+      livePill: '● Live Compute',
+      reportBtn: '▤ Report',
+      onboardingSub: 'Explore the world, inspect the source of every record, and compare alternative scenarios.',
+      layersBtn: '☰ Layers & View',
+      calloutEyebrow: '1. EVENT & ENTITY FOCUS',
+      openWorldBtn: '🕸 View Relations',
+      interveneBtn: '⚖ Scenarios ↗',
+      snapshotBtn: 'Use this event data',
+      flyAegean: '📍 Aegean / Izmir',
+      flyGlobal: '🌍 Global',
+      cinematicFocus: '🎬 Cinematic Focus',
+      toggleGibs: '🛰 Satellite',
+      toggleWind: '💨 Wind',
+      toggleEvents: '🌋 Seismic & Locations',
+      toggleEonet: '🔥 Natural Events',
+      firstTaskBtn: 'Use Your Own File',
+      provenanceBtn: 'Evidence',
+      timeLensPrefix: 'Time Lens:',
+      sceneControlsBtn: 'Scene & Scale',
+      focusPillLabel: 'Events, Layers & Scale',
+      returnStageBtn: 'Return to Stage',
+      qa1: '1. Inspect a situation',
+      qa2: '2. Compare options',
+      qa3: '3. Use your own file',
+      qa4: '4. Open previous work',
+      kesfetEyebrow: 'EXPLORE · LOCATIONS, PROCESS ENTITIES & EVENT RECORDS',
+      kesfetTitle: 'Inspect Map, Relationship Graph & Observation Records',
+      senaryolarEyebrow: 'SCENARIOS · COMPARE OPTIONS AND OUTCOMES IN 4 STEPS',
+      senaryolarTitle: 'What scenario would you like to explore?',
+      hafizaEyebrow: 'MEMORY · INTERACTIVE TIMELINE & EVENT LEDGER',
+      hafizaTitle: 'Historical Events, Data Sources & Saved Scenarios',
+      baglantilarEyebrow: 'CONNECTIONS · DATA SOURCES, REGION MAPPING & TRUST CENTER',
+      baglantilarTitle: 'Authorized Open Data Sources, Freshness & Connection Status',
+      ayarlarEyebrow: 'SETTINGS · APPEARANCE, VISUAL QUALITY, LANGUAGE & DATA POLLING',
+      ayarlarTitle: 'Personal Workspace & Performance Preferences',
+      compareLeverBtn: '⚖ Compare Both Scenarios Side by Side',
+      saveScenarioBtn: '💾 Save This Scenario to Memory',
+      applyTargetBtn: 'Apply & Compare',
+      step1: '1. Select State',
+      step2: '2. Choose Action',
+      step3: '3. Compare',
+      step4: '4. Inspect Proof & Report',
+      frtDrawerTitle: 'Add File → Validate → Build World → Compare Options → Save Provenance Report',
+      frtExportXlsx: '📊 Save 7-Sheet .XLSX Report',
+      frtExportHtml: '🖨 Open & Print Multi-Page HTML / PDF Report',
+      frtExportCsv: '🛡 Download Safe .CSV (Formula-Protected)'
+    },
+    'el-GR': {
+      livePill: '● Ζωντανός Υπολογισμός',
+      reportBtn: '▤ Έκθεση',
+      onboardingSub: 'Εξερευνήστε τον κόσμο, ελέγξτε την πηγή κάθε εγγραφής και συγκρίνετε εναλλακτικά σενάρια.',
+      layersBtn: '☰ Επίπεδα & Προβολή',
+      calloutEyebrow: '1. ΕΣΤΙΑΣΗ ΣΥΜΒΑΝΤΟΣ & ΟΝΤΟΤΗΤΑΣ',
+      openWorldBtn: '🕸 Προβολή Σχέσεων',
+      interveneBtn: '⚖ Σενάρια ↗',
+      snapshotBtn: 'Χρήση δεδομένων αυτού του συμβάντος',
+      flyAegean: '📍 Αιγαίο / Σμύρνη',
+      flyGlobal: '🌍 Παγκόσμια',
+      cinematicFocus: '🎬 Κινηματογραφική Εστίαση',
+      toggleGibs: '🛰 Δορυφόρος',
+      toggleWind: '💨 Άνεμος',
+      toggleEvents: '🌋 Σεισμοί & Τοποθεσίες',
+      toggleEonet: '🔥 Φυσικά Συμβάντα',
+      firstTaskBtn: 'Χρήση Δικού σας Αρχείου',
+      provenanceBtn: 'Τεκμηρίωση',
+      timeLensPrefix: 'Χρονικός Φακός:',
+      sceneControlsBtn: 'Σκηνή & Κλίμακα',
+      focusPillLabel: 'Συμβάντα, Επίπεδα & Κλίμακα',
+      returnStageBtn: 'Επιστροφή στη Σκηνή',
+      qa1: '1. Εξέταση κατάστασης',
+      qa2: '2. Σύγκριση επιλογών',
+      qa3: '3. Χρήση δικού σας αρχείου',
+      qa4: '4. Άνοιγμα προηγούμενων εργασιών',
+      kesfetEyebrow: 'ΕΞΕΡΕΥΝΗΣΗ · ΤΟΠΟΘΕΣΙΕΣ, ΟΝΤΟΤΗΤΕΣ & ΕΓΓΡΑΦΕΣ',
+      kesfetTitle: 'Ελέγξτε Χάρτη, Γράφο Σχέσεων & Καταγραφές Παρατήρησης',
+      senaryolarEyebrow: 'ΣΕΝΑΡΙΑ · ΣΥΓΚΡΙΣΗ ΕΠΙΛΟΓΩΝ ΚΑΙ ΑΠΟΤΕΛΕΣΜΑΤΩΝ ΣΕ 4 ΒΗΜΑΤΑ',
+      senaryolarTitle: 'Ποιο σενάριο θέλετε να εξετάσετε;',
+      hafizaEyebrow: 'ΜΝΗΜΗ · ΔΙΑΔΡΑΣΤΙΚΟ ΧΡΟΝΟΛΟΓΙΟ & ΒΙΒΛΙΟ ΣΥΜΒΑΝΤΩΝ',
+      hafizaTitle: 'Ιστορικά Συμβάντα, Πηγές Δεδομένων & Αποθηκευμένα Σενάρια',
+      baglantilarEyebrow: 'ΣΥΝΔΕΣΕΙΣ · ΠΗΓΕΣ ΔΕΔΟΜΕΝΩΝ & ΚΕΝΤΡΟ ΕΜΠΙΣΤΟΣΥΝΗΣ',
+      baglantilarTitle: 'Εξουσιοδοτημένες Ανοιχτές Πηγές Δεδομένων & Κατάσταση Σύνδεσης',
+      ayarlarEyebrow: 'ΡΥΘΜΙΣΕΙΣ · ΕΜΦΑΝΙΣΗ, ΠΟΙΟΤΗΤΑ, ΓΛΩΣΣΑ & ΔΕΔΟΜΕΝΑ',
+      ayarlarTitle: 'Προτιμήσεις Περιβάλλοντος Εργασίας & Απόδοσης',
+      compareLeverBtn: '⚖ Σύγκριση Δύο Σεναρίων Δίπλα-Δίπλα',
+      saveScenarioBtn: '💾 Αποθήκευση Σεναρίου στη Μνήμη',
+      applyTargetBtn: 'Εφαρμογή & Σύγκριση',
+      step1: '1. Επιλογή Κατάστασης',
+      step2: '2. Επιλογή Παρέμβασης',
+      step3: '3. Σύγκριση',
+      step4: '4. Έλεγχος Τεκμηρίωσης & Έκθεσης',
+      frtDrawerTitle: 'Προσθήκη Αρχείου → Επικύρωση → Μοντέλο Κόσμου → Σύγκριση Επιλογών → Αποθήκευση Έκθεσης',
+      frtExportXlsx: '📊 Αποθήκευση Έκθεσης .XLSX 7 Φύλλων',
+      frtExportHtml: '🖨 Άνοιγμα & Εκτύπωση Έκθεσης HTML / PDF',
+      frtExportCsv: '🛡 Λήψη Ασφαλούς .CSV'
+    },
+    'de-DE': {
+      livePill: '● Live-Berechnung',
+      reportBtn: '▤ Bericht',
+      onboardingSub: 'Erkunden Sie die Welt, prüfen Sie die Quelle jedes Datensatzes und vergleichen Sie Szenarien.',
+      layersBtn: '☰ Ebenen & Ansicht',
+      calloutEyebrow: '1. EREIGNIS- & ENTITÄTSFOKUS',
+      openWorldBtn: '🕸 Beziehungen anzeigen',
+      interveneBtn: '⚖ Szenarien ↗',
+      snapshotBtn: 'Ereignisdaten verwenden',
+      flyAegean: '📍 Ägäis / Izmir',
+      flyGlobal: '🌍 Global',
+      cinematicFocus: '🎬 Kamerafokus',
+      toggleGibs: '🛰 Satellit',
+      toggleWind: '💨 Wind',
+      toggleEvents: '🌋 Erdbeben & Orte',
+      toggleEonet: '🔥 Naturereignisse',
+      firstTaskBtn: 'Eigene Datei nutzen',
+      provenanceBtn: 'Nachweis',
+      timeLensPrefix: 'Zeitlinse:',
+      sceneControlsBtn: 'Szene & Maßstab',
+      focusPillLabel: 'Ereignisse, Ebenen & Maßstab',
+      returnStageBtn: 'Zurück zur Bühne',
+      qa1: '1. Situation untersuchen',
+      qa2: '2. Optionen vergleichen',
+      qa3: '3. Eigene Datei nutzen',
+      qa4: '4. Frühere Arbeiten öffnen',
+      kesfetEyebrow: 'ERKUNDEN · STANDORTE, PROZESSKNOTEN & EREIGNISSE',
+      kesfetTitle: 'Karte, Beziehungsnetzwerk & Beobachtungen prüfen',
+      senaryolarEyebrow: 'SZENARIEN · OPTIONEN UND ERGEBNISSE IN 4 SCHRITTEN VERGLEICHEN',
+      senaryolarTitle: 'Welches Szenario möchten Sie untersuchen?',
+      hafizaEyebrow: 'GEDÄCHTNIS · INTERAKTIVE ZEITLEISTE & EREIGNISREGISTER',
+      hafizaTitle: 'Historische Ereignisse, Datenquellen & Gespeicherte Szenarien',
+      baglantilarEyebrow: 'VERBINDUNGEN · DATENQUELLEN & VERTRAUENSZENTRUM',
+      baglantilarTitle: 'Autorisierte Offene Datenquellen, Aktualität & Verbindungsstatus',
+      ayarlarEyebrow: 'EINSTELLUNGEN · DARSTELLUNG, SPRACHE & DATENABFRAGE',
+      ayarlarTitle: 'Persönliche Arbeitsbereichs- & Leistungseinstellungen',
+      compareLeverBtn: '⚖ Beide Szenarien Nebeneinander Vergleichen',
+      saveScenarioBtn: '💾 Szenario im Gedächtnis Speichern',
+      applyTargetBtn: 'Anwenden & Vergleichen',
+      step1: '1. Zustand wählen',
+      step2: '2. Maßnahme wählen',
+      step3: '3. Vergleichen',
+      step4: '4. Nachweis & Bericht prüfen',
+      frtDrawerTitle: 'Datei hinzufügen → Prüfen → Weltmodell erstellen → Optionen vergleichen → Bericht speichern',
+      frtExportXlsx: '📊 7-Blatt-.XLSX-Bericht speichern',
+      frtExportHtml: '🖨 Mehrseitigen HTML-/PDF-Bericht öffnen & drucken',
+      frtExportCsv: '🛡 Sichere .CSV herunterladen'
+    },
+    'fr-FR': {
+      livePill: '● Calcul en Direct',
+      reportBtn: '▤ Rapport',
+      onboardingSub: 'Explorez le monde, vérifiez la source de chaque donnée et comparez les scénarios alternatifs.',
+      layersBtn: '☰ Couches & Vue',
+      calloutEyebrow: '1. FOCUS ÉVÉNEMENT & ENTITÉ',
+      openWorldBtn: '🕸 Voir les Relations',
+      interveneBtn: '⚖ Scénarios ↗',
+      snapshotBtn: 'Utiliser les données de cet événement',
+      flyAegean: '📍 Égée / Izmir',
+      flyGlobal: '🌍 Global',
+      cinematicFocus: '🎬 Focus Cinématique',
+      toggleGibs: '🛰 Satellite',
+      toggleWind: '💨 Vent',
+      toggleEvents: '🌋 Séismes & Lieux',
+      toggleEonet: '🔥 Événements Naturels',
+      firstTaskBtn: 'Utiliser Votre Fichier',
+      provenanceBtn: 'Preuves',
+      timeLensPrefix: 'Lentille Temporelle :',
+      sceneControlsBtn: 'Scène & Échelle',
+      focusPillLabel: 'Événements, Couches & Échelle',
+      returnStageBtn: 'Retour à la Scène',
+      qa1: '1. Examiner une situation',
+      qa2: '2. Comparer les options',
+      qa3: '3. Utiliser votre fichier',
+      qa4: '4. Ouvrir les travaux précédents',
+      kesfetEyebrow: 'EXPLORER · LIEUX, ENTITÉS DE PROCESSUS & REGISTRES',
+      kesfetTitle: 'Inspecter la Carte, le Graphe de Relations et les Observations',
+      senaryolarEyebrow: 'SCÉNARIOS · COMPARER LES OPTIONS ET RÉSULTATS EN 4 ÉTAPES',
+      senaryolarTitle: 'Quel scénario souhaitez-vous étudier ?',
+      hafizaEyebrow: 'MÉMOIRE · CHRONOLOGIE INTERACTIVE & REGISTRE D’ÉVÉNEMENTS',
+      hafizaTitle: 'Événements Historiques, Sources de Données & Scénarios Enregistrés',
+      baglantilarEyebrow: 'CONNEXIONS · SOURCES DE DONNÉES & CENTRE DE CONFIANCE',
+      baglantilarTitle: 'Sources de Données Ouvertes Autorisées & État de Connexion',
+      ayarlarEyebrow: 'PARAMÈTRES · APPARENCE, QUALITÉ VISUELLE & LANGUE',
+      ayarlarTitle: 'Préférences d’Espace de Travail et de Performance',
+      compareLeverBtn: '⚖ Comparer les Deux Scénarios Côte à Côte',
+      saveScenarioBtn: '💾 Enregistrer ce Scénario dans la Mémoire',
+      applyTargetBtn: 'Appliquer & Comparer',
+      step1: '1. Choisir l’État',
+      step2: '2. Choisir l’Action',
+      step3: '3. Comparer',
+      step4: '4. Examiner la Preuve & le Rapport',
+      frtDrawerTitle: 'Ajouter un fichier → Valider → Créer le monde → Comparer les options → Enregistrer le rapport',
+      frtExportXlsx: '📊 Enregistrer le rapport .XLSX (7 feuilles)',
+      frtExportHtml: '🖨 Ouvrir & Imprimer le rapport HTML / PDF',
+      frtExportCsv: '🛡 Télécharger le .CSV sécurisé'
+    },
+    'es-ES': {
+      livePill: '● Cálculo en Vivo',
+      reportBtn: '▤ Informe',
+      onboardingSub: 'Explore el mundo, verifique la fuente de cada registro y compare escenarios alternativos.',
+      layersBtn: '☰ Capas y Vista',
+      calloutEyebrow: '1. FOCO DE EVENTO Y ENTIDAD',
+      openWorldBtn: '🕸 Ver Relaciones',
+      interveneBtn: '⚖ Escenarios ↗',
+      snapshotBtn: 'Usar datos de este evento',
+      flyAegean: '📍 Egeo / Esmirna',
+      flyGlobal: '🌍 Global',
+      cinematicFocus: '🎬 Enfoque Cinemático',
+      toggleGibs: '🛰 Satélite',
+      toggleWind: '💨 Viento',
+      toggleEvents: '🌋 Sismos y Ubicaciones',
+      toggleEonet: '🔥 Eventos Naturales',
+      firstTaskBtn: 'Usar Tu Propio Archivo',
+      provenanceBtn: 'Evidencia',
+      timeLensPrefix: 'Lente Temporal:',
+      sceneControlsBtn: 'Escena y Escala',
+      focusPillLabel: 'Eventos, Capas y Escala',
+      returnStageBtn: 'Volver al Escenario',
+      qa1: '1. Examinar una situación',
+      qa2: '2. Comparar opciones',
+      qa3: '3. Usar tu propio archivo',
+      qa4: '4. Abrir trabajos anteriores',
+      kesfetEyebrow: 'EXPLORAR · UBICACIONES, ENTIDADES Y REGISTROS DE EVENTOS',
+      kesfetTitle: 'Inspeccionar Mapa, Red de Relaciones y Registros de Observación',
+      senaryolarEyebrow: 'ESCENARIOS · COMPARAR OPCIONES Y RESULTADOS EN 4 PASOS',
+      senaryolarTitle: '¿Qué escenario te gustaría explorar?',
+      hafizaEyebrow: 'MEMORIA · LÍNEA DE TIEMPO INTERACTIVA Y REGISTRO DE EVENTOS',
+      hafizaTitle: 'Eventos Históricos, Fuentes de Datos y Escenarios Guardados',
+      baglantilarEyebrow: 'CONEXIONES · FUENTES DE DATOS Y CENTRO DE CONFIANZA',
+      baglantilarTitle: 'Fuentes de Datos Abiertos Autorizadas y Estado de Conexión',
+      ayarlarEyebrow: 'AJUSTES · APARIENCIA, CALIDAD VISUAL, IDIOMA Y DATOS',
+      ayarlarTitle: 'Preferencias Personales de Espacio de Trabajo y Rendimiento',
+      compareLeverBtn: '⚖ Comparar Ambos Escenarios Lado a Lado',
+      saveScenarioBtn: '💾 Guardar Este Escenario en Memoria',
+      applyTargetBtn: 'Aplicar y Comparar',
+      step1: '1. Seleccionar Estado',
+      step2: '2. Elegir Acción',
+      step3: '3. Comparar',
+      step4: '4. Inspeccionar Prueba e Informe',
+      frtDrawerTitle: 'Añadir archivo → Validar → Crear mundo → Comparar opciones → Guardar informe con trazabilidad',
+      frtExportXlsx: '📊 Guardar informe .XLSX de 7 hojas',
+      frtExportHtml: '🖨 Abrir e imprimir informe HTML / PDF',
+      frtExportCsv: '🛡 Descargar .CSV seguro'
+    },
+    'it-IT': {
+      livePill: '● Calcolo dal Vivo',
+      reportBtn: '▤ Rapporto',
+      onboardingSub: 'Esplora il mondo, verifica la fonte di ogni record e confronta scenari alternativi.',
+      layersBtn: '☰ Livelli e Vista',
+      calloutEyebrow: '1. FOCUS EVENTO ED ENTITÀ',
+      openWorldBtn: '🕸 Vedi Relazioni',
+      interveneBtn: '⚖ Scenari ↗',
+      snapshotBtn: 'Usa i dati di questo evento',
+      flyAegean: '📍 Egeo / Smirne',
+      flyGlobal: '🌍 Globale',
+      cinematicFocus: '🎬 Focus Cinematografico',
+      toggleGibs: '🛰 Satellite',
+      toggleWind: '💨 Vento',
+      toggleEvents: '🌋 Sismi e Luoghi',
+      toggleEonet: '🔥 Eventi Naturali',
+      firstTaskBtn: 'Usa il Tuo File',
+      provenanceBtn: 'Prove',
+      timeLensPrefix: 'Lente Temporale:',
+      sceneControlsBtn: 'Scena e Scala',
+      focusPillLabel: 'Eventi, Livelli e Scala',
+      returnStageBtn: 'Torna alla Scena',
+      qa1: '1. Esamina una situazione',
+      qa2: '2. Confronta opzioni',
+      qa3: '3. Usa il tuo file',
+      qa4: '4. Apri lavori precedenti',
+      kesfetEyebrow: 'ESPLORA · LUOGHI, ENTITÀ DI PROCESSO E REGISTRI EVENTI',
+      kesfetTitle: 'Ispeziona Mappa, Rete di Relazioni e Osservazioni',
+      senaryolarEyebrow: 'SCENARI · CONFRONTA OPZIONI E RISULTATI IN 4 PASSI',
+      senaryolarTitle: 'Quale scenario vorresti esplorare?',
+      hafizaEyebrow: 'MEMORIA · CRONOLOGIA INTERATTIVA E REGISTRO EVENTI',
+      hafizaTitle: 'Eventi Storici, Fonti Dati e Scenari Salvati',
+      baglantilarEyebrow: 'CONNESSIONI · FONTI DATI E CENTRO DI FIDUCIA',
+      baglantilarTitle: 'Fonti Dati Aperte Autorizzate e Stato della Connessione',
+      ayarlarEyebrow: 'IMPOSTAZIONI · ASPETTO, QUALITÀ VISIVA E LINGUA',
+      ayarlarTitle: 'Preferenze Personali di Lavoro e Prestazioni',
+      compareLeverBtn: '⚖ Confronta Entrambi gli Scenari Fianco a Fianco',
+      saveScenarioBtn: '💾 Salva Questo Scenario nella Memoria',
+      applyTargetBtn: 'Applica e Confronta',
+      step1: '1. Seleziona Stato',
+      step2: '2. Scegli Azione',
+      step3: '3. Confronta',
+      step4: '4. Esamina Prove e Rapporto',
+      frtDrawerTitle: 'Aggiungi file → Convalida → Crea mondo → Confronta opzioni → Salva rapporto tracciato',
+      frtExportXlsx: '📊 Salva rapporto .XLSX a 7 fogli',
+      frtExportHtml: '🖨 Apri e stampa rapporto HTML / PDF',
+      frtExportCsv: '🛡 Scarica .CSV sicuro'
+    },
+    'pt-BR': {
+      livePill: '● Cálculo ao Vivo',
+      reportBtn: '▤ Relatório',
+      onboardingSub: 'Explore o mundo, verifique a fonte de cada registro e compare cenários alternativos.',
+      layersBtn: '☰ Camadas e Visão',
+      calloutEyebrow: '1. FOCO DO EVENTO E ENTIDADE',
+      openWorldBtn: '🕸 Ver Relações',
+      interveneBtn: '⚖ Cenários ↗',
+      snapshotBtn: 'Usar dados deste evento',
+      flyAegean: '📍 Egeu / Esmirna',
+      flyGlobal: '🌍 Global',
+      cinematicFocus: '🎬 Foco Cinematográfico',
+      toggleGibs: '🛰 Satélite',
+      toggleWind: '💨 Vento',
+      toggleEvents: '🌋 Sismos e Locais',
+      toggleEonet: '🔥 Eventos Naturais',
+      firstTaskBtn: 'Usar Seu Arquivo',
+      provenanceBtn: 'Evidências',
+      timeLensPrefix: 'Lente Temporal:',
+      sceneControlsBtn: 'Cena e Escala',
+      focusPillLabel: 'Eventos, Camadas e Escala',
+      returnStageBtn: 'Voltar ao Palco',
+      qa1: '1. Examinar uma situação',
+      qa2: '2. Comparar opções',
+      qa3: '3. Usar seu próprio arquivo',
+      qa4: '4. Abrir trabalhos anteriores',
+      kesfetEyebrow: 'EXPLORAR · LOCAIS, ENTIDADES DE PROCESSO E REGISTROS',
+      kesfetTitle: 'Inspecione Mapa, Rede de Relações e Registros de Observação',
+      senaryolarEyebrow: 'CENÁRIOS · COMPARE OPÇÕES E RESULTADOS EM 4 ETAPAS',
+      senaryolarTitle: 'Qual cenário você gostaria de explorar?',
+      hafizaEyebrow: 'MEMÓRIA · LINHA DO TEMPO INTERATIVA E LIVRO DE EVENTOS',
+      hafizaTitle: 'Eventos Históricos, Fontes de Dados e Cenários Salvos',
+      baglantilarEyebrow: 'CONEXÕES · FONTES DE DADOS E CENTRO DE CONFIANÇA',
+      baglantilarTitle: 'Fontes de Dados Abertos Autorizadas e Status da Conexão',
+      ayarlarEyebrow: 'CONFIGURAÇÕES · APARÊNCIA, QUALIDADE VISUAL E IDIOMA',
+      ayarlarTitle: 'Preferências Pessoais de Espaço de Trabalho e Desempenho',
+      compareLeverBtn: '⚖ Comparar Ambos os Cenários Lado a Lado',
+      saveScenarioBtn: '💾 Salvar Este Cenário na Memória',
+      applyTargetBtn: 'Aplicar e Comparar',
+      step1: '1. Selecionar Estado',
+      step2: '2. Escolher Ação',
+      step3: '3. Comparar',
+      step4: '4. Inspecionar Prova e Relatório',
+      frtDrawerTitle: 'Adicionar arquivo → Validar → Criar mundo → Comparar opções → Salvar relatório rastreável',
+      frtExportXlsx: '📊 Salvar relatório .XLSX de 7 abas',
+      frtExportHtml: '🖨 Abrir e imprimir relatório HTML / PDF',
+      frtExportCsv: '🛡 Baixar .CSV seguro'
+    },
+    'ar-SA': {
+      livePill: '● حساب مباشر',
+      reportBtn: '▤ تقرير',
+      onboardingSub: 'استكشف العالم، وتحقق من مصدر كل معلومة، وقارن بين السيناريوهات البديلة.',
+      layersBtn: '☰ الطبقات والعرض',
+      calloutEyebrow: '1. تركيز الحدث والكيان',
+      openWorldBtn: '🕸 عرض العلاقات',
+      interveneBtn: '⚖ السيناريوهات ↗',
+      snapshotBtn: 'استخدم بيانات هذا الحدث',
+      flyAegean: '📍 بحر إيجة / إزمير',
+      flyGlobal: '🌍 عالمي',
+      cinematicFocus: '🎬 تركيز سينمائي',
+      toggleGibs: '🛰 قمر صناعي',
+      toggleWind: '💨 الرياح',
+      toggleEvents: '🌋 الزلازل والمواقع',
+      toggleEonet: '🔥 الأحداث الطبيعية',
+      firstTaskBtn: 'استخدم ملفك الخاص',
+      provenanceBtn: 'الدليل والمصدر',
+      timeLensPrefix: 'عدسة الزمن:',
+      sceneControlsBtn: 'المشهد والمقياس',
+      focusPillLabel: 'الأحداث والطبقات والمقياس',
+      returnStageBtn: 'العودة إلى المشهد',
+      qa1: '1. فحص حالة',
+      qa2: '2. مقارنة الخيارات',
+      qa3: '3. استخدام ملفك الخاص',
+      qa4: '4. فتح الأعمال السابقة',
+      kesfetEyebrow: 'استكشاف · المواقع والكيانات وسجلات الأحداث',
+      kesfetTitle: 'فحص الخريطة وشبكة العلاقات وسجلات الرصد',
+      senaryolarEyebrow: 'السيناريوهات · قارن الخيارات والنتائج في 4 خطوات',
+      senaryolarTitle: 'ما السيناريو الذي ترغب في دراسته؟',
+      hafizaEyebrow: 'الذاكرة · الجدول الزمني التفاعلي وسجل الأحداث',
+      hafizaTitle: 'الأحداث السابقة ومصادر البيانات والسيناريوهات المحفوظة',
+      baglantilarEyebrow: 'الاتصالات · مصادر البيانات ومركز الثقة',
+      baglantilarTitle: 'مصادر البيانات المفتوحة المعتمدة وحالة الاتصال',
+      ayarlarEyebrow: 'الإعدادات · المظهر وجودة العرض واللغة ومتابعة البيانات',
+      ayarlarTitle: 'تفضيلات بيئة العمل والأداء الشخصية',
+      compareLeverBtn: '⚖ قارن الاحتمالين جنباً إلى جنب',
+      saveScenarioBtn: '💾 احفظ هذا السيناريو في الذاكرة',
+      applyTargetBtn: 'تطبيق ومقارنة',
+      step1: '1. اختر الحالة',
+      step2: '2. اختر التدخل',
+      step3: '3. قارن',
+      step4: '4. افحص النتيجة والدليل',
+      frtDrawerTitle: 'إضافة ملف ← التحقق ← إنشاء نموذج العالم ← مقارنة الخيارات ← حفظ التقرير الموثق',
+      frtExportXlsx: '📊 حفظ تقرير .XLSX من 7 أوراق',
+      frtExportHtml: '🖨 فتح وطباعة تقرير HTML / PDF',
+      frtExportCsv: '🛡 تنزيل ملف .CSV آمن'
+    },
+    'he-IL': {
+      livePill: '● חישוב חי',
+      reportBtn: '▤ דוח',
+      onboardingSub: 'חקור את העולם, בדוק את מקור המידע והשווה בין תרחישים חלופיים.',
+      layersBtn: '☰ שכבות ותצוגה',
+      calloutEyebrow: '1. מיקוד אירוע וישות',
+      openWorldBtn: '🕸 הצג קשרים',
+      interveneBtn: '⚖ תרחישים ↗',
+      snapshotBtn: 'השתמש בנתוני אירוע זה',
+      flyAegean: '📍 הים האגאי / איזמיר',
+      flyGlobal: '🌍 גלובלי',
+      cinematicFocus: '🎬 מיקוד קולנועי',
+      toggleGibs: '🛰 לוויין',
+      toggleWind: '💨 רוח',
+      toggleEvents: '🌋 רעידות אדמה ומיקומים',
+      toggleEonet: '🔥 אירועי טבע',
+      firstTaskBtn: 'השתמש בקובץ שלך',
+      provenanceBtn: 'ביסוס ומקור',
+      timeLensPrefix: 'עדשת זמן:',
+      sceneControlsBtn: 'סצנה וקנה מידה',
+      focusPillLabel: 'אירועים, שכבות וקנה מידה',
+      returnStageBtn: 'חזרה לבמה',
+      qa1: '1. בחן מצב',
+      qa2: '2. השווה אפשרויות',
+      qa3: '3. השתמש בקובץ שלך',
+      qa4: '4. פתח עבודות קודמות',
+      kesfetEyebrow: 'חקור · מיקומים, ישויות ורישומי אירועים',
+      kesfetTitle: 'בדוק מפה, רשת קשרים ורישומי תצפית',
+      senaryolarEyebrow: 'תרחישים · השווה אפשרויות ותוצאות ב-4 שלבים',
+      senaryolarTitle: 'איזה תרחיש תרצה לבחון?',
+      hafizaEyebrow: 'זיכרון · ציר זמן אינטראקטיבי ויומן אירועים',
+      hafizaTitle: 'אירועי עבר, מקורות מידע ותרחישים שמורים',
+      baglantilarEyebrow: 'חיבורים · מקורות מידע ומרכז אמון',
+      baglantilarTitle: 'מקורות מידע פתוחים מאושרים ומצב חיבור',
+      ayarlarEyebrow: 'הגדרות · מראה, איכות תצוגה, שפה ומעקב נתונים',
+      ayarlarTitle: 'העדפות סביבת עבודה וביצועים',
+      compareLeverBtn: '⚖ השווה שני תרחישים זה לצד זה',
+      saveScenarioBtn: '💾 שמור תרחיש זה בזיכרון',
+      applyTargetBtn: 'החל והשווה',
+      step1: '1. בחר מצב',
+      step2: '2. בחר פעולה',
+      step3: '3. השווה',
+      step4: '4. בדוק תוצאה והוכחה',
+      frtDrawerTitle: 'הוסף קובץ ← אמת ← בנה מודל עולם ← השווה אפשרויות ← שמור דוח מבוסס מקור',
+      frtExportXlsx: '📊 שמור דוח .XLSX בן 7 גיליונות',
+      frtExportHtml: '🖨 פתח והדפס דוח HTML / PDF',
+      frtExportCsv: '🛡 הורד קובץ .CSV מאובטח'
+    },
+    'ru-RU': {
+      livePill: '● Живой расчёт',
+      reportBtn: '▤ Отчёт',
+      onboardingSub: 'Исследуйте мир, проверяйте источник каждой записи и сравнивайте альтернативные сценарии.',
+      layersBtn: '☰ Слои и вид',
+      calloutEyebrow: '1. ФОКУС СОБЫТИЯ И ОБЪЕКТА',
+      openWorldBtn: '🕸 Связи объекта',
+      interveneBtn: '⚖ Сценарии ↗',
+      snapshotBtn: 'Использовать данные события',
+      flyAegean: '📍 Эгейское море / Измир',
+      flyGlobal: '🌍 Глобальный вид',
+      cinematicFocus: '🎬 Кинофокус',
+      toggleGibs: '🛰 Спутник',
+      toggleWind: '💨 Ветер',
+      toggleEvents: '🌋 Землетрясения и точки',
+      toggleEonet: '🔥 Природные явления',
+      firstTaskBtn: 'Использовать свой файл',
+      provenanceBtn: 'Основания',
+      timeLensPrefix: 'Линза времени:',
+      sceneControlsBtn: 'Сцена и масштаб',
+      focusPillLabel: 'События, слои и масштаб',
+      returnStageBtn: 'Вернуться к сцене',
+      qa1: '1. Изучить ситуацию',
+      qa2: '2. Сравнить варианты',
+      qa3: '3. Использовать свой файл',
+      qa4: '4. Открыть прошлые работы',
+      kesfetEyebrow: 'ОБЗОР · ЛОКАЦИИ, УЗЛЫ ПРОЦЕССОВ И ЗАПИСИ СОБЫТИЙ',
+      kesfetTitle: 'Карта, граф связей и журнал наблюдений',
+      senaryolarEyebrow: 'СЦЕНАРИИ · СРАВНЕНИЕ ВАРИАНТОВ И ПОСЛЕДСТВИЙ В 4 ШАГА',
+      senaryolarTitle: 'Какой сценарий вы хотите проверить?',
+      hafizaEyebrow: 'ПАМЯТЬ · ИНТЕРАКТИВНАЯ ШКАЛА ВРЕМЕНИ И РЕЕСТР СОБЫТИЙ',
+      hafizaTitle: 'Прошлые события, источники данных и сохранённые сценарии',
+      baglantilarEyebrow: 'ИСТОЧНИКИ · ОТКРЫТЫЕ ДАННЫЕ И ЦЕНТР ДОВЕРИЯ',
+      baglantilarTitle: 'Разрешённые открытые источники, актуальность и статус связи',
+      ayarlarEyebrow: 'НАСТРОЙКИ · ВНЕШНИЙ ВИД, КАЧЕСТВО, ЯЗЫК И ОПРОС ДАННЫХ',
+      ayarlarTitle: 'Параметры рабочей среды и производительности',
+      compareLeverBtn: '⚖ Сравнить два сценария бок о бок',
+      saveScenarioBtn: '💾 Сохранить сценарий в память',
+      applyTargetBtn: 'Применить и сравнить',
+      step1: '1. Выбрать состояние',
+      step2: '2. Выбрать меру',
+      step3: '3. Сравнить',
+      step4: '4. Проверить доказательства и отчёт',
+      frtDrawerTitle: 'Добавить файл → Проверить → Построить модель мира → Сравнить варианты → Сохранить отчёт',
+      frtExportXlsx: '📊 Сохранить .XLSX-отчёт (7 листов)',
+      frtExportHtml: '🖨 Открыть и распечатать HTML / PDF отчёт',
+      frtExportCsv: '🛡 Скачать защищённый .CSV'
+    },
+    'zh-Hans': {
+      livePill: '● 实时计算',
+      reportBtn: '▤ 报告',
+      onboardingSub: '探索世界，核查每条记录的来源，并对比不同情景方案。',
+      layersBtn: '☰ 图层与视图',
+      calloutEyebrow: '1. 事件与实体焦点',
+      openWorldBtn: '🕸 查看关联',
+      interveneBtn: '⚖ 情景对比 ↗',
+      snapshotBtn: '使用此事件的数据',
+      flyAegean: '📍 爱琴海 / 伊兹密尔',
+      flyGlobal: '🌍 全球视图',
+      cinematicFocus: '🎬 电影级聚焦',
+      toggleGibs: '🛰 卫星影像',
+      toggleWind: '💨 风场',
+      toggleEvents: '🌋 地震与位置',
+      toggleEonet: '🔥 自然事件',
+      firstTaskBtn: '使用您自己的文件',
+      provenanceBtn: '证据与依据',
+      timeLensPrefix: '时间透镜：',
+      sceneControlsBtn: '场景与尺度',
+      focusPillLabel: '事件、图层与尺度',
+      returnStageBtn: '返回主场景',
+      qa1: '1. 查看当前状况',
+      qa2: '2. 对比不同方案',
+      qa3: '3. 使用您自己的文件',
+      qa4: '4. 打开以往工作',
+      kesfetEyebrow: '探索 · 位置、流程节点与事件记录',
+      kesfetTitle: '查看地图、关系网络与观测记录',
+      senaryolarEyebrow: '情景对比 · 4步对比方案与潜在影响',
+      senaryolarTitle: '您想研究哪种情景？',
+      hafizaEyebrow: '时间记忆 · 交互式时间轴与事件账本',
+      hafizaTitle: '历史事件、数据源与已保存情景',
+      baglantilarEyebrow: '数据源 · 开放数据、区域映射与信任中心',
+      baglantilarTitle: '授权开放数据源、时效性与连接状态',
+      ayarlarEyebrow: '设置 · 外观、视觉质量、语言与数据跟踪',
+      ayarlarTitle: '个人工作空间与性能偏好',
+      compareLeverBtn: '⚖ 并排对比两种情景方案',
+      saveScenarioBtn: '💾 将此情景保存到记忆库',
+      applyTargetBtn: '应用并对比',
+      step1: '1. 选择状态',
+      step2: '2. 选择干预措施',
+      step3: '3. 对比',
+      step4: '4. 检查依据与报告',
+      frtDrawerTitle: '添加文件 → 校验数据 → 构建世界模型 → 对比方案 → 保存溯源报告',
+      frtExportXlsx: '📊 保存 7 工作表 .XLSX 报告',
+      frtExportHtml: '🖨 打开并打印多页 HTML / PDF 报告',
+      frtExportCsv: '🛡 下载安全 .CSV（防公式注入）'
+    }
+  };
+
+  const locPack = UI_LOCALE_TEXT_MAP[code] || UI_LOCALE_TEXT_MAP['en-US'] || UI_LOCALE_TEXT_MAP['tr-TR'];
 
   const domSelectorMap = [
-    ['#live-pill', pickLoc('● Canlı Hesaplama', '● Live Compute', '● حساب مباشر', '● חישוב חי')],
-    ['#btn-export-dossier', pickLoc('▤ Rapor', '▤ Report', '▤ تقرير', '▤ דוח')],
-    ['#dunyam-onboarding-subtitle', pickLoc(
-      'Dünyayı keşfet, bilgilerin kaynağını incele ve farklı olasılıkları değerlendir.',
-      'Explore the world, inspect the source of every record, and compare alternative scenarios.',
-      'استكشف العالم، وتحقق من مصدر كل معلومة، وقارن بين السيناريوهات البديلة.',
-      'חקור את העולם, בדוק את מקור המידע והשווה בין תרחישים חלופיים.'
-    )],
-    ['#btn-dunyam-toggle-layers-popover', pickLoc('☰ Katmanlar ve Görünüm', '☰ Layers & View', '☰ الطبقات والعرض', '☰ שכבות ותצוגה')],
-    ['#dunyam-callout-eyebrow', pickLoc('SEÇİLİ KONUM / VARLIK', 'SELECTED LOCATION / ENTITY', 'الموقع / الكيان المحدد', 'מיקום / ישות נבחרת')],
-    ['#btn-dunyam-callout-open-world', pickLoc('◈ Dünyayı Aç', '◈ Open World', '◈ فتح العالم', '◈ פתח עולם')],
-    ['#btn-dunyam-callout-intervene', pickLoc('⚖ Seçenekler ↗', '⚖ Options ↗', '⚖ الخيارات ↗', '⚖ אפשרויות ↗')],
-    ['#btn-dunyam-callout-snapshot', pickLoc('Bu olayın verilerini kullan', 'Use this event data', 'استخدم بيانات هذا الحدث', 'השתמש בנתוני אירוע זה')],
-    ['#btn-cesium-fly-aegean', pickLoc('📍 Ege / İzmir', '📍 Aegean / Izmir', '📍 بحر إيجة / إزمير', '📍 הים האגאי / איזמיר')],
-    ['#btn-cesium-fly-global', pickLoc('🌍 Küresel', '🌍 Global', '🌍 عالمي', '🌍 גלובלי')],
-    ['#btn-theatre-cinematic-focus', pickLoc('🎬 Sinematik Odak', '🎬 Cinematic Focus', '🎬 تركيز سينمائي', '🎬 מיקוד קולנועי')],
-    ['#btn-stage-toggle-gibs', pickLoc('🛰 Uydu', '🛰 Satellite', '🛰 قمر صناعي', '🛰 לוויין')],
-    ['#btn-stage-toggle-wind', pickLoc('💨 Rüzgâr', '💨 Wind', '💨 الرياح', '💨 רוח')],
-    ['#btn-stage-toggle-events', pickLoc('🌋 Deprem ve Konumlar', '🌋 Seismic & Locations', '🌋 الزلازل والمواقع', '🌋 רעידות אדמה ומיקומים')],
-    ['#btn-stage-toggle-eonet', pickLoc('🔥 Doğal Olaylar', '🔥 Natural Events', '🔥 الأحداث الطبيعية', '🔥 אירועי טבע')],
-    ['#kesfet-clean-workspace .caelus-view-eyebrow', pickLoc('KEŞFET · KONUMLAR, SÜREÇ NOKTALARI VE OLAY KAYITLARI', 'EXPLORE · LOCATIONS, PROCESS ENTITIES & EVENT RECORDS', 'استكشاف · المواقع والكيانات وسجلات الأحداث', 'חקור · מיקומים, ישויות ורישומי אירועים')],
-    ['#kesfet-clean-workspace .caelus-view-title', pickLoc('Harita, İlişki Ağı ve Gözlem Kayıtlarını İnceleyin', 'Inspect Map, Relationship Graph & Observation Records', 'فحص الخريطة وشبكة العلاقات وسجلات الرصد', 'בדוק מפה, רשת קשרים ורישומי תצפית')],
-    ['#senaryolar-guided-workspace .caelus-view-eyebrow', pickLoc('SENARYOLAR · 4 ADIMDA SEÇENEKLERİ VE OLASI SONUÇLARI KARŞILAŞTIRIN', 'SCENARIOS · COMPARE OPTIONS AND OUTCOMES IN 4 STEPS', 'السيناريوهات · قارن الخيارات والنتائج في 4 خطوات', 'תרחישים · השווה אפשרויות ותוצאות ב-4 שלבים')],
-    ['#senaryolar-guided-workspace .caelus-view-title', pickLoc('Ne olmasını incelemek istersin?', 'What scenario would you like to explore?', 'ما السيناريو الذي ترغب في دراسته؟', 'איזה תרחיש תרצה לבחון?')],
-    ['#hafiza-clean-workspace .caelus-view-eyebrow', pickLoc('HAFIZA · ETKİLEŞİMLİ ZAMAN EKSENİ VE KAYIT DEFTERİ', 'MEMORY · INTERACTIVE TIMELINE & EVENT LEDGER', 'الذاكرة · الجدول الزمني التفاعلي وسجل الأحداث', 'זיכרון · ציר זמן אינטראקטיבי ויומן אירועים')],
-    ['#hafiza-clean-workspace .caelus-view-title', pickLoc('Geçmiş Olaylar, Veri Kaynakları ve Kaydedilmiş Senaryolar', 'Historical Events, Data Sources & Saved Scenarios', 'الأحداث السابقة ومصادر البيانات والسيناريوهات المحفوظة', 'אירועי עבר, מקורות מידע ותרחישים שמורים')],
-    ['#baglantilar-clean-workspace .caelus-view-eyebrow', pickLoc('BAĞLANTILAR · VERİ KAYNAKLARI, BÖLGE EŞLEŞTİRME VE GÜVEN MERKEZİ', 'CONNECTIONS · DATA SOURCES, REGION MAPPING & TRUST CENTER', 'الاتصالات · مصادر البيانات ومركز الثقة', 'חיבורים · מקורות מידע ומרכז אמון')],
-    ['#baglantilar-clean-workspace .caelus-view-title', pickLoc('İzinli Açık Veri Kaynakları, Güncellik ve Bağlantı Durumu', 'Authorized Open Data Sources, Freshness & Connection Status', 'مصادر البيانات المفتوحة المعتمدة وحالة الاتصال', 'מקורות מידע פתוחים מאושרים ומצב חיבור')],
-    ['#quiet-settings-section .caelus-view-eyebrow', pickLoc('AYARLAR · GÖRÜNÜM, GÖRSEL KALİTE, DİL VE VERİ TAKİBİ', 'SETTINGS · APPEARANCE, VISUAL QUALITY, LANGUAGE & DATA POLLING', 'الإعدادات · المظهر وجودة العرض واللغة ومتابعة البيانات', 'הגדרות · מראה, איכות תצוגה, שפה ומעקב נתונים')],
-    ['#quiet-settings-section .caelus-view-title', pickLoc('Kişisel Çalışma Ortamı ve Performans Tercihleri', 'Personal Workspace & Performance Preferences', 'تفضيلات بيئة العمل والأداء الشخصية', 'העדפות סביבת עבודה וביצועים')],
-    ['#btn-run-compare-lever', pickLoc('⚖ İki Olasılığı Yan Yana Karşılaştır', '⚖ Compare Both Scenarios Side by Side', '⚖ قارن الاحتمالين جنباً إلى جنب', '⚖ השווה שני תרחישים זה לצד זה')],
-    ['#btn-save-scenario-to-memory', pickLoc('💾 Bu Senaryoyu Hafızaya Kaydet', '💾 Save This Scenario to Memory', '💾 احفظ هذا السيناريو في الذاكرة', '💾 שמור תרחיש זה בזיכרון')],
-    ['#btn-scen-apply-target-state', pickLoc('Uygula ve Karşılaştır', 'Apply & Compare', 'تطبيق ومقارنة', 'החל והשווה')],
-    ['#btn-baglantilar-fetch-weather', pickLoc('Ege Hava ve Deniz Verisi Yükle', 'Load Aegean Weather & Marine Data', 'تحميل بيانات الطقس والبحر لبحر إيجة', 'טען נתוני מזג אוויר וים אגאי')],
-    ['#btn-baglantilar-fetch-usgs', pickLoc('USGS Sismik Veri Yükle', 'Load USGS Seismic Data', 'تحميل البيانات الزلزالية (USGS)', 'טען נתונים סייסמיים (USGS)')],
-    ['#btn-baglantilar-test-disconnect', pickLoc('Bağlantı Kesintisi Sına', 'Test Offline / Stale State', 'اختبار انقطاع الاتصال', 'בדוק מצב ניתוק')],
-    ['.caelus-scenario-step-pill[data-scen-step-target="1"] strong', pickLoc('1. Durumu seç', '1. Select State', '1. اختر الحالة', '1. בחר מצב')],
-    ['.caelus-scenario-step-pill[data-scen-step-target="2"] strong', pickLoc('2. Değişikliği seç', '2. Choose Action', '2. اختر التدخل', '2. בחר פעולה')],
-    ['.caelus-scenario-step-pill[data-scen-step-target="3"] strong', pickLoc('3. Karşılaştır', '3. Compare', '3. قارن', '3. השווה')],
-    ['.caelus-scenario-step-pill[data-scen-step-target="4"] strong', pickLoc('4. Sonucu ve dayanağını incele', '4. Inspect Proof & Report', '4. افحص النتيجة والدليل', '4. בדוק תוצאה והוכחה')],
-    ['#btn-scen-quick-step1', pickLoc('1. Durumu Değiştir', '1. Change State', '1. تغيير الحالة', '1. שנה מצב')],
-    ['#btn-scen-quick-step2', pickLoc('2. Müdahaleyi Seç', '2. Select Action', '2. اختر التدخل', '2. בחר פעולה')],
-    ['#btn-scen-quick-run-compare', pickLoc('⚡ İki Durumu Karşılaştır', '⚡ Compare Both States', '⚡ قارن الحالتين', '⚡ השווה שני מצבים')],
-    ['#btn-scen-quick-step4', pickLoc('4. Kanıt ve Rapor', '4. Proof & Report', '4. الدليل والتقرير', '4. הוכחה ודוח')]
+    ['#live-pill', locPack.livePill],
+    ['#btn-export-dossier', locPack.reportBtn],
+    ['#dunyam-onboarding-subtitle', locPack.onboardingSub],
+    ['#btn-dunyam-toggle-layers-popover', locPack.layersBtn],
+    ['#dunyam-callout-eyebrow', locPack.calloutEyebrow],
+    ['#btn-dunyam-callout-open-world', locPack.openWorldBtn],
+    ['#btn-dunyam-callout-intervene', locPack.interveneBtn],
+    ['#btn-dunyam-callout-snapshot', locPack.snapshotBtn],
+    ['#btn-cesium-fly-aegean', locPack.flyAegean],
+    ['#btn-cesium-fly-global', locPack.flyGlobal],
+    ['#btn-theatre-cinematic-focus', locPack.cinematicFocus],
+    ['#btn-stage-toggle-gibs', locPack.toggleGibs],
+    ['#btn-stage-toggle-wind', locPack.toggleWind],
+    ['#btn-stage-toggle-events', locPack.toggleEvents],
+    ['#btn-stage-toggle-eonet', locPack.toggleEonet],
+    ['#btn-stage-first-real-task > span:nth-child(2)', locPack.firstTaskBtn],
+    ['#btn-stage-provenance-lens > span:nth-child(2)', locPack.provenanceBtn],
+    ['#btn-stage-time-lens > span:nth-child(2)', locPack.timeLensPrefix],
+    ['#btn-stage-scene-controls > span:nth-child(2)', locPack.sceneControlsBtn],
+    ['#caelus-spatial-focus-pill .spatial-focus-pill-label', locPack.focusPillLabel],
+    ['#hdr-logo-home-btn > span:nth-child(2)', locPack.returnStageBtn],
+    ['#btn-quick-action-1', locPack.qa1],
+    ['#btn-quick-action-2', locPack.qa2],
+    ['#btn-quick-action-3', locPack.qa3],
+    ['#btn-quick-action-4', locPack.qa4],
+    ['#kesfet-clean-workspace .caelus-view-eyebrow', locPack.kesfetEyebrow],
+    ['#kesfet-clean-workspace .caelus-view-title', locPack.kesfetTitle],
+    ['#senaryolar-guided-workspace .caelus-view-eyebrow', locPack.senaryolarEyebrow],
+    ['#senaryolar-guided-workspace .caelus-view-title', locPack.senaryolarTitle],
+    ['#hafiza-clean-workspace .caelus-view-eyebrow', locPack.hafizaEyebrow],
+    ['#hafiza-clean-workspace .caelus-view-title', locPack.hafizaTitle],
+    ['#baglantilar-clean-workspace .caelus-view-eyebrow', locPack.baglantilarEyebrow],
+    ['#baglantilar-clean-workspace .caelus-view-title', locPack.baglantilarTitle],
+    ['#quiet-settings-section .caelus-view-eyebrow', locPack.ayarlarEyebrow],
+    ['#quiet-settings-section .caelus-view-title', locPack.ayarlarTitle],
+    ['#btn-run-compare-lever', locPack.compareLeverBtn],
+    ['#btn-save-scenario-to-memory', locPack.saveScenarioBtn],
+    ['#btn-scen-apply-target-state', locPack.applyTargetBtn],
+    ['.caelus-scenario-step-pill[data-scen-step-target="1"] strong', locPack.step1],
+    ['.caelus-scenario-step-pill[data-scen-step-target="2"] strong', locPack.step2],
+    ['.caelus-scenario-step-pill[data-scen-step-target="3"] strong', locPack.step3],
+    ['.caelus-scenario-step-pill[data-scen-step-target="4"] strong', locPack.step4],
+    ['#btn-scen-quick-step1', locPack.step1],
+    ['#btn-scen-quick-step2', locPack.step2],
+    ['#btn-scen-quick-run-compare', locPack.step3],
+    ['#btn-scen-quick-step4', locPack.step4],
+    ['#frt-drawer-title', locPack.frtDrawerTitle],
+    ['#btn-frt-export-xlsx', locPack.frtExportXlsx],
+    ['#btn-frt-export-html-pdf', locPack.frtExportHtml],
+    ['#btn-frt-export-csv', locPack.frtExportCsv]
   ];
   domSelectorMap.forEach(([sel, text]) => {
     const node = document.querySelector(sel);
@@ -15609,8 +16192,9 @@ function applyQuietLocale(localeCode, savePref = true) {
     const trCnt = Math.max(0, Number(scan.totalReferenceKeys || 0) - Number(scan.untranslatedCount || 0));
     const catList = typeof i18n.listWorldLanguageCatalog === 'function' ? i18n.listWorldLanguageCatalog('') : [];
     const catMatch = catList.find(it => it.code === code) || null;
-    const revPct = catMatch ? catMatch.humanReviewedPct : (code === 'tr-TR' || code === 'en-US' ? 100 : 95);
-    auditEl.textContent = `Aktif Dil: ${code} (${isRtl ? 'RTL · Sağdan Sola' : 'LTR · Soldan Sağa'}) · Anahtar Kapsamı: %${scan.completenessPct} (${trCnt}/${scan.totalReferenceKeys} anahtar) · İnsan İncelemesi: %${revPct}. Kullanıcı verileri otomatik çevrilmez.`;
+    const revPct = catMatch && typeof catMatch.humanReviewedPct === 'number' ? catMatch.humanReviewedPct : 0;
+    const revStatus = catMatch && catMatch.reviewStatus ? catMatch.reviewStatus : 'INSAN_INCELEMESI_BEKLIYOR';
+    auditEl.textContent = `Aktif Dil: ${code} (${isRtl ? 'RTL · Sağdan Sola' : 'LTR · Soldan Sağa'}) · Anahtar Kapsamı: %${scan.completenessPct} (${trCnt}/${scan.totalReferenceKeys} anahtar) · İnsan İncelemesi: %${revPct} (${revStatus}). Kullanıcı verileri otomatik çevrilmez.`;
   }
 
   const langSelect = document.getElementById('quiet-lang-select');
@@ -15629,9 +16213,14 @@ function applyQuietLocale(localeCode, savePref = true) {
     btn.classList.toggle('active', btn.getAttribute('data-lang-code') === code);
   });
 
+  if (typeof renderFirstRealTaskDrawerUI === 'function' && document.getElementById('caelus-first-real-task-drawer') && !document.getElementById('caelus-first-real-task-drawer').classList.contains('hidden')) {
+    renderFirstRealTaskDrawerUI();
+  }
+
   if (savePref) {
     try {
       localStorage.setItem('caelus_quiet_locale_v1', code);
+      localStorage.setItem('caelus_locale_v2', code);
     } catch (_) { }
   }
 }
@@ -15659,11 +16248,11 @@ function ensureLocalLlmPrefs() {
       if (raw) saved = JSON.parse(raw);
     } catch (_) {}
     state.localLlmPrefs = {
-      enabled: saved && typeof saved.enabled === 'boolean' ? saved.enabled : true,
+      enabled: saved && typeof saved.enabled === 'boolean' ? saved.enabled : false,
       baseUrl: (saved && saved.baseUrl) ? String(saved.baseUrl) : 'http://127.0.0.1:11434',
       model: (saved && saved.model) ? String(saved.model) : 'qwen2.5:1.5b',
       connected: false,
-      statusLabelTr: 'Yerel yapay zekâ kontrol ediliyor...',
+      statusLabelTr: 'Yerel yapay zekâ isteğe bağlıdır (Varsayılan: Kapalı)',
       availableModels: []
     };
   }
@@ -18481,7 +19070,7 @@ function initUnifiedPageWorkspaces() {
       if (typeof handleUniversalUsgsLoadOrFetch === 'function') {
         handleUniversalUsgsLoadOrFetch('T2_STRONG');
       }
-      await loadAndRenderRealGlobeEvents();
+      await loadAndRenderRealGlobeEvents({ allowExternalNetwork: true });
       renderBaglantilarCleanWorkspace();
       renderHafizaStreamWorkspace();
     });
@@ -20322,13 +20911,14 @@ window.focusLedgerRecordOnGlobeAndMemory = focusLedgerRecordOnGlobeAndMemory;
  * Gerçek USGS Deprem Olaylarını ve Örnek/Senaryo Konumlarını 3B Dünya Üzerine İşler.
  * Gerçek açık veri (USGS GeoJSON) ile örnek/senaryo verisi (DUNYAM_GEO_LOCATIONS) hem görsel hem metinsel olarak ayrılır.
  */
-async function loadAndRenderRealGlobeEvents() {
+async function loadAndRenderRealGlobeEvents(options = {}) {
   const api = getUnifiedLedgerApi();
   let ledger = ensureUnifiedRealWorldLedger();
   const isNetOffline = Boolean(state.allNetworkPaused || state.engineMode === 'disconnected_stale' || state.staleDisconnected);
+  const allowExternalNetwork = Boolean(options && options.allowExternalNetwork);
   const fetchIso = new Date().toISOString();
 
-  if (!isNetOffline && api) {
+  if (!isNetOffline && allowExternalNetwork && api) {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 6000);
@@ -20391,7 +20981,7 @@ async function loadAndRenderRealGlobeEvents() {
     // Eşzamanlı olarak Open-Meteo bölgesel hava/deniz verisini de birleşik yerel hafızaya al
     await fetchLiveOpenMeteoToUnifiedLedger();
     ledger = window.cUnifiedRealWorldLedger || ledger;
-  } else if (api && ledger) {
+  } else if (isNetOffline && api && ledger) {
     window.cCesiumState.usgsSourceStatus = 'ARCHIVE_FALLBACK';
     const off1 = api.markSourceOfflineOrStale(ledger, 'usgs_earthquake_feed', {
       nowIso: fetchIso,
@@ -20404,6 +20994,8 @@ async function loadAndRenderRealGlobeEvents() {
     ledger = off2.ledger;
     window.cUnifiedRealWorldLedger = ledger;
     persistUnifiedRealWorldLedger();
+  } else {
+    window.cCesiumState.usgsSourceStatus = 'LOCAL_ARCHIVE_READY';
   }
 
   const quakeRecords = (ledger && Array.isArray(ledger.records))
@@ -24205,9 +24797,9 @@ function initCaelusRealWorld13TechIntegrations() {
   // 0. Restore any previously saved immutable snapshot from localStorage (survives app restart & cold offline launch)
   restoreImmutableSnapshotFromLocalStorage();
 
-  // 1. Ingest NASA EONET v3 natural events on startup
+  // 1. Ingest NASA EONET v3 natural events on startup using verified local fixture (no unprompted external network request on load)
   setTimeout(() => {
-    ingestCaelusNasaEonetV3Events(false);
+    ingestCaelusNasaEonetV3Events(true);
   }, 260);
 
   // 2. Wire NASA EONET v3 toggle pill in Dünyam
@@ -25142,6 +25734,129 @@ function toggleSpatialCompassPopover(forceOpen) {
   return nextOpen;
 }
 
+function resolveActiveContextIntelligence(recOverride, cutoffIsoOverride) {
+  const aw = typeof getActiveDigitalWorld === 'function' ? getActiveDigitalWorld() : null;
+  const wf = (typeof cFirstRealTaskState !== 'undefined' && cFirstRealTaskState && cFirstRealTaskState.workflowResult && cFirstRealTaskState.workflowResult.ok)
+    ? cFirstRealTaskState.workflowResult
+    : null;
+  const nameEl = document.getElementById('dunyam-callout-name');
+  const calloutTitle = (recOverride && recOverride.title)
+    ? String(recOverride.title).trim()
+    : ((nameEl && nameEl.textContent) ? nameEl.textContent.trim() : '');
+  const activeScenId = String(state.activeScenario || (aw && aw.id) || 'EX-01_LIMAN_SOGUK_ZINCIR');
+
+  const isUserImportedActive = Boolean(
+    (activeScenId.startsWith('USER_WORLD_') || (cFirstRealTaskState && cFirstRealTaskState.transferredToStage)) && wf
+  );
+  const isExplicitErcotCutoff = Boolean(
+    cutoffIsoOverride && (String(cutoffIsoOverride).startsWith('2021-02') || String(cutoffIsoOverride).startsWith('2021-03'))
+  );
+  const isExplicitErcotEntity = /ercot|austin|temiz\s*oda|upw|fabrika|tx/i.test(calloutTitle) || /ercot|austin/i.test(activeScenId);
+
+  if (isUserImportedActive && !isExplicitErcotCutoff && !isExplicitErcotEntity) {
+    const pkg = wf.data_package;
+    const wm = wf.world_model;
+    const cmp = wf.comparison_result;
+    const inc = wm.entity_inclusion_report || {
+      total_entity_count: wm.entity_count,
+      included_entity_count: wm.entity_count,
+      excluded_entity_count: 0
+    };
+    const recs = Array.isArray(pkg.records) ? pkg.records : [];
+    const firstRec = recs[0] || {};
+    const defaultCutoff = firstRec.learned_at || '2026-04-06T09:00:00Z';
+    return {
+      contextKind: 'USER_IMPORTED_WORLD',
+      defaultCutoffIso: defaultCutoff,
+      badgeLabel: `${String(defaultCutoff).slice(0, 10)} (Kullanıcı Verisi)`,
+      itemTitle: calloutTitle || `Kullanıcı Dünya Modeli — ${pkg.source_file}`,
+      itemSrc: `Kullanıcı Veri Paketi (${pkg.source_file}#${wf.selected_sheet_name} · SHA-256: ${String(pkg.source_hash_sha256 || '').slice(0, 16)}…)`,
+      itemTime: `Olay Zamanı (t_olay): ${firstRec.occurred_at || '2026-04-06T08:00:00Z'} · Alım Zamanı (t_alım): ${firstRec.learned_at || '2026-04-06T09:00:00Z'}`,
+      itemEpistemic: 'Doğrulanmış Kullanıcı Verisi + Varsayıma Bağlı Simülasyon',
+      engineLabel: `${cmp.calculation_engine_label_tr || 'JavaScript Sabit Noktalı Yayılım Modeli'} (${cmp.calculation_engine || 'CAELUS_JS_FIXED_POINT_PROPAGATION_V2'})`,
+      chainSummaryHtml: `<strong>Kullanıcı Veri Ağı (${inc.included_entity_count}/${inc.total_entity_count} Varlık Dahil):</strong> ${recs.slice(0, 3).map(r => `${escapeHtml(r.entity_name)} → ${escapeHtml(r.target_entity_name || '-')}`).join(' · ')}`,
+      hypothesisChangeHtml: `
+        <div><strong>Model Karşılaştırma Durumu:</strong> <code>[${escapeHtml(cmp.stance || 'VARSAYIMA_BAGLI_KARSILASTIRMA')}] ${escapeHtml(cmp.option_1.intervention_label)} vs ${escapeHtml(cmp.option_2.intervention_label)}</code></div>
+        <div style="color:#4ADE80; margin-top:2px;"><strong>En Yüksek Bilgi Değeri (VoI):</strong> Kullanıcının yüklediği <code>${escapeHtml(pkg.source_file)}</code> dosyasındaki doğrulanmamış/eksik satırların (${pkg.error_row_count} satır) ve saha kapasite ölçümlerinin tamamlanması</div>
+      `,
+      knownRecordsHtml: recs.slice(0, 4).map(r =>
+        `<li><strong>${escapeHtml(r.record_id)} (${escapeHtml(r.entity_name)}):</strong> ${escapeHtml(r.relation_type)} → ${escapeHtml(r.target_entity_name || '-')} (${r.value} ${escapeHtml(r.unit)}) <span class="mono" style="color:#88D4FF;">(t_alım: ${escapeHtml(String(r.learned_at || '').slice(0, 10))})</span></li>`
+      ).join(''),
+      knownCount: recs.length,
+      futureRecordsHtml: '<li>Kullanıcı veri paketinde seçili kesit tarihi sonrasında gizlenen gelecek kaydı bulunmamaktadır (Sızıntı: 0).</li>',
+      futureCount: 0,
+      v1v2ShiftTitleHtml: `<code>Baz Akış (Baskı: ${cmp.baseline.system_stress_score})</code> → <code>${escapeHtml(cmp.recommended_option_label)}</code>`,
+      v1v2WhyHtml: `Kullanıcının <code>${escapeHtml(pkg.source_file)}</code> dosyasındaki ${inc.included_entity_count} varlık ve ${wm.relation_count} ilişki üzerinde yapılan sabit noktalı yayılım hesabına göre; bu karşılaştırma varsayıma bağlıdır.`,
+      counterEvidenceHtml: pkg.import_errors && pkg.import_errors.length > 0
+        ? `<code>${escapeHtml(pkg.import_errors.map(e => `Satır ${e.source_row} (${e.error_code})`).join(', '))}</code> kayıtları doğrulama kapısından geçemediği için karara dahil edilmemiştir.`
+        : 'Kullanıcı veri paketinde çelişen karşıt gözlem kaydı tespit edilmedi; tüm müdahale katsayıları şablon varsayımı olarak işaretlenmiştir.',
+      missingDataHtml: `Kullanılmayan/eksik alanlar: <code>${escapeHtml((cmp.unused_fields_in_calculation || []).join(', '))}</code> ve izole edilen <strong>${pkg.error_row_count}</strong> hatalı satır eksik veri olarak işaretlenmiştir; uydurma sayı üretilmez.`
+    };
+  }
+
+  if (isExplicitErcotCutoff || isExplicitErcotEntity) {
+    return {
+      contextKind: 'ERCOT_HISTORICAL_CASE',
+      defaultCutoffIso: cutoffIsoOverride || '2021-03-17T23:59:59Z',
+      badgeLabel: String(cutoffIsoOverride || '2021-03-17').slice(0, 10) <= '2021-02-20' ? '19 Şub 2021 (v1)' : '17 Mar 2021 (v2)',
+      itemTitle: calloutTitle || 'Şubat 2021 Teksas ERCOT → Austin Yarı İletken Tarihsel Doğrulama Vakası',
+      itemSrc: 'ERCOT Tarihsel Kriz Kayıtları + Austin Yarı İletken Saha Gözlemleri',
+      itemTime: 'Olay Zamanı (t_olay): 2021-02-15T07:15:00Z · Alım Zamanı (t_alım): 2021-03-17T18:00:00Z',
+      itemEpistemic: 'Tarihsel Gözlem + Çift Zamanlı (Bitemporal) Doğrulama Vakası',
+      engineLabel: 'CAELUS C++17 / Rust WASM Deterministik Çekirdeği (FP_ONE=1.000.000) + CaelusLivingWorldModel',
+      chainSummaryHtml: '<strong>Tarihsel Etki Zinciri:</strong> ERCOT Şebeke Çöküşü → Austin Yarı İletken Temiz Oda &amp; UPW → Küresel Otomotiv Çip Tedariki',
+      hypothesisChangeHtml: `
+        <div><strong>Düşüncenin Değişimi:</strong> <code>v1 (HYP-ERCOT-ONLY: Sadece Elektrik Kesintisi) → v2 (HYP-CLEANROOM-REQUAL: Temiz Oda &amp; UPW Kalifikasyonu)</code></div>
+        <div style="color:#4ADE80; margin-top:2px;"><strong>En Yüksek Bilgi Değeri (VoI):</strong> Tesis içi alt-sayaç telemetrisi ve temiz oda parti bazlı kalifikasyon süresi</div>
+      `,
+      knownRecordsHtml: '',
+      knownCount: 0,
+      futureRecordsHtml: '',
+      futureCount: 0,
+      v1v2ShiftTitleHtml: `<code>HYP-ERCOT-ONLY (Yalnızca Şebeke Kesintisi)</code> → <code>HYP-CLEANROOM-REQUAL (Temiz Oda + UPW Kalifikasyon Darboğazı)</code>`,
+      v1v2WhyHtml: `19 Şubat 2021 (v1) ile 17 Mart 2021 (v2) arasında sisteme giren temiz oda N₂ basınç kaybı ve UPW ultra-saf su kontaminasyonu gözlemleri (<code>OBS-2021-TX-04</code>, <code>OBS-2021-TX-05</code>), gecikmenin yalnızca şebeke elektriğinden değil temiz oda yeniden kalifikasyonundan kaynaklandığını gösterdi.`,
+      counterEvidenceHtml: `<code>OBS-2021-TX-04</code> ve <code>OBS-2021-TX-05</code> kayıtları, "yalnızca şebeke elektriği gelince üretim hemen başlar" (<code>H1</code>) iddiasını zayıflatan karşıt kanıtlardır.`,
+      missingDataHtml: `<code>GAP-TX-SUBMETERING-01</code> (Tesis içi alt-sayaç telemetrisi) ve <code>GAP-TX-CLEANROOM-REQUAL-02</code> (Temiz oda parti bazlı kalifikasyon süresi) eksik veri olarak işaretlenmiştir; uydurma sayı üretilmez.`
+    };
+  }
+
+  // Varsayılan aktif dünya bağlamı: İzmir Körfezi / Ege Liman Soğuk Zincir veya seçili diğer dünya (ERCOT sızıntısı olmadan!)
+  const worldTitle = (aw && aw.title) ? aw.title : 'Liman Soğuk Zincir ve Terminal Dünyası';
+  const nodes = (aw && Array.isArray(aw.nodes)) ? aw.nodes : [];
+  const edges = (aw && Array.isArray(aw.edges)) ? aw.edges : [];
+  const selNode = nodes.find(n => n.id === state.selectedNodeId) || nodes[0];
+  const selLabel = selNode ? String(selNode.label || selNode.id).split('(')[0].trim() : (calloutTitle || 'Rıhtım Trafo ve Enerji');
+
+  return {
+    contextKind: 'AEGEAN_PORT_OR_ACTIVE_WORLD',
+    defaultCutoffIso: cutoffIsoOverride || '2020-10-30T12:30:00Z',
+    badgeLabel: '30 Eki 2020 (Ege t_karar)',
+    itemTitle: calloutTitle || `${selLabel} — ${worldTitle}`,
+    itemSrc: `${worldTitle} (caelus_world_store.json + USGS Sismik & Open-Meteo Ege Kayıt Defteri)`,
+    itemTime: 'Olay Zamanı (t_olay): 2020-10-30T11:51:27Z · Alım Zamanı (t_alım): 2020-10-30T12:10:00Z',
+    itemEpistemic: 'Gerçek Açık Veri Gözlemi + Deterministik Senaryo Modeli',
+    engineLabel: 'CAELUS C++17 / Rust WASM Deterministik Çekirdeği (FP_ONE=1.000.000) + CaelusLivingWorldModel',
+    chainSummaryHtml: `<strong>Etki Zinciri (${escapeHtml(worldTitle)}):</strong> ${escapeHtml(selLabel)} → Reefer Soğuk Zincir → Terminal Kapı ve Gümrük Çıkışı`,
+    hypothesisChangeHtml: `
+      <div><strong>Düşüncenin Değişimi (${escapeHtml(worldTitle)}):</strong> <code>v1 (HYP-PORT-GRID-ONLY: Yalnızca Şebeke Gerilim Düşümü) → v2 (HYP-REEFER-THERMAL-LAG: Reefer Soğuk Zincir Isıl Atalet ve Yedek Jeneratör Senkronizasyonu)</code></div>
+      <div style="color:#4ADE80; margin-top:2px;"><strong>En Yüksek Bilgi Değeri (VoI):</strong> Reefer konteyner bazlı gerçek zamanlı iç sıcaklık telemetrisi ve rıhtım vinç trafo yedek yakıt seviyesi</div>
+    `,
+    knownRecordsHtml: `
+      <li><strong>OBS-2020-IZM-01:</strong> 30 Ekim 2020 Ege Denizi Mw 7.0 sismik şok kaydı (USGS GeoJSON) <span class="mono" style="color:#88D4FF;">(t_alım: 2020-10-30 12:05 UTC)</span></li>
+      <li><strong>OBS-2020-IZM-02:</strong> İzmir Alsancak Limanı rıhtım trafo gerilim düşümü ve yedek güç geçişi <span class="mono" style="color:#88D4FF;">(t_alım: 2020-10-30 12:18 UTC)</span></li>
+    `,
+    knownCount: 2,
+    futureRecordsHtml: `
+      <li><span style="color:#FBBF24;">[Sonra Öğrenildi · 2020-10-31]</span> <strong>OBS-2020-IZM-03:</strong> Reefer soğuk zincir bloklarında 6 saat sonrası ısıl kayıp ve gümrük kapı kuyruk birikimi saha raporu</li>
+    `,
+    futureCount: 1,
+    v1v2ShiftTitleHtml: `<code>HYP-PORT-GRID-ONLY (Yalnızca Rıhtım Trafo Kesintisi)</code> → <code>HYP-REEFER-THERMAL-LAG (Soğuk Zincir Isıl Kayıp &amp; Kapı Kuyruk Darboğazı)</code>`,
+    v1v2WhyHtml: `İlk anda (t_karar = 12:30 UTC) yalnızca trafo kesintisi görünürken, izleyen saatlerde sisteme giren reefer blok sıcaklığı ve kapı geçiş gözlemleri (<code>OBS-2020-IZM-02</code>, <code>OBS-2020-IZM-03</code>) asıl darboğazın soğuk zincir önceliklendirmesinde oluştuğunu gösterdi.`,
+    counterEvidenceHtml: `<code>OBS-2020-IZM-02</code> saha kaydı, "şebeke gerilimi normale dönünce tüm reefer konteynerler kayıpsız soğutmaya devam eder" (<code>H1-PORT</code>) varsayımını zayıflatan karşıt kanıttır.`,
+    missingDataHtml: `<code>GAP-IZM-REEFER-TELEMETRY-01</code> (Konteyner bazlı anlık iç sıcaklık sensör verisi) ve <code>GAP-IZM-DIESEL-RESERVE-02</code> (Yedek jeneratör saatlik yakıt tüketim eğrisi) eksik veri olarak işaretlenmiştir; uydurma sayı üretilmez.`
+  };
+}
+
 function updateCalloutProgressiveLayers(recOverride) {
   const entPathsEl = document.getElementById('callout-layer-entities-paths');
   const hypEl = document.getElementById('callout-layer-hypotheses');
@@ -25149,9 +25864,12 @@ function updateCalloutProgressiveLayers(recOverride) {
   const nodes = (aw && Array.isArray(aw.nodes)) ? aw.nodes : [];
   const edges = (aw && Array.isArray(aw.edges)) ? aw.edges : [];
   const selNode = nodes.find(n => n.id === state.selectedNodeId) || nodes[0];
+  const ctx = resolveActiveContextIntelligence(recOverride);
 
   if (entPathsEl) {
-    if (selNode && edges.length > 0) {
+    if (ctx.contextKind === 'USER_IMPORTED_WORLD') {
+      entPathsEl.innerHTML = ctx.chainSummaryHtml;
+    } else if (selNode && edges.length > 0) {
       const directEdges = edges.filter(e => e.from === selNode.id || e.to === selNode.id);
       const neighborNames = directEdges.slice(0, 3).map(e => {
         const otherId = e.from === selNode.id ? e.to : e.from;
@@ -25162,16 +25880,13 @@ function updateCalloutProgressiveLayers(recOverride) {
         ? `${escapeHtml(String(selNode.label || selNode.id).split('(')[0].trim())} → ${neighborNames.map(escapeHtml).join(' → ')}`
         : `${escapeHtml(String(selNode.label || selNode.id))} (Doğrudan 1. derece süreç düğümü)`;
       entPathsEl.innerHTML = `<strong>1. Derece Komşular (${directEdges.length}):</strong> ${chainText}`;
-    } else if (recOverride && recOverride.title) {
-      entPathsEl.innerHTML = `<strong>Etki Zinciri:</strong> ${escapeHtml(recOverride.title)} → İzmir Körfezi Limanı → Reefer Soğuk Zincir`;
+    } else {
+      entPathsEl.innerHTML = ctx.chainSummaryHtml;
     }
   }
 
   if (hypEl) {
-    hypEl.innerHTML = `
-      <div><strong>Düşüncenin Değişimi:</strong> <code>v1 (HYP-ERCOT-ONLY: Sadece Elektrik Kesintisi) → v2 (HYP-CLEANROOM-REQUAL: Temiz Oda &amp; UPW Kalifikasyonu)</code></div>
-      <div style="color:#4ADE80; margin-top:2px;"><strong>En Yüksek Bilgi Değeri (VoI):</strong> Tesis içi alt-sayaç telemetrisi ve temiz oda parti bazlı kalifikasyon süresi</div>
-    `;
+    hypEl.innerHTML = ctx.hypothesisChangeHtml;
   }
 }
 
@@ -25184,7 +25899,8 @@ function renderAndOpenTimeLensPopover(cutoffIsoOverride, shouldOpenPopover = tru
   const leakBadge = document.getElementById('time-lens-leakage-badge');
   if (!bodyEl) return null;
 
-  const cutoffIso = cutoffIsoOverride || window.cActiveTimeLensCutoffIso || '2021-03-17T23:59:59Z';
+  const ctx = resolveActiveContextIntelligence(null, cutoffIsoOverride);
+  const cutoffIso = cutoffIsoOverride || ctx.defaultCutoffIso || window.cActiveTimeLensCutoffIso || '2020-10-30T12:30:00Z';
   window.cActiveTimeLensCutoffIso = cutoffIso;
   const shortDate = String(cutoffIso).slice(0, 10);
   if (dateInp) dateInp.value = shortDate;
@@ -25193,39 +25909,46 @@ function renderAndOpenTimeLensPopover(cutoffIsoOverride, shouldOpenPopover = tru
     btn.classList.toggle('active', btn.getAttribute('data-tl-cutoff') === cutoffIso);
   });
 
-  const lwm = window.CaelusLivingWorldModel;
-  const bundle = lwmActiveRuntimeBundle || (lwm && typeof lwm.runTwoDateHistoricalRealityTest === 'function' ? lwm.runTwoDateHistoricalRealityTest() : null);
-  const dual = (lwm && bundle && bundle.memoryStore && typeof lwm.answerLivingWorldDualQuestionsAtDate === 'function')
-    ? lwm.answerLivingWorldDualQuestionsAtDate(bundle.memoryStore, cutoffIso)
-    : null;
+  let knownList = ctx.knownRecordsHtml;
+  let futureList = ctx.futureRecordsHtml;
+  let knownCnt = ctx.knownCount;
+  let futureCnt = ctx.futureCount;
+
+  if (ctx.contextKind === 'ERCOT_HISTORICAL_CASE') {
+    const lwm = window.CaelusLivingWorldModel;
+    const bundle = lwmActiveRuntimeBundle || (lwm && typeof lwm.runTwoDateHistoricalRealityTest === 'function' ? lwm.runTwoDateHistoricalRealityTest() : null);
+    const dual = (lwm && bundle && bundle.memoryStore && typeof lwm.answerLivingWorldDualQuestionsAtDate === 'function')
+      ? lwm.answerLivingWorldDualQuestionsAtDate(bundle.memoryStore, cutoffIso)
+      : null;
+    const q2 = dual && dual.question2_WhatInformationDidCaelusHaveAccessToAtDate;
+    const accRecs = (q2 && Array.isArray(q2.accessibleRecords)) ? q2.accessibleRecords : [];
+    const blkRecs = (q2 && Array.isArray(q2.blockedFutureRecords)) ? q2.blockedFutureRecords : [];
+    knownCnt = accRecs.length;
+    futureCnt = blkRecs.length;
+    knownList = accRecs.slice(0, 4).map(o =>
+      `<li><strong>${escapeHtml(o.recordId || o.subjectId)}:</strong> ${escapeHtml(o.summaryTr || o.variableName || '')} <span class="mono" style="color:#88D4FF;">(t_alım: ${escapeHtml(String(o.learnedAtIso || o.systemLearnedTimeIso || '2021-02-18').slice(0, 10))})</span></li>`
+    ).join('');
+    futureList = blkRecs.slice(0, 4).map(o =>
+      `<li><span style="color:#FBBF24;">[Sonra Öğrenildi · ${escapeHtml(String(o.learnedAtIso || o.systemLearnedTimeIso || '2021-03-17').slice(0, 10))}]</span> <strong>${escapeHtml(o.recordId || o.subjectId)}:</strong> ${escapeHtml(o.summaryTr || o.variableName || '')}</li>`
+    ).join('');
+  }
 
   const isEarly = shortDate <= '2021-02-20';
   const isAegean = shortDate.startsWith('2020-10');
 
   if (badgeEl) {
-    badgeEl.textContent = isAegean
-      ? '30 Eki 2020 (t_karar)'
-      : (isEarly ? '19 Şub 2021 (v1)' : `${shortDate} (v2)`);
+    badgeEl.textContent = ctx.contextKind === 'USER_IMPORTED_WORLD'
+      ? ctx.badgeLabel
+      : (isAegean ? '30 Eki 2020 (t_karar)' : (isEarly ? '19 Şub 2021 (v1)' : `${shortDate} (v2)`));
   }
   if (leakBadge) {
     leakBadge.textContent = 'Sızıntı: 0';
   }
 
-  const q2 = dual && dual.question2_WhatInformationDidCaelusHaveAccessToAtDate;
-  const accRecs = (q2 && Array.isArray(q2.accessibleRecords)) ? q2.accessibleRecords : [];
-  const blkRecs = (q2 && Array.isArray(q2.blockedFutureRecords)) ? q2.blockedFutureRecords : [];
-
-  const knownList = accRecs.slice(0, 4).map(o =>
-    `<li><strong>${escapeHtml(o.recordId || o.subjectId)}:</strong> ${escapeHtml(o.summaryTr || o.variableName || '')} <span class="mono" style="color:#88D4FF;">(t_alım: ${escapeHtml(String(o.learnedAtIso || o.systemLearnedTimeIso || '2021-02-18').slice(0, 10))})</span></li>`
-  ).join('');
-  const futureList = blkRecs.slice(0, 4).map(o =>
-    `<li><span style="color:#FBBF24;">[Sonra Öğrenildi · ${escapeHtml(String(o.learnedAtIso || o.systemLearnedTimeIso || '2021-03-17').slice(0, 10))}]</span> <strong>${escapeHtml(o.recordId || o.subjectId)}:</strong> ${escapeHtml(o.summaryTr || o.variableName || '')}</li>`
-  ).join('');
-
   bodyEl.innerHTML = `
     <div style="background:rgba(11,22,42,0.78); border:1px solid rgba(74,222,128,0.28); border-radius:12px; padding:9px 11px;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-        <strong style="color:#4ADE80;">1. O Tarihe Kadar Bilinenler (${accRecs.length} Kayıt)</strong>
+        <strong style="color:#4ADE80;">1. O Tarihe Kadar Bilinenler (${knownCnt} Kayıt)</strong>
         <span class="kpi-badge ok" style="font-size:0.66rem;">t_alım ≤ ${escapeHtml(shortDate)}</span>
       </div>
       <ul style="margin:5px 0 0 16px; padding:0; color:var(--caelus-text-secondary); font-size:0.74rem;">
@@ -25235,7 +25958,7 @@ function renderAndOpenTimeLensPopover(cutoffIsoOverride, shouldOpenPopover = tru
 
     <div style="background:rgba(11,22,42,0.78); border:1px solid rgba(251,191,36,0.28); border-radius:12px; padding:9px 11px;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-        <strong style="color:#FBBF24;">2. Daha Sonra Öğrenilen Bilgiler (${blkRecs.length} Kayıt Gizlendi)</strong>
+        <strong style="color:#FBBF24;">2. Daha Sonra Öğrenilen Bilgiler (${futureCnt} Kayıt Gizlendi)</strong>
         <span class="kpi-badge warn" style="font-size:0.66rem;">Sızıntı Korumalı (0 Sızıntı)</span>
       </div>
       <ul style="margin:5px 0 0 16px; padding:0; color:var(--caelus-text-secondary); font-size:0.74rem;">
@@ -25246,10 +25969,10 @@ function renderAndOpenTimeLensPopover(cutoffIsoOverride, shouldOpenPopover = tru
     <div style="background:rgba(11,22,42,0.78); border:1px solid rgba(136,212,255,0.26); border-radius:12px; padding:9px 11px;">
       <div style="font-size:0.71rem; font-weight:700; color:#E6C387; text-transform:uppercase;">3. ÖNCEKİ DEĞERLENDİRME (v1) İLE YENİ DEĞERLENDİRME (v2) KARŞILAŞTIRMASI</div>
       <div style="margin-top:4px; color:var(--caelus-text-primary); font-size:0.75rem;">
-        <strong>Baskın Açıklama Değişimi:</strong> <code>HYP-ERCOT-ONLY (Yalnızca Şebeke Kesintisi)</code> → <code>HYP-CLEANROOM-REQUAL (Temiz Oda + UPW Kalifikasyon Darboğazı)</code>
+        <strong>Baskın Açıklama Değişimi:</strong> ${ctx.v1v2ShiftTitleHtml}
       </div>
       <div style="margin-top:3px; color:var(--caelus-text-secondary); font-size:0.73rem;">
-        <strong>Neden değişti?</strong> 19 Şubat 2021 (v1) ile 17 Mart 2021 (v2) arasında sisteme giren temiz oda N₂ basınç kaybı ve UPW ultra-saf su kontaminasyonu gözlemleri, gecikmenin yalnızca şebeke elektriğinden değil temiz oda yeniden kalifikasyonundan kaynaklandığını gösterdi.
+        <strong>Neden değişti?</strong> ${ctx.v1v2WhyHtml}
       </div>
     </div>
   `;
@@ -25273,25 +25996,17 @@ function renderAndOpenProvenanceDrawer(shouldOpen = true) {
   const bodyEl = document.getElementById('provenance-drawer-body');
   if (!bodyEl) return;
 
-  const nameEl = document.getElementById('dunyam-callout-name');
-  const srcLineEl = document.getElementById('dunyam-callout-sources-line');
-  const timeLineEl = document.getElementById('dunyam-callout-event-time');
-  const badgeEl = document.getElementById('dunyam-callout-badge');
-
-  const itemTitle = (nameEl && nameEl.textContent) ? nameEl.textContent.trim() : 'Aktif Dünya ve Seçili Varlık';
-  const itemSrc = (srcLineEl && srcLineEl.textContent) ? srcLineEl.textContent.replace(/^Kaynak:\s*/i, '').trim() : 'USGS GeoJSON + Open-Meteo + CAELUS Deterministik Dünya Deposu';
-  const itemTime = (timeLineEl && timeLineEl.textContent) ? timeLineEl.textContent.trim() : 'Olay Zamanı (t_olay): 2021-02-15T07:15:00Z · Alım Zamanı (t_alım): 2021-02-15T14:00:00Z';
-  const itemEpistemic = (badgeEl && badgeEl.textContent) ? badgeEl.textContent.trim() : 'Gerçek Gözlem + Deterministik Model Çıktısı';
+  const ctx = resolveActiveContextIntelligence();
 
   bodyEl.innerHTML = `
     <div style="background:rgba(11,22,42,0.80); border:1px solid rgba(136,212,255,0.24); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
-      <div style="font-size:0.72rem; font-weight:700; color:#88D4FF;">İNCELENEN ÖĞE: ${escapeHtml(itemTitle)}</div>
-      <div><strong>1. Bu bilgi nereden geldi?</strong> <span>${escapeHtml(itemSrc)} (<code>caelus_world_store.json</code> + Açık Veri Kanıt Defteri)</span></div>
-      <div><strong>2. Ne zaman gerçekleşti ve sisteme ne zaman girdi?</strong> <span class="mono">${escapeHtml(itemTime)}</span></div>
-      <div><strong>3. Bilgi Sınıfı (Epistemik Durum):</strong> <span class="kpi-badge ok" style="font-size:0.68rem;">${escapeHtml(itemEpistemic)}</span> — Gözlem (●), İddia (◆), Varsayım, Hipotez (---) ve Simülasyon Çıktısı (◈) birbirinden ayrı tutulur.</div>
-      <div><strong>4. Hangi motor veya yöntem kullanıldı?</strong> <code>CAELUS C++17 / Rust WASM Deterministik Çekirdeği (FP_ONE=1.000.000)</code> + <code>CaelusLivingWorldModel</code> + <code>CaelusDiscoveryValueEngine</code>.</div>
-      <div><strong>5. Karşıt kanıt var mı?</strong> <code>OBS-2021-TX-04</code> ve <code>OBS-2021-TX-05</code> kayıtları, "yalnızca şebeke elektriği gelince üretim hemen başlar" (<code>H1</code>) iddiasını zayıflatan karşıt kanıtlardır.</div>
-      <div><strong>6. Eksik veri var mı?</strong> <code>GAP-TX-SUBMETERING-01</code> (Tesis içi alt-sayaç telemetrisi) ve <code>GAP-TX-CLEANROOM-REQUAL-02</code> (Temiz oda parti bazlı kalifikasyon süresi) eksik veri olarak işaretlenmiştir; uydurma sayı üretilmez.</div>
+      <div style="font-size:0.72rem; font-weight:700; color:#88D4FF;">İNCELENEN ÖĞE: ${escapeHtml(ctx.itemTitle)}</div>
+      <div><strong>1. Bu bilgi nereden geldi?</strong> <span>${escapeHtml(ctx.itemSrc)}</span></div>
+      <div><strong>2. Ne zaman gerçekleşti ve sisteme ne zaman girdi?</strong> <span class="mono">${escapeHtml(ctx.itemTime)}</span></div>
+      <div><strong>3. Bilgi Sınıfı (Epistemik Durum):</strong> <span class="kpi-badge ok" style="font-size:0.68rem;">${escapeHtml(ctx.itemEpistemic)}</span> — Gözlem (●), İddia (◆), Varsayım, Hipotez (---) ve Simülasyon Çıktısı (◈) birbirinden ayrı tutulur.</div>
+      <div><strong>4. Hangi motor veya yöntem kullanıldı?</strong> <code>${escapeHtml(ctx.engineLabel)}</code></div>
+      <div><strong>5. Karşıt kanıt var mı?</strong> ${ctx.counterEvidenceHtml}</div>
+      <div><strong>6. Eksik veri var mı?</strong> ${ctx.missingDataHtml}</div>
       <div><strong>7. Ticari kullanım uygunluğu:</strong> <span class="kpi-badge ok" style="font-size:0.68rem;">ÜRETİMDE SERBEST</span> — CesiumJS (Apache-2.0), MapLibre GL (BSD-3), Cytoscape.js (MIT), ECharts (Apache-2.0), Natural Earth II (CC0/Kamu Malı), USGS/NASA (Kamu Malı). Kısıtlı/GPL/NC bileşenler (ör. Firecrawl AGPL, Qwen 3B Research, Google 3D Tiles API) varsayılan üretim paketinde <strong>devre dışıdır</strong>.</div>
     </div>
   `;
@@ -25697,6 +26412,29 @@ function initCaelusSpatialInterfaceSystem() {
   window.applyCytoscapeHopDepth = applyCytoscapeHopDepth;
   window.renderScenariosSixQuestionsAndThreeFutures = renderScenariosSixQuestionsAndThreeFutures;
 
+  // 8. Wire 4 Primary Quick Actions (1. Bir durumu incele, 2. Seçenekleri karşılaştır, 3. Kendi dosyanı kullan, 4. Önceki çalışmalarını aç)
+  document.querySelectorAll('[data-quick-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const act = btn.getAttribute('data-quick-action');
+      toggleSpatialCompassPopover(false);
+      if (act === 'inspect-state') {
+        switchQuietView('dunyam');
+        const callout = document.getElementById('dunyam-stage-callout-card');
+        if (callout) callout.classList.remove('is-collapsed');
+        updateCalloutProgressiveLayers();
+      } else if (act === 'compare-options') {
+        switchQuietView('senaryolar');
+      } else if (act === 'use-own-file') {
+        switchQuietView('dunyam');
+        if (typeof toggleFirstRealTaskDrawer === 'function') {
+          toggleFirstRealTaskDrawer(true);
+        }
+      } else if (act === 'open-history') {
+        switchQuietView('hafiza');
+      }
+    });
+  });
+
   if (window.CaelusSpatialExperience && typeof window.CaelusSpatialExperience.initSpatialStageExperience === 'function') {
     window.CaelusSpatialExperience.initSpatialStageExperience();
   }
@@ -25715,7 +26453,8 @@ const cFirstRealTaskState = {
   columnOverrides: {},
   dedupDecisions: {},
   questionTr: '',
-  workflowResult: null
+  workflowResult: null,
+  transferredToStage: false
 };
 
 function renderFirstRealTaskDrawerUI() {
@@ -25723,6 +26462,7 @@ function renderFirstRealTaskDrawerUI() {
   const drawer = document.getElementById('caelus-first-real-task-drawer');
   if (!eng || !drawer) return null;
 
+  const activeLocale = (typeof state !== 'undefined' && state.activeLocaleCode) ? state.activeLocaleCode : 'tr-TR';
   const wf = eng.runCompleteFirstRealTaskWorkflow({
     caseId: cFirstRealTaskState.activeCaseId,
     readReport: cFirstRealTaskState.customReadReport || null,
@@ -25732,7 +26472,8 @@ function renderFirstRealTaskDrawerUI() {
     columnOverrides: cFirstRealTaskState.columnOverrides,
     dedupDecisions: cFirstRealTaskState.dedupDecisions,
     mergeConfirmedCandidates: false,
-    questionTr: cFirstRealTaskState.questionTr || undefined
+    questionTr: cFirstRealTaskState.questionTr || undefined,
+    locale: activeLocale
   });
   cFirstRealTaskState.workflowResult = wf;
 
@@ -25766,7 +26507,7 @@ function renderFirstRealTaskDrawerUI() {
     summaryEl.innerHTML = `
       <div>
         <strong>[● KAYNAK DOSYA]:</strong> <code>${escapeHtml(wf.read_report.source_file)}</code> ·
-        <strong>SHA-256:</strong> <code>${escapeHtml(wf.read_report.source_hash_sha256.slice(0, 20))}…</code> ·
+        <strong>SHA-256 (FIPS 180-4):</strong> <code>${escapeHtml(wf.read_report.source_hash_sha256.slice(0, 20))}…</code> ·
         <strong>Geçerli Satır:</strong> <strong>${wf.data_package.valid_record_count}</strong> / ${wf.data_package.total_data_rows} ·
         <strong>Makro Politikası:</strong> <code>${escapeHtml(wf.read_report.macro_policy)}</code>
       </div>
@@ -25898,11 +26639,16 @@ function renderFirstRealTaskDrawerUI() {
   if (qInput && !cFirstRealTaskState.questionTr) {
     qInput.value = wf.comparison_result.question_tr;
   }
+  const incRep = wf.world_model.entity_inclusion_report || {
+    total_entity_count: wf.world_model.entity_count,
+    included_entity_count: wf.world_model.entity_count,
+    excluded_entity_count: 0
+  };
   const transferSummaryEl = document.getElementById('frt-world-transfer-summary');
   if (transferSummaryEl) {
     transferSummaryEl.innerHTML = `
       <strong>[● DÜNYA MODELİ HAZIR]:</strong> Dünya Kimliği: <code>${escapeHtml(wf.world_model.world_id)}</code> ·
-      <strong>${wf.world_model.entity_count}</strong> Varlık ·
+      <strong>Dahil Edilen Varlık:</strong> <strong>${incRep.included_entity_count} / ${incRep.total_entity_count}</strong> (Hariç Tutulan: ${incRep.excluded_entity_count} · Sessiz Kırpma: Yok) ·
       <strong>${wf.world_model.relation_count}</strong> Doğrulanmış İlişki ·
       <strong>${wf.world_model.assumptions.length}</strong> Açık Varsayım.
     `;
@@ -25911,7 +26657,7 @@ function renderFirstRealTaskDrawerUI() {
   // Adım 7: İki Seçeneği Karşılaştır
   const recBadge = document.getElementById('frt-recommended-option-badge');
   if (recBadge) {
-    recBadge.textContent = `Önerilen: ${wf.comparison_result.recommended_option_id}`;
+    recBadge.textContent = `${wf.comparison_result.stance_label_tr || 'Önerilen'}: ${wf.comparison_result.recommended_option_id}`;
   }
   const cmpBox = document.getElementById('frt-comparison-box');
   if (cmpBox) {
@@ -25939,7 +26685,7 @@ function renderFirstRealTaskDrawerUI() {
           <div style="font-size:0.72rem; color:#CBD5E1;">Hiçbir müdahale uygulanmadığında 24 adım sonundaki yayılım</div>
         </div>
         <div style="background:rgba(15,38,32,0.85); border:1px solid rgba(74,222,128,0.45); border-radius:8px; padding:8px 10px;">
-          <div style="font-size:0.70rem; color:#4ADE80; font-weight:700;">[▲ SİMÜLASYON] SEÇENEK 1 (ÖNERİLEN)</div>
+          <div style="font-size:0.70rem; color:#4ADE80; font-weight:700;">[▲ SİMÜLASYON] SEÇENEK 1 (VARSAYIMA BAĞLI ÖNERİ)</div>
           <div style="font-size:1.05rem; font-weight:800; color:#4ADE80;">Baskı: ${cmp.option_1.system_stress_score} (${cmp.option_1.delta_vs_baseline})</div>
           <div style="font-size:0.72rem; color:#E2E8F0;">${escapeHtml(cmp.option_1.intervention_label)}</div>
         </div>
@@ -25950,7 +26696,12 @@ function renderFirstRealTaskDrawerUI() {
         </div>
       </div>
       <div style="padding:8px 10px; background:rgba(12,24,44,0.85); border-left:3px solid #E6C387; border-radius:6px; color:#F1F5F9;">
-        <strong>Karar Dayanağı:</strong> ${escapeHtml(cmp.recommendation_explanation_tr)}
+        <div><strong>Karar Dayanağı (${escapeHtml(cmp.stance_label_tr || 'Varsayıma Bağlı Karşılaştırma')}):</strong> ${escapeHtml(cmp.recommendation_explanation_tr)}</div>
+        <div style="margin-top:4px; font-size:0.71rem; color:#93C5FD;">
+          <strong>Hesaplama Motoru:</strong> ${escapeHtml(cmp.calculation_engine_label_tr || cmp.calculation_engine || '')} ·
+          <strong>Kullanılan Alanlar:</strong> ${escapeHtml((cmp.used_fields_in_calculation || []).join(', '))} ·
+          <strong>Hesaba Katılmayan Alanlar:</strong> ${escapeHtml((cmp.unused_fields_in_calculation || []).join(', '))}
+        </div>
       </div>
       <div class="caelus-frt-table-wrap">
         <table class="caelus-frt-table">
@@ -25996,6 +26747,7 @@ function transferFirstRealTaskWorldToStage() {
   const wf = cFirstRealTaskState.workflowResult || renderFirstRealTaskDrawerUI();
   if (!wf || !wf.ok) return false;
 
+  cFirstRealTaskState.transferredToStage = true;
   const pack = wf.world_model.scenario_pack;
   if (pack && pack.extended_causal_model) {
     state.activeScenario = pack.id;
@@ -26042,10 +26794,15 @@ function transferFirstRealTaskWorldToStage() {
 
   if (typeof drawCausalGraph === 'function') drawCausalGraph();
   if (typeof drawDunyamHeroStage === 'function') drawDunyamHeroStage();
+  if (typeof updateCalloutProgressiveLayers === 'function') updateCalloutProgressiveLayers();
+  if (typeof renderAndOpenProvenanceDrawer === 'function') renderAndOpenProvenanceDrawer(false);
+  if (typeof renderAndOpenTimeLensPopover === 'function') {
+    renderAndOpenTimeLensPopover(window.cActiveTimeLensCutoffIso || '2021-03-17T23:59:59Z', false);
+  }
 
   const transferSummaryEl = document.getElementById('frt-world-transfer-summary');
   if (transferSummaryEl) {
-    transferSummaryEl.innerHTML = `<span style="color:#4ADE80; font-weight:700;">✓ SAHNEYE AKTARILDI:</span> <code>${escapeHtml(wf.world_model.world_id)}</code> (${wf.world_model.entity_count} varlık, ${wf.world_model.relation_count} ilişki) 3B/2B sahneye ve deterministik senaryo motoruna bağlandı.`;
+    transferSummaryEl.innerHTML = `<span style="color:#4ADE80; font-weight:700;">✓ SAHNEYE AKTARILDI:</span> <code>${escapeHtml(wf.world_model.world_id)}</code> (${wf.world_model.entity_count} varlık, ${wf.world_model.relation_count} ilişki) 3B/2B sahneye, Kaynak İzi çekmecesine, Zaman Merceğine ve deterministik senaryo motoruna bağlandı.`;
   }
   return true;
 }
@@ -26128,6 +26885,7 @@ function initCaelusFirstRealTaskSystem() {
       cFirstRealTaskState.columnOverrides = {};
       cFirstRealTaskState.dedupDecisions = { DEDUP_ALFA_TEKNOLOJI: 'MERGE' };
       cFirstRealTaskState.questionTr = '';
+      cFirstRealTaskState.transferredToStage = false;
       renderFirstRealTaskDrawerUI();
     });
   }
@@ -26142,6 +26900,7 @@ function initCaelusFirstRealTaskSystem() {
       cFirstRealTaskState.columnOverrides = {};
       cFirstRealTaskState.dedupDecisions = { DEDUP_ULUSAL_VERI_MERKEZI: 'MERGE' };
       cFirstRealTaskState.questionTr = '';
+      cFirstRealTaskState.transferredToStage = false;
       renderFirstRealTaskDrawerUI();
     });
   }
@@ -26155,6 +26914,7 @@ function initCaelusFirstRealTaskSystem() {
       cFirstRealTaskState.customFileName = file.name;
       cFirstRealTaskState.columnOverrides = {};
       cFirstRealTaskState.dedupDecisions = {};
+      cFirstRealTaskState.transferredToStage = false;
       const lower = file.name.toLowerCase();
       if (lower.endsWith('.xlsx') || lower.endsWith('.xlsm') || lower.endsWith('.ods')) {
         const ab = await file.arrayBuffer();
@@ -26238,7 +26998,8 @@ function initCaelusFirstRealTaskSystem() {
     btnExportHtmlPdf.addEventListener('click', () => {
       const wf = cFirstRealTaskState.workflowResult || renderFirstRealTaskDrawerUI();
       if (!wf || !wf.ok) return;
-      const htmlReport = wf.export_builders.buildPrintHtml();
+      const activeLocale = (typeof state !== 'undefined' && state.activeLocaleCode) ? state.activeLocaleCode : 'tr-TR';
+      const htmlReport = wf.export_builders.buildPrintHtml({ locale: activeLocale });
       const dossierModal = document.getElementById('dossier-modal');
       const dossierContent = document.getElementById('dossier-content');
       if (dossierModal && dossierContent) {
@@ -26246,7 +27007,7 @@ function initCaelusFirstRealTaskSystem() {
         dossierModal.classList.remove('hidden');
       }
       if (statusBanner) {
-        statusBanner.innerHTML = `<strong>✓ ÇOK SAYFALI HTML / PDF BASKI RAPORU AÇILDI:</strong> 7 bölüm ve kaynak izi tabloları (@media print uyumlu, ${htmlReport.length} bayt) görüntülenmeye ve PDF olarak kaydedilmeye hazır.`;
+        statusBanner.innerHTML = `<strong>✓ ÇOK SAYFALI HTML / PDF BASKI RAPORU AÇILDI (${escapeHtml(activeLocale)}):</strong> 7 bölüm ve kaynak izi tabloları (@media print uyumlu, ${htmlReport.length} bayt) görüntülenmeye ve PDF olarak kaydedilmeye hazır.`;
       }
     });
   }
@@ -26280,6 +27041,467 @@ function initCaelusFirstRealTaskSystem() {
   window.cFirstRealTaskState = cFirstRealTaskState;
 }
 
+// ============================================================================
+// YAŞAYAN DÜNYA KATMANI V2, LLM DIŞI KONUŞAN DANIŞMAN VE KİŞİSEL AJAN STÜDYOSU
+// ============================================================================
+function initCaelusLivingAdvisorAndAgentStudio() {
+  const lwm = window.CaelusLivingWorldModel;
+  const advMod = window.CaelusConversationalAdvisor;
+  const stuMod = window.CaelusPersonalAgentStudio;
+
+  const drawer = document.getElementById('caelus-living-advisor-agent-drawer');
+  const openBtn = document.getElementById('btn-stage-living-advisor-studio');
+  const closeBtn = document.getElementById('btn-close-living-advisor-studio');
+  if (!drawer) return;
+
+  const advisorSession = advMod && typeof advMod.createConversationalAdvisorSession === 'function'
+    ? advMod.createConversationalAdvisorSession({
+        language: (typeof state !== 'undefined' && state.activeLocaleCode) || 'tr-TR'
+      })
+    : null;
+
+  const agentStudio = stuMod && typeof stuMod.createPersonalAgentStudio === 'function'
+    ? stuMod.createPersonalAgentStudio()
+    : null;
+
+  const livingScheduler = lwm && typeof lwm.createLivingWorldScheduler === 'function'
+    ? lwm.createLivingWorldScheduler({
+        executionMode: 'YALNIZ_UYGULAMA_ACIKKEN'
+      })
+    : null;
+
+  // Varsayılan 3 Zorunlu Ajanı oluştur (1. Gerçek Kaynak Takip, 2. Kullanıcı Dosyası İnceleme, 3. Seçenek Karşılaştırma)
+  if (agentStudio && agentStudio.listAgents().length === 0) {
+    agentStudio.createAgent({
+      agent_id: 'agent-real-source-tracker-01',
+      name: '1. Gerçek Kaynak Takip Ajanı (TSMC & Apple)',
+      purpose: 'Wikidata, SEC EDGAR ve OpenAlex kaynaklarında TSMC ve Apple Inc. ile ilgili yeni gelişmeleri ve sendikasyon tekrarlarını izlemek.',
+      capabilityType: 'TRACK_REAL_SOURCE',
+      executionMode: 'APP_OPEN',
+      allowed_sources: ['wikidata', 'sec_edgar', 'openalex'],
+      entities: ['TSMC', 'Apple Inc.'],
+      network_access: true,
+      local_file_read: false
+    });
+    agentStudio.createAgent({
+      agent_id: 'agent-user-file-inspector-02',
+      name: '2. Kullanıcı Dosyası İnceleme Ajanı (Tedarik CSV)',
+      purpose: 'Yalnızca izin verilen tedarik_secenekleri_2026.csv dosyasını okuyarak sütunları eşlemek, bozuk satırları yakalamak ve satır izi kurmak.',
+      capabilityType: 'INSPECT_USER_FILE',
+      executionMode: 'MANUAL',
+      allowed_sources: ['user_local_file'],
+      user_files: ['tedarik_secenekleri_2026.csv'],
+      network_access: false,
+      local_file_read: true
+    });
+    agentStudio.createAgent({
+      agent_id: 'agent-option-comparator-03',
+      name: '3. Seçenek Karşılaştırma ve Özet Ajanı',
+      purpose: 'Tedarik seçeneklerini maliyet, süre ve risk kriterlerine göre deterministik formülle karşılaştırmak ve birim uyumsuzluklarını yakalamak.',
+      capabilityType: 'COMPARE_OPTIONS',
+      executionMode: 'MANUAL',
+      allowed_sources: ['user_local_file'],
+      network_access: false,
+      local_file_read: false,
+      parameters: {
+        options: [
+          { name: 'Dresden Yerel Hat', cost: 142, currency: 'USD', durationDays: 18, riskScore: 15 },
+          { name: 'Asya Ekspres Hat', cost: 118, currency: 'USD', durationDays: 34, riskScore: 42 }
+        ]
+      }
+    });
+  }
+
+  let activeLaaTab = 'living-world';
+  let activeLwSubview = 'DUNYA_SIMDI';
+
+  function renderLivingWorldSubview() {
+    const host = document.getElementById('laa-living-world-content');
+    const emptyMsgEl = document.getElementById('laa-empty-world-message');
+    if (!host || !lwm) return;
+
+    const locale = (typeof state !== 'undefined' && state.activeLocaleCode) || 'tr-TR';
+    if (emptyMsgEl && lwm.EMPTY_WORLD_MESSAGES_12) {
+      emptyMsgEl.textContent = lwm.EMPTY_WORLD_MESSAGES_12[locale] || lwm.EMPTY_WORLD_MESSAGES_12['tr-TR'];
+    }
+
+    const memRecords = advisorSession ? advisorSession.inspectSeparatedMemory().C_SOURCED_WORLD_MEMORY : [];
+
+    if (activeLwSubview === 'DUNYA_SIMDI') {
+      const connectors = Array.isArray(lwm.REAL_WORLD_SOURCE_CONNECTORS_CATALOG)
+        ? lwm.REAL_WORLD_SOURCE_CONNECTORS_CATALOG
+        : Object.values(lwm.REAL_WORLD_SOURCE_CONNECTORS_CATALOG || {});
+      const clock = typeof lwm.getSystemClockAndTimezoneState === 'function'
+        ? lwm.getSystemClockAndTimezoneState()
+        : { utcNowIso: new Date().toISOString(), timeZone: 'UTC' };
+
+      const rowsHtml = connectors.map((c) => {
+        const sid = c.sourceId || c.id || '';
+        const name = c.displayName || c.name || sid;
+        const lic = c.license || 'Açık Kaynak';
+        const comm = c.commercialStatus || 'ALLOWED_COMMERCIAL';
+        const domain = (c.domains || []).join(', ');
+        return `
+          <tr>
+            <td><strong>${escapeHtml(name)}</strong><br><code class="mono" style="font-size:0.68rem;">${escapeHtml(sid)}</code></td>
+            <td>${escapeHtml(domain)}</td>
+            <td><span class="kpi-badge ok">${escapeHtml(lic)}</span></td>
+            <td><span class="kpi-badge accent">${escapeHtml(comm)}</span></td>
+            <td><span class="kpi-badge">YALNIZ_UYGULAMA_ACIKKEN</span></td>
+          </tr>
+        `;
+      }).join('');
+
+      host.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+          <span><strong>Sistem Saati (UTC):</strong> <code class="mono">${escapeHtml(clock.utcNowIso || '')}</code> · Saat Dilimi: <code>${escapeHtml(clock.timeZone || 'UTC')}</code></span>
+          <span class="kpi-badge ok">5 Gerçek Açık Veri Bağlayıcısı Tanımlı</span>
+        </div>
+        <div class="caelus-frt-table-wrap">
+          <table class="caelus-frt-table">
+            <thead>
+              <tr>
+                <th>Gerçek Veri Kaynağı</th>
+                <th>Kapsanan Alanlar</th>
+                <th>Lisans</th>
+                <th>Ticari Kullanım</th>
+                <th>Zamanlayıcı Modu</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (activeLwSubview === 'ILGILENDIGIM_KONU') {
+      const recRows = memRecords.map((r) => `
+        <tr>
+          <td><strong>${escapeHtml(r.title || r.record_id)}</strong><br><span style="color:var(--text-2); font-size:0.71rem;">${escapeHtml(r.summary || '')}</span></td>
+          <td>${escapeHtml(r.source_name || r.source_id)}<br><code style="font-size:0.67rem;">${escapeHtml(r.source_license || '')}</code></td>
+          <td>
+            <div>A. Olay: <code>${escapeHtml(String(r.event_time || 'not_provided').slice(0, 19))}</code></div>
+            <div>B. Yayın: <code>${escapeHtml(String(r.source_published_at || 'not_provided').slice(0, 19))}</code></div>
+            <div>C. Alım: <code>${escapeHtml(String(r.ingested_at || '').slice(0, 19))}</code></div>
+            <div>D. Kontrol: <code>${escapeHtml(String(r.last_checked_at || '').slice(0, 19))}</code></div>
+          </td>
+          <td><span class="kpi-badge ok">${escapeHtml(r.epistemic_status || 'OBSERVED_FACT')}</span></td>
+        </tr>
+      `).join('');
+
+      host.innerHTML = `
+        <div style="font-size:0.76rem; color:#88D4FF; font-weight:600;">İlgilendiğiniz Kurum ve Alan Kayıtları (5 Ayrı Zaman Damgası Korunur — Olay Tarihi ≠ Alım Tarihi):</div>
+        <div class="caelus-frt-table-wrap">
+          <table class="caelus-frt-table">
+            <thead>
+              <tr>
+                <th>Başlık &amp; Özet</th>
+                <th>Kaynak &amp; Lisans</th>
+                <th>5 Zaman Damgası (A/B/C/D)</th>
+                <th>Epistemik Sınıf</th>
+              </tr>
+            </thead>
+            <tbody>${recRows}</tbody>
+          </table>
+        </div>
+      `;
+    } else {
+      const entRes = typeof lwm.resolveLivingWorldEntities === 'function'
+        ? lwm.resolveLivingWorldEntities([
+            { id: 'e1', name: 'TSMC', external_ids: { wikidata_qid: 'Q713418' }, country: 'TW' },
+            { id: 'e2', name: 'Taiwan Semiconductor Manufacturing Co.', external_ids: {}, country: 'TW' }
+          ])
+        : { candidates: [] };
+      const candidateBanner = (entRes.candidates && entRes.candidates.length > 0)
+        ? entRes.candidates.map((c) => `<div style="padding:6px 10px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.45); border-radius:8px;"><strong>Yanlış Birleştirme Koruması:</strong> ${escapeHtml(c.promptTr || 'Bu iki kayıt aynı kuruma ait olabilir.')} (Otomatik birleştirilmedi, kullanıcı onayı bekleniyor.)</div>`).join('')
+        : '<div style="padding:6px 10px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.45); border-radius:8px;"><strong>Yanlış Birleştirme Koruması:</strong> "Bu iki kayıt aynı kuruma ait olabilir." (Kesin dış kimlik eşleşmesi olmayan benzer isimler otomatik birleştirilmez.)</div>';
+
+      host.innerHTML = `
+        ${candidateBanner}
+        <div style="padding:8px 10px; background:rgba(12,24,46,0.78); border:1px solid rgba(136,212,255,0.22); border-radius:10px;">
+          <strong>Alanlar Arası Bağlantı Kategorileri (A–G):</strong>
+          <ul style="margin:6px 0 0 16px; line-height:1.45;">
+            <li><strong>DOGRUDAN_KAYNAKLI_ILISKI:</strong> TSMC ↔ Apple Inc. (SEC EDGAR CIK0000320193 ve Wikidata Q713418 ortak tedarik bildirimi)</li>
+            <li><strong>ORTAK_VARLIK_BAGLANTISI:</strong> TSMC ↔ ASML (Avrupa yarı iletken üretim ve litografi ekipmanı ortaklığı)</li>
+            <li><strong>ZAMANSAL_YAKINLIK / HIPOTEZ_ADAYI:</strong> Kapasite tahsisi değişiminin alt kademe donanım teslim sürelerine olası etkisi (Nedensellik olarak sunulmaz!)</li>
+          </ul>
+        </div>
+      `;
+    }
+  }
+
+  function renderAdvisorTurnOutput(turnRec) {
+    const out = document.getElementById('laa-advisor-turn-output');
+    if (!out || !turnRec) return;
+    const plan = turnRec.structuredAnswerPlan || {};
+    const passport = turnRec.answerPassport || { segments: [] };
+
+    const segHtml = (passport.segments || []).map((seg) => `
+      <div style="padding:5px 8px; border-radius:7px; background:rgba(15,28,52,0.85); border-left:3px solid #38bdf8; display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+        <span><strong>[${escapeHtml(seg.classCode)} · ${escapeHtml(seg.labelTr)}]:</strong> ${escapeHtml(seg.text)}</span>
+      </div>
+    `).join('');
+
+    out.innerHTML = `
+      <div style="padding:10px 12px; border-radius:10px; background:rgba(12,26,48,0.92); border:1px solid rgba(136,212,255,0.32);">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+          <strong style="color:#E6C387;">Konuşma Turu #${turnRec.turnIndex} · Niyet: <code>${escapeHtml(plan.user_intent || '')}</code> · Politika: <code>${escapeHtml(plan.answer_type || '')}</code></strong>
+          <span class="kpi-badge ok">Odak Varlık: ${escapeHtml((plan.referenced_entities || []).join(', ') || 'Belirtilmedi')}</span>
+        </div>
+        <div style="white-space:pre-line; color:#F8FAFC; line-height:1.5; margin-bottom:8px;">${escapeHtml(turnRec.answerText || '')}</div>
+        ${plan.suggested_next_action ? `<div style="font-size:0.74rem; color:#88D4FF;"><strong>Önerilen Sonraki Adım:</strong> ${escapeHtml(plan.suggested_next_action)}</div>` : ''}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5px;">
+        <strong style="font-size:0.75rem; color:#4ADE80;">CEVAP PASAPORTU (${passport.segments.length} Kanıt/Epistemik Segment · LLM Kullanılmadı):</strong>
+        ${segHtml}
+      </div>
+    `;
+  }
+
+  function renderAgentStudioList() {
+    const listEl = document.getElementById('laa-agent-studio-list');
+    if (!listEl || !agentStudio) return;
+    const agents = agentStudio.listAgents();
+
+    listEl.innerHTML = agents.map((ag) => `
+      <div style="padding:9px 11px; border-radius:10px; background:rgba(12,24,46,0.86); border:1px solid rgba(136,212,255,0.24); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div style="min-width:220px; flex:1;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <strong style="color:#F8FAFC;">${escapeHtml(ag.name)}</strong>
+            <span class="kpi-badge ok">${escapeHtml(ag.status)}</span>
+            <span class="kpi-badge mono">v${ag.version} · ${escapeHtml(ag.capability_type)}</span>
+          </div>
+          <div style="font-size:0.73rem; color:var(--text-2); margin-top:2px;">${escapeHtml(ag.purpose)}</div>
+          <div style="font-size:0.70rem; color:#88D4FF; margin-top:2px;">İzinli Kaynaklar: <code>${escapeHtml((ag.allowed_sources || []).join(', '))}</code> · Ağ: <code>${ag.permissions.network_access ? 'AÇIK' : 'KAPALI'}</code> · Dosya Okuma: <code>${ag.permissions.local_file_read ? 'AÇIK' : 'KAPALI'}</code></div>
+        </div>
+        <div style="display:flex; gap:5px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm btn-primary" data-run-agent-id="${escapeHtml(ag.agent_id)}">▶ Çalıştır</button>
+          <button type="button" class="btn btn-sm" data-pause-agent-id="${escapeHtml(ag.agent_id)}">⏸ Duraklat</button>
+          <button type="button" class="btn btn-sm" data-stop-agent-id="${escapeHtml(ag.agent_id)}">⏹ Durdur</button>
+          <button type="button" class="btn btn-sm" data-export-agent-id="${escapeHtml(ag.agent_id)}">📤 Güvenli Şablon</button>
+        </div>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('[data-run-agent-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-run-agent-id');
+        agentStudio.resumeAgentRun(aid);
+        const report = agentStudio.runAgent(aid);
+        renderAgentStudioList();
+        renderAgentRunReport(report);
+      });
+    });
+
+    listEl.querySelectorAll('[data-pause-agent-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-pause-agent-id');
+        agentStudio.pauseAgentRun(aid);
+        renderAgentStudioList();
+      });
+    });
+
+    listEl.querySelectorAll('[data-stop-agent-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-stop-agent-id');
+        agentStudio.stopAgentRun(aid);
+        renderAgentStudioList();
+      });
+    });
+
+    listEl.querySelectorAll('[data-export-agent-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-export-agent-id');
+        const ag = agentStudio.listAgents().find((x) => x.agent_id === aid);
+        if (!ag) return;
+        const safeTpl = agentStudio.exportAgentTemplateSafe(ag);
+        const outEl = document.getElementById('laa-agent-run-output');
+        if (outEl) {
+          outEl.innerHTML = `<div style="padding:8px 10px; border-radius:8px; background:rgba(16,82,56,0.45); border:1px solid #3DD68C;"><strong>✓ Güvenli Ajan Şablonu Dışa Aktarıldı (Gizli Anahtarlar ve Özel Dosyalar Temizlendi):</strong><pre style="margin-top:6px; font-size:0.70rem; overflow-x:auto;">${escapeHtml(JSON.stringify(safeTpl, null, 2))}</pre></div>`;
+        }
+      });
+    });
+  }
+
+  function renderAgentRunReport(report) {
+    const outEl = document.getElementById('laa-agent-run-output');
+    if (!outEl || !report) return;
+    outEl.innerHTML = `
+      <div style="padding:10px 12px; border-radius:10px; background:rgba(8,22,42,0.92); border:1px solid rgba(74,222,128,0.45);">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+          <strong style="color:#4ADE80;">Ajan Çalışma ve Kanıt Kartı: ${escapeHtml(report.agentName || '')}</strong>
+          <span class="kpi-badge ok">Durum: ${escapeHtml(report.status || '')} · ${report.durationMs || 1} ms</span>
+        </div>
+        <div style="margin-top:4px; color:#F8FAFC;">${escapeHtml(report.summaryTr || '')}</div>
+        <div style="margin-top:4px; font-size:0.72rem; color:#88D4FF;">Kanıt Sayısı: ${(report.evidenceItems || []).length} · Denetim Adımı: ${(report.auditSteps || []).length} · Engellenen Yetkisiz Girişim: ${(report.blockedPermissionAttempts || []).length}</div>
+        ${(report.unknowns && report.unknowns.length > 0) ? `<div style="margin-top:4px; font-size:0.72rem; color:#FBBF24;"><strong>Bilinmeyen / Hata Kayıtları:</strong> ${escapeHtml(report.unknowns.join(' | '))}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function switchLaaTab(tabId) {
+    activeLaaTab = tabId;
+    drawer.querySelectorAll('[data-laa-tab]').forEach((btn) => {
+      const isMatch = btn.getAttribute('data-laa-tab') === tabId;
+      btn.classList.toggle('active', isMatch);
+      btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+    const p1 = document.getElementById('laa-panel-living-world');
+    const p2 = document.getElementById('laa-panel-advisor');
+    const p3 = document.getElementById('laa-panel-agent-studio');
+    if (p1) p1.classList.toggle('hidden', tabId !== 'living-world');
+    if (p2) p2.classList.toggle('hidden', tabId !== 'advisor');
+    if (p3) p3.classList.toggle('hidden', tabId !== 'agent-studio');
+
+    if (tabId === 'living-world') renderLivingWorldSubview();
+    if (tabId === 'agent-studio') renderAgentStudioList();
+  }
+
+  if (openBtn) {
+    openBtn.addEventListener('click', () => {
+      const willOpen = drawer.classList.contains('hidden');
+      drawer.classList.toggle('hidden', !willOpen);
+      openBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      if (willOpen) {
+        renderLivingWorldSubview();
+        renderAgentStudioList();
+      }
+    });
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      drawer.classList.add('hidden');
+      if (openBtn) openBtn.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  drawer.querySelectorAll('[data-laa-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      switchLaaTab(btn.getAttribute('data-laa-tab'));
+    });
+  });
+
+  drawer.querySelectorAll('[data-lw-subview]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeLwSubview = btn.getAttribute('data-lw-subview');
+      drawer.querySelectorAll('[data-lw-subview]').forEach((b) => {
+        b.classList.toggle('active', b.getAttribute('data-lw-subview') === activeLwSubview);
+      });
+      renderLivingWorldSubview();
+    });
+  });
+
+  const btnExportCorePkg = document.getElementById('btn-laa-export-core-pkg');
+  if (btnExportCorePkg && lwm && typeof lwm.buildVersionedCoreAnalysisPackage === 'function') {
+    btnExportCorePkg.addEventListener('click', () => {
+      const memRecs = advisorSession ? advisorSession.inspectSeparatedMemory().C_SOURCED_WORLD_MEMORY : [];
+      const pkg = lwm.buildVersionedCoreAnalysisPackage(memRecs);
+      const replay = lwm.runOfflineCorePackageReplay(pkg);
+      const host = document.getElementById('laa-living-world-content');
+      if (host) {
+        host.insertAdjacentHTML(
+          'afterbegin',
+          `<div style="padding:8px 10px; border-radius:8px; background:rgba(16,82,56,0.45); border:1px solid #3DD68C;"><strong>✓ Çevrim Dışı Çekirdek Veri Paketi Üretildi ve Doğrulandı:</strong> Şema <code>${escapeHtml(pkg.schema_version)}</code> · SHA-256: <code>${escapeHtml((pkg.package_sha256 || '').slice(0, 16))}…</code> · Deterministik Tekrar Oynatma: <code>${replay.deterministicMatch ? 'BİREBİR EŞLEŞTİ' : 'HATA'}</code></div>`
+        );
+      }
+    });
+  }
+
+  const btnSyncReal = document.getElementById('btn-laa-sync-real-sources');
+  if (btnSyncReal && livingScheduler) {
+    btnSyncReal.addEventListener('click', async () => {
+      btnSyncReal.disabled = true;
+      btnSyncReal.textContent = 'Kontrol Ediliyor...';
+      try {
+        await livingScheduler.syncSourceNow('wikidata', { ids: 'Q713418', languages: 'tr|en' });
+      } catch (_) {}
+      btnSyncReal.disabled = false;
+      btnSyncReal.textContent = '🔄 Bağlı Gerçek Kaynakları Şimdi Kontrol Et';
+      renderLivingWorldSubview();
+    });
+  }
+
+  // Konuşan Danışman Kontrolleri
+  const askInput = document.getElementById('inp-laa-advisor-question');
+  const askBtn = document.getElementById('btn-laa-advisor-ask');
+  if (askBtn && advisorSession) {
+    askBtn.addEventListener('click', () => {
+      const q = askInput ? askInput.value.trim() : '';
+      if (!q) return;
+      const turnRec = advisorSession.processAdvisorTurn(q);
+      renderAdvisorTurnOutput(turnRec);
+    });
+  }
+
+  drawer.querySelectorAll('.laa-advisor-quick-q').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const q = btn.getAttribute('data-advisor-q') || '';
+      if (askInput) askInput.value = q;
+      if (advisorSession) {
+        const turnRec = advisorSession.processAdvisorTurn(q);
+        renderAdvisorTurnOutput(turnRec);
+      }
+    });
+  });
+
+  const resetBtn = document.getElementById('btn-laa-reset-dialogue-state');
+  if (resetBtn && advisorSession) {
+    resetBtn.addEventListener('click', () => {
+      advisorSession.clearDialogueState();
+      const out = document.getElementById('laa-advisor-turn-output');
+      if (out) {
+        out.innerHTML = `<div style="padding:8px 10px; border-radius:8px; background:rgba(15,28,52,0.85);">✓ Konuşma içi geçici bağlam (A_EPHEMERAL_DIALOGUE_STATE) sıfırlandı.</div>`;
+      }
+    });
+  }
+
+  // Kişisel Ajan Doğal Dil Hedef Ayrıştırıcı
+  const goalInput = document.getElementById('inp-laa-agent-goal');
+  const goalCreateBtn = document.getElementById('btn-laa-parse-goal-create-agent');
+  const testUnsupportedBtn = document.getElementById('btn-laa-test-unsupported-goal');
+  const feedbackEl = document.getElementById('laa-agent-draft-feedback');
+
+  function handleGoalParse(rawGoal) {
+    if (!agentStudio || !stuMod) return;
+    const draft = stuMod.parseNaturalLanguageGoalToAgentDraft(rawGoal);
+    if (!draft.supported) {
+      if (feedbackEl) {
+        feedbackEl.classList.remove('hidden');
+        feedbackEl.innerHTML = `<strong>Desteklenmeyen Kaynak Reddedildi:</strong> ${escapeHtml(draft.honestUserMessageTr)} <em>(${escapeHtml(draft.rejectedReason || '')})</em>`;
+      }
+      return;
+    }
+    if (feedbackEl) feedbackEl.classList.add('hidden');
+    agentStudio.createAgent({
+      name: draft.proposedName,
+      purpose: draft.proposedPurpose,
+      capabilityType: draft.capabilityType,
+      executionMode: draft.executionMode,
+      allowed_sources: draft.selectedSources,
+      entities: draft.focusEntities
+    });
+    renderAgentStudioList();
+  }
+
+  if (goalCreateBtn) {
+    goalCreateBtn.addEventListener('click', () => {
+      const g = goalInput ? goalInput.value.trim() : '';
+      if (g) handleGoalParse(g);
+    });
+  }
+  if (testUnsupportedBtn) {
+    testUnsupportedBtn.addEventListener('click', () => {
+      if (goalInput) goalInput.value = 'Bütün sosyal medyayı izle';
+      handleGoalParse('Bütün sosyal medyayı izle');
+    });
+  }
+
+  renderLivingWorldSubview();
+  renderAgentStudioList();
+
+  window.caelusAdvisorSession = advisorSession;
+  window.caelusPersonalAgentStudioInstance = agentStudio;
+  window.caelusLivingWorldSchedulerInstance = livingScheduler;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
   setInterval(updateClock, 1000);
@@ -26301,6 +27523,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initCaelusDiscoveryValueEngineUI();
   initCaelusSpatialInterfaceSystem();
   initCaelusFirstRealTaskSystem();
+  initCaelusLivingAdvisorAndAgentStudio();
 
   addAuditLog('info', 'CAELUS Karar Analitiği Arayüzü başlatıldı. Gerçek motor bağlantısı kontrol ediliyor...');
   addReplLine('Motor konsolu hazır. Komutlar: status, list levers, lever <id>, compare_lever <id> <ufuk> <tohum>, tick <n>, scenario <id>, load_json <json>, reset', 'info');

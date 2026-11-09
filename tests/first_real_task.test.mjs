@@ -311,3 +311,75 @@ test('Bölüm 12: CAELUS İsteğe Bağlı MCP Sunucusu — 10 Zorunlu Araç ve G
   assert.ok(promoRes.error);
   assert.equal(promoRes.error.data.errorCode, 'MCP_EPISTEMIC_PROMOTION_FORBIDDEN');
 });
+
+test('Test 11: Tam Bayt FIPS 180-4 SHA-256 (>4.096 bayt çakışma direnci) ve Eski FNV-1a Göçü', async () => {
+  const crypto = await import('node:crypto');
+  // 4.096 bayttan sonra farklılaşan iki 12 KB veri dizisi
+  const bufA = new Uint8Array(12288);
+  const bufB = new Uint8Array(12288);
+  bufA.fill(0x41);
+  bufB.fill(0x41);
+  bufA[8192] = 0x42; // 4.096 bayt sınırından çok sonra farklılık!
+  bufB[8192] = 0x43;
+
+  const shaA = eng.computeSha256Hex(bufA);
+  const shaB = eng.computeSha256Hex(bufB);
+  const fipsA = eng.computeSha256HexFips180_4(bufA);
+  const fipsB = eng.computeSha256HexFips180_4(bufB);
+  const asyncA = await eng.computeSha256HexAsync(bufA);
+  const nodeShaA = crypto.createHash('sha256').update(bufA).digest('hex');
+
+  assert.equal(shaA.length, 64);
+  assert.equal(shaA, nodeShaA);
+  assert.equal(fipsA, nodeShaA);
+  assert.equal(asyncA, nodeShaA);
+  assert.notEqual(shaA, shaB, '4.096 bayttan sonraki değişiklik farklı SHA-256 üretmeli');
+  assert.notEqual(fipsA, fipsB, 'Saf JS FIPS 180-4 SHA-256 da tüm baytları işlemeli');
+
+  // Eski 8xFNV-1a özet göç testi
+  const migrated = eng.inspectAndMigrateStoredDigest('0123456701234567012345670123456701234567012345670123456701234567', bufA);
+  assert.equal(migrated.valid_sha256, false);
+  assert.equal(migrated.migrated_sha256, nodeShaA);
+});
+
+test('Test 12: 8 Varlık Sınırı Olmadan Tüm Varlıkların Senaryo Motoruna Aktarımı, Anlamsal Düğüm Türü ve 12 Dil Raporu', () => {
+  // 11 benzersiz varlık içeren CSV oluştur (Kritiklik [0, 1] aralığında)
+  const rows = ['Şirket Adı,Hedef Düğüm,İlişki Türü,Kritiklik_Skoru,Miktar,Birim,Tarih,Kanıt Kaynağı'];
+  for (let i = 1; i <= 11; i++) {
+    rows.push(`Tedarikçi_${i},Merkez_Üretim_Tesisi,Tedarik_Bağımlılığı,0.${60 + i},${100 * i},MW,2026-03-01,Sözleşme_${i}`);
+  }
+  const csv11 = rows.join('\n');
+  const wf11 = eng.runCompleteFirstRealTaskWorkflow({
+    csvContent: csv11,
+    fileName: 'onbir_varlik_testi.csv'
+  });
+
+  assert.equal(wf11.ok, true);
+  assert.equal(wf11.world_model.entity_count, 11);
+  const compiledPack = wf11.world_model.scenario_pack;
+  assert.equal(compiledPack.entity_inclusion_report.total_entity_count, 11);
+  assert.equal(compiledPack.entity_inclusion_report.included_entity_count, 11);
+  assert.equal(compiledPack.entity_inclusion_report.excluded_entity_count, 0);
+  assert.equal(compiledPack.entity_inclusion_report.silent_truncation, false);
+  assert.equal(wf11.comparison_result.node_comparisons.length, 11);
+
+  // Sıra numarasına göre sahte 'Adversary' atanmamalı
+  for (const node of compiledPack.extended_causal_model.nodes) {
+    assert.notEqual(node.kind, 'Adversary');
+  }
+
+  // 12 hedef dilde HTML rapor üretimi ve RTL kontrolü
+  const locales12 = ['tr-TR', 'en-US', 'el-GR', 'de-DE', 'fr-FR', 'es-ES', 'it-IT', 'pt-BR', 'ar-SA', 'he-IL', 'ru-RU', 'zh-Hans'];
+  for (const loc of locales12) {
+    const pack = eng.getReportLocalePack(loc);
+    const html = wf11.export_builders.buildPrintHtml({ locale: loc });
+    assert.ok(html.includes(`lang="${pack.langAttr}"`), `${loc} dil etiketi eksik`);
+    assert.ok(html.includes(pack.page1Title), `${loc} 1. sayfa başlığı eksik`);
+    if (loc === 'ar-SA' || loc === 'he-IL') {
+      assert.ok(html.includes('dir="rtl"'), `${loc} için RTL yönü eksik`);
+    } else {
+      assert.ok(html.includes('dir="ltr"'), `${loc} için LTR yönü eksik`);
+    }
+  }
+});
+

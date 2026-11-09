@@ -394,18 +394,171 @@
       .trim();
   }
 
-  function computeSha256Hex(input) {
-    if (typeof require === 'function') {
+  const HASH_SCHEME_VERSION = 'sha256-fips180-4-v2';
+  const HASH_ALGORITHM_LABEL = 'SHA-256 (FIPS 180-4)';
+
+  const SHA256_K = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ]);
+
+  function toByteBuffer(input) {
+    if (typeof input === 'string') {
+      if (typeof TextEncoder !== 'undefined') {
+        return new TextEncoder().encode(input);
+      }
+      const utf8 = unescape(encodeURIComponent(input));
+      const out = new Uint8Array(utf8.length);
+      for (let i = 0; i < utf8.length; i++) out[i] = utf8.charCodeAt(i) & 0xff;
+      return out;
+    }
+    if (input instanceof Uint8Array) {
+      return input;
+    }
+    if (typeof ArrayBuffer !== 'undefined' && input instanceof ArrayBuffer) {
+      return new Uint8Array(input);
+    }
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(input)) {
+      return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    }
+    if (Array.isArray(input)) {
+      return Uint8Array.from(input);
+    }
+    throw new Error('CAELUS_SHA256_UNSUPPORTED_INPUT: Girdi string, Uint8Array veya ArrayBuffer olmalıdır.');
+  }
+
+  /**
+   * Gerçek FIPS PUB 180-4 SHA-256 (Tam bayt dizisi üzerinden deterministik 256-bit özet).
+   * Tarayıcı ve Node.js ortamlarında hiçbir bayt kesintisi (4.096 bayt sınırı vb.) olmadan
+   * tüm dosya baytlarını işler.
+   */
+  function computeSha256HexFips180_4(input) {
+    const bytes = toByteBuffer(input);
+    const len = bytes.length;
+    const bitLenHi = Math.floor((len * 8) / 0x100000000) >>> 0;
+    const bitLenLo = (len * 8) >>> 0;
+
+    const totalLen = (((len + 9 + 63) >> 6) << 6);
+    const padded = new Uint8Array(totalLen);
+    padded.set(bytes, 0);
+    padded[len] = 0x80;
+    const dv = new DataView(padded.buffer);
+    dv.setUint32(totalLen - 8, bitLenHi, false);
+    dv.setUint32(totalLen - 4, bitLenLo, false);
+
+    let h0 = 0x6a09e667;
+    let h1 = 0xbb67ae85;
+    let h2 = 0x3c6ef372;
+    let h3 = 0xa54ff53a;
+    let h4 = 0x510e527f;
+    let h5 = 0x9b05688c;
+    let h6 = 0x1f83d9ab;
+    let h7 = 0x5be0cd19;
+
+    const w = new Uint32Array(64);
+
+    for (let offset = 0; offset < totalLen; offset += 64) {
+      for (let i = 0; i < 16; i++) {
+        w[i] = dv.getUint32(offset + i * 4, false);
+      }
+      for (let i = 16; i < 64; i++) {
+        const v0 = w[i - 15];
+        const s0 = (((v0 >>> 7) | (v0 << 25)) ^ ((v0 >>> 18) | (v0 << 14)) ^ (v0 >>> 3)) >>> 0;
+        const v1 = w[i - 2];
+        const s1 = (((v1 >>> 17) | (v1 << 15)) ^ ((v1 >>> 19) | (v1 << 13)) ^ (v1 >>> 10)) >>> 0;
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+      }
+
+      let a = h0;
+      let b = h1;
+      let c = h2;
+      let d = h3;
+      let e = h4;
+      let f = h5;
+      let g = h6;
+      let h = h7;
+
+      for (let i = 0; i < 64; i++) {
+        const S1 = (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7))) >>> 0;
+        const ch = ((e & f) ^ (~e & g)) >>> 0;
+        const temp1 = (h + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
+        const S0 = (((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10))) >>> 0;
+        const maj = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
+        const temp2 = (S0 + maj) >>> 0;
+
+        h = g;
+        g = f;
+        f = e;
+        e = (d + temp1) >>> 0;
+        d = c;
+        c = b;
+        b = a;
+        a = (temp1 + temp2) >>> 0;
+      }
+
+      h0 = (h0 + a) >>> 0;
+      h1 = (h1 + b) >>> 0;
+      h2 = (h2 + c) >>> 0;
+      h3 = (h3 + d) >>> 0;
+      h4 = (h4 + e) >>> 0;
+      h5 = (h5 + f) >>> 0;
+      h6 = (h6 + g) >>> 0;
+      h7 = (h7 + h) >>> 0;
+    }
+
+    return [h0, h1, h2, h3, h4, h5, h6, h7]
+      .map((v) => (v >>> 0).toString(16).padStart(8, '0'))
+      .join('');
+  }
+
+  function computeSha256Hex(input, options = {}) {
+    const bytes = toByteBuffer(input);
+    if (!options.forcePureJs && typeof require === 'function') {
       try {
         const crypto = require('crypto');
-        if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-          return crypto.createHash('sha256').update(Buffer.from(input)).digest('hex');
+        if (crypto && typeof crypto.createHash === 'function') {
+          return crypto.createHash('sha256').update(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)).digest('hex');
         }
-        return crypto.createHash('sha256').update(String(input || ''), 'utf8').digest('hex');
       } catch (_) {}
     }
-    // Tarayıcı senkron fallback (FNV-1a 256-bit genişletilmiş deterministik özet)
-    const str = typeof input === 'string' ? input : String.fromCharCode.apply(null, Array.from(input || []).slice(0, 4096));
+    return computeSha256HexFips180_4(bytes);
+  }
+
+  async function computeSha256HexAsync(input) {
+    const bytes = toByteBuffer(input);
+    if (
+      typeof globalThis !== 'undefined' &&
+      globalThis.crypto &&
+      globalThis.crypto.subtle &&
+      typeof globalThis.crypto.subtle.digest === 'function'
+    ) {
+      try {
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const digestBuf = await globalThis.crypto.subtle.digest('SHA-256', ab);
+        return Array.from(new Uint8Array(digestBuf))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      } catch (_) {}
+    }
+    return computeSha256Hex(bytes);
+  }
+
+  /**
+   * Yalnızca eski (v1) kayıtlardaki 4.096 bayt FNV-1a özetlerini tespit edip
+   * gerçek SHA-256'dan ayırmak için kullanılan miras doğrulama yardımcısı.
+   * Asla yeni bir dosya özeti üretmek veya SHA-256 adıyla sunmak için kullanılmaz.
+   */
+  function computeLegacyFnv1a4096HexForMigrationOnly(input) {
+    const str =
+      typeof input === 'string'
+        ? input
+        : String.fromCharCode.apply(null, Array.from(toByteBuffer(input)).slice(0, 4096));
     let out = '';
     for (let block = 0; block < 8; block++) {
       let h = (0x811c9dc5 ^ (block * 0x9e3779b9)) >>> 0;
@@ -416,6 +569,68 @@
       out += h.toString(16).padStart(8, '0');
     }
     return out.toLowerCase();
+  }
+
+  function inspectAndMigrateStoredDigest(recordOrPackage, rawInputOptional = null) {
+    const rec = recordOrPackage || {};
+    const storedHash = String(rec.source_hash_sha256 || rec.source_hash || '').trim().toLowerCase();
+    const scheme = rec.hash_scheme_version || null;
+    if (rawInputOptional !== null && rawInputOptional !== undefined) {
+      const trueSha256 = computeSha256Hex(rawInputOptional);
+      const legacyFnv = computeLegacyFnv1a4096HexForMigrationOnly(rawInputOptional);
+      if (storedHash === trueSha256) {
+        return {
+          valid_sha256: true,
+          status: 'VERIFIED_SHA256_FIPS_180_4',
+          hash_algorithm: 'SHA-256',
+          hash_scheme_version: HASH_SCHEME_VERSION,
+          stored_hash: storedHash,
+          migrated_sha256: trueSha256
+        };
+      }
+      if (storedHash === legacyFnv) {
+        return {
+          valid_sha256: false,
+          status: 'LEGACY_FNV1A_4096_DIGEST_MIGRATED',
+          hash_algorithm: 'LEGACY_FNV1A_256_TRUNCATED_4096',
+          hash_scheme_version: scheme || 'legacy-fnv1a-4096-v1',
+          stored_hash: storedHash,
+          migrated_sha256: trueSha256,
+          migration_notice_tr:
+            'Eski kayıttaki özetin 4.096 bayt sınırlı FNV-1a-256 yedek özeti olduğu tespit edildi; gerçek FIPS 180-4 SHA-256 ile karıştırılmaması için işaretlendi ve tam bayt SHA-256 özeti üretildi.'
+        };
+      }
+      return {
+        valid_sha256: false,
+        status: 'DIGEST_MISMATCH',
+        hash_algorithm: rec.hash_algorithm || 'UNKNOWN',
+        hash_scheme_version: scheme || 'unknown',
+        stored_hash: storedHash,
+        migrated_sha256: trueSha256
+      };
+    }
+
+    if (scheme === HASH_SCHEME_VERSION && /^[0-9a-f]{64}$/.test(storedHash)) {
+      return {
+        valid_sha256: true,
+        status: 'DECLARED_SHA256_FIPS_180_4_V2',
+        hash_algorithm: 'SHA-256',
+        hash_scheme_version: HASH_SCHEME_VERSION,
+        stored_hash: storedHash,
+        migrated_sha256: storedHash
+      };
+    }
+
+    return {
+      valid_sha256: false,
+      status: 'UNVERIFIED_LEGACY_DIGEST_SCHEME',
+      hash_algorithm: rec.hash_algorithm || 'UNVERIFIED_PRE_V2_DIGEST',
+      hash_scheme_version: scheme || 'pre-v2-unversioned',
+      stored_hash: storedHash,
+      migrated_sha256: null,
+      migration_notice_tr:
+        'Bu kayıt sürüm işareti (sha256-fips180-4-v2) taşımıyor; eski tarayıcı FNV-1a özeti olabileceği için doğrulanmış SHA-256 olarak kabul edilmez. Dosyayı yeniden yükleyerek tam SHA-256 özeti oluşturun.'
+    };
   }
 
   function parseStrictCalendarDate(rawVal) {
@@ -1171,9 +1386,12 @@
     return {
       ok: true,
       engine: 'caelus_openxml_reader',
-      engine_version: '1.0.0',
+      engine_version: '2.0.0',
       source_file: fileName,
       source_hash_sha256: shaHex,
+      hash_algorithm: HASH_ALGORITHM_LABEL,
+      hash_scheme_version: HASH_SCHEME_VERSION,
+      hashed_byte_length: buf.length,
       file_size_bytes: buf.length,
       has_vba_macro: hasVba,
       macro_policy: hasVba ? 'MACRO_DETECTED_STRIPPED_READ_ONLY' : 'NO_MACRO_SAFE_READ',
@@ -1188,7 +1406,8 @@
   function readCsvContent(csvContent, options = {}) {
     const fileName = options.fileName || 'kullanici_verisi.csv';
     const rawStr = typeof csvContent === 'string' ? csvContent : new TextDecoder('utf-8').decode(csvContent);
-    const shaHex = computeSha256Hex(rawStr);
+    const rawBytes = toByteBuffer(rawStr);
+    const shaHex = computeSha256Hex(rawBytes);
     const delimiter = options.delimiter || detectCsvDelimiter(rawStr);
     const parsedMatrix = parseCsvRows(rawStr, delimiter);
 
@@ -1196,10 +1415,13 @@
       return {
         ok: false,
         engine: 'caelus_csv_reader',
-        engine_version: '1.0.0',
+        engine_version: '2.0.0',
         source_file: fileName,
         source_hash_sha256: shaHex,
-        file_size_bytes: rawStr.length,
+        hash_algorithm: HASH_ALGORITHM_LABEL,
+        hash_scheme_version: HASH_SCHEME_VERSION,
+        hashed_byte_length: rawBytes.length,
+        file_size_bytes: rawBytes.length,
         detected_delimiter: delimiter,
         has_vba_macro: false,
         macro_policy: 'NO_MACRO_SAFE_READ',
@@ -1261,10 +1483,13 @@
     return {
       ok: true,
       engine: 'caelus_csv_reader',
-      engine_version: '1.0.0',
+      engine_version: '2.0.0',
       source_file: fileName,
       source_hash_sha256: shaHex,
-      file_size_bytes: rawStr.length,
+      hash_algorithm: HASH_ALGORITHM_LABEL,
+      hash_scheme_version: HASH_SCHEME_VERSION,
+      hashed_byte_length: rawBytes.length,
+      file_size_bytes: rawBytes.length,
       detected_delimiter: delimiter,
       has_vba_macro: false,
       macro_policy: 'NO_MACRO_SAFE_READ',
@@ -1822,6 +2047,9 @@
       dataset_id: datasetId,
       source_file: readReport.source_file,
       source_hash: readReport.source_hash_sha256,
+      hash_algorithm: readReport.hash_algorithm || HASH_ALGORITHM_LABEL,
+      hash_scheme_version: readReport.hash_scheme_version || HASH_SCHEME_VERSION,
+      hashed_byte_length: readReport.hashed_byte_length || readReport.file_size_bytes || 0,
       source_sheet: sheet.sheet_name,
       imported_at: importedAt,
       total_data_rows: dataRows.length,
@@ -2050,10 +2278,13 @@
       dataset_id: dataPackage.dataset_id,
       source_file: dataPackage.source_file,
       source_hash: dataPackage.source_hash,
+      hash_algorithm: dataPackage.hash_algorithm || HASH_ALGORITHM_LABEL,
+      hash_scheme_version: dataPackage.hash_scheme_version || HASH_SCHEME_VERSION,
       source_sheet: dataPackage.source_sheet,
       created_at: dataPackage.imported_at,
       entity_count: entities.length,
       relation_count: relations.length,
+      entity_inclusion_report: scenarioPack.entity_inclusion_report,
       entities,
       relations,
       assumptions: [
@@ -2072,6 +2303,22 @@
             'Kullanıcı tablosundan içe alınan satırlar KAYNAKTA_IDDIA_EDILEN statüsündedir; hata içeren satırlar (örneğin Satır 8-9) hesaplamaya sessizce dahil edilmez.',
           impact_if_violated:
             'Dışlanan hatalı satırlardaki kurumlar kritik darboğaz üzerinde yer alıyorsa toplam sistem baskısı eksik tahmin edilebilir.'
+        },
+        {
+          assumption_id: 'ASSUMP_03_TEMPLATE_LEVER_COEFFICIENTS',
+          category: 'VARSAYILAN',
+          statement:
+            'Müdahale seçeneklerinin (Seçenek 1 ve Seçenek 2) başlangıç etki katsayıları ve başarı ağırlıkları saha ölçümü değil, varsayılan şablon katsayısıdır (KALIBRE_EDILMEMIS_VARSAYIM_AGIRLIGI).',
+          impact_if_violated:
+            'Gerçek müdahale süresi veya yedek kapasite oranı şablon varsayımından farklıysa seçeneklerin sıralaması değişebilir.'
+        },
+        {
+          assumption_id: 'ASSUMP_04_UNUSED_FIELDS_DISCLOSURE',
+          category: 'VARSAYILAN',
+          statement:
+            'Yayılım simülasyonunda yalnızca varlık kimlikleri, ilişki yönü ve Kritiklik / Kapasite Ağırlığı (0-1) kullanılır; Miktar/Hacim ve Tarih alanları doğrudan yayılım denklemine katılmaz, kaynak izi ve doğrulama için korunur.',
+          impact_if_violated:
+            'Birim hacim büyüklüğünün doğrusal olmayan darboğaz yarattığı durumlarda hacim bazlı ek ağırlıklandırma gerekir.'
         }
       ],
       import_errors: dataPackage.import_errors,
@@ -2084,25 +2331,85 @@
   // 6. KATMAN E — GERÇEK DETERMİNİSTİK SENARYO MOTORU VE SEÇENEK KARŞILAŞTIRMASI
   // ============================================================================
 
-  function compileUserWorldToScenarioPack(dataPackage, entities, relations, options = {}) {
-    const nodeKinds = ['Service', 'Queue', 'Buffer', 'Gate', 'Adversary', 'Perishable'];
-    const selectedEntities = entities.slice(0, 8);
+  /**
+   * Düğüm rolünü sıra numarasına göre değil, kullanıcının girdiği varlık türüne ve
+   * ağdaki giriş/çıkış derecesine (bağımlılık topolojisine) göre semantik olarak belirler.
+   * Normal tedarikçi veya kurumlara asla sıra numarasıyla 'Adversary' (Hasım/Tehdit) etiketi verilmez.
+   */
+  function inferSemanticNodeKind(ent, inDegreeCount, outDegreeCount) {
+    const foldedType = foldTurkish(String((ent && ent.entity_type) || ''));
+    if (/\b(hasim|tehdit|saldirgan|adversary|threat|attacker|sabotaj)\b/.test(foldedType)) {
+      return 'Adversary';
+    }
+    if (/\b(soguk zincir|biyoteknoloji|saglik|hastane|asi|bozulabilir|perishable|cold chain|pharma)\b/.test(foldedType)) {
+      return 'Perishable';
+    }
+    if (/\b(gumruk|onay|duzenleyici|kapi|gate|customs|regulatory)\b/.test(foldedType)) {
+      return 'Gate';
+    }
+    if (/\b(depo|stok|tampon|buffer|rezerv|storage|warehouse)\b/.test(foldedType)) {
+      return 'Buffer';
+    }
+    if (/\b(lojistik|tasima|liman|aktarma|kuyruk|queue|transport|carrier)\b/.test(foldedType)) {
+      return 'Queue';
+    }
+    if (outDegreeCount > 0 && inDegreeCount === 0) {
+      return 'Buffer';
+    }
+    return 'Service';
+  }
 
-    // En çok bağımlılık çıkışı olan düğümleri (darboğaz tedarikçi/altyapı) öne çıkar
+  function compileUserWorldToScenarioPack(dataPackage, entities, relations, options = {}) {
     const outDegree = new Map();
+    const inDegree = new Map();
     for (const r of relations) {
       outDegree.set(r.from_entity_id, (outDegree.get(r.from_entity_id) || 0) + 1);
+      inDegree.set(r.to_entity_id, (inDegree.get(r.to_entity_id) || 0) + 1);
     }
 
+    // Varsayılan olarak tüm doğrulanmış varlıkları dahil et; yalnızca açıkça maxNodes verildiyse sınırla ve dışlananları raporla
+    const hasExplicitLimit = typeof options.maxNodes === 'number' && options.maxNodes > 0 && options.maxNodes < entities.length;
+    const sortedEntities = entities.slice().sort((a, b) => {
+      const degDiff = (outDegree.get(b.entity_id) || 0) - (outDegree.get(a.entity_id) || 0);
+      if (degDiff !== 0) return degDiff;
+      return (b.total_weight || 0) - (a.total_weight || 0);
+    });
+    const selectedEntities = hasExplicitLimit ? sortedEntities.slice(0, options.maxNodes) : entities.slice();
+    const selectedIdSet = new Set(selectedEntities.map((e) => e.entity_id));
+    const excludedEntities = entities.filter((e) => !selectedIdSet.has(e.entity_id));
+
+    const entityInclusionReport = {
+      total_entity_count: entities.length,
+      included_entity_count: selectedEntities.length,
+      excluded_entity_count: excludedEntities.length,
+      silent_truncation: false,
+      selection_policy: hasExplicitLimit ? 'EXPLICIT_MAX_NODES_CAP_WITH_REPORT' : 'ALL_VALIDATED_ENTITIES_INCLUDED',
+      included_entities: selectedEntities.map((e) => ({
+        entity_id: e.entity_id,
+        entity_name: e.entity_name,
+        entity_type: e.entity_type,
+        source_rows: e.source_rows
+      })),
+      excluded_entities: excludedEntities.map((e) => ({
+        entity_id: e.entity_id,
+        entity_name: e.entity_name,
+        entity_type: e.entity_type,
+        source_rows: e.source_rows,
+        exclusion_reason_tr: `Kullanıcı/çağrı tarafından açık düğüm sınırı (maxNodes=${options.maxNodes}) belirlendiği için simülasyon grafı dışında bırakıldı.`
+      }))
+    };
+
     const nodes = selectedEntities.map((ent, idx) => {
-      const deg = outDegree.get(ent.entity_id) || 0;
-      const baseState = Math.min(0.92, Math.max(0.38, Number((ent.total_weight * 0.82 + deg * 0.05).toFixed(4))));
+      const outDeg = outDegree.get(ent.entity_id) || 0;
+      const inDeg = inDegree.get(ent.entity_id) || 0;
+      const semanticKind = inferSemanticNodeKind(ent, inDeg, outDeg);
+      const baseState = Math.min(0.92, Math.max(0.38, Number((ent.total_weight * 0.82 + outDeg * 0.05).toFixed(4))));
       const stateFp = Math.round(baseState * 1000000);
       const weightFp = Math.round(Math.min(0.45, Math.max(0.15, ent.total_weight * 0.35)) * 1000000);
       return {
         id: ent.entity_id,
         label: ent.entity_name,
-        kind: nodeKinds[idx % nodeKinds.length],
+        kind: semanticKind,
         capacity_fp: 1000000,
         state_fp: stateFp,
         weight_fp: weightFp,
@@ -2110,13 +2417,14 @@
         trust_fp: 920000,
         deadline_tick: idx === selectedEntities.length - 1 ? 144 : -1,
         irrecoverable: false,
-        notes: `${ent.entity_type} | Kaynak: ${ent.source_trace}`,
+        notes: `${ent.entity_type} | Rol: ${semanticKind} | Kaynak: ${ent.source_trace}`,
         provenance: {
           source_file: ent.source_file,
           source_sheet: ent.source_sheet,
           source_rows: ent.source_rows,
           dedup_decision: ent.dedup_decision,
-          epistemic_status: ent.epistemic_status
+          epistemic_status: ent.epistemic_status,
+          semantic_node_kind: semanticKind
         }
       };
     });
@@ -2163,6 +2471,11 @@
         success_p_fp: 860000,
         cost_ticks: 4,
         lockout_ticks: 12,
+        parameter_source: 'VARSAYILAN_SABLON_KATSAYISI',
+        probability_calibration_status: 'KALIBRE_EDILMEMIS_VARSAYIM_AGIRLIGI',
+        epistemic_status: 'VARSAYILAN',
+        assumption_note_tr:
+          'Bu müdahale seçeneğinin baskı azaltım katsayısı (-0.28) ve varsayım ağırlığı (0.86) gerçek saha ölçümü değil, varsayılan şablon katsayısıdır.',
         on_success: {
           target_node_id: primaryTarget ? primaryTarget.id : '',
           state_delta_fp: -280000,
@@ -2177,7 +2490,7 @@
           friction_delta_fp: 25000,
           clear_irrecoverable: false
         },
-        notes: `${primaryTarget ? primaryTarget.label : 'Darboğaz'} üzerindeki kesinti yayılımını doğrudan kaynağında sönümler.`
+        notes: `${primaryTarget ? primaryTarget.label : 'Darboğaz'} üzerindeki kesinti yayılımını doğrudan kaynağında sönümler (Şablon varsayım katsayısı).`
       },
       {
         id: 'OPT_2_BAGIMLI_KURUM_KORUMA',
@@ -2186,6 +2499,11 @@
         success_p_fp: 800000,
         cost_ticks: 6,
         lockout_ticks: 16,
+        parameter_source: 'VARSAYILAN_SABLON_KATSAYISI',
+        probability_calibration_status: 'KALIBRE_EDILMEMIS_VARSAYIM_AGIRLIGI',
+        epistemic_status: 'VARSAYILAN',
+        assumption_note_tr:
+          'Bu müdahale seçeneğinin yerel tampon katsayısı (-0.21) ve varsayım ağırlığı (0.80) gerçek saha ölçümü değil, varsayılan şablon katsayısıdır.',
         on_success: {
           target_node_id: secondaryTarget ? secondaryTarget.id : '',
           state_delta_fp: -210000,
@@ -2200,7 +2518,7 @@
           friction_delta_fp: 20000,
           clear_irrecoverable: false
         },
-        notes: `${secondaryTarget ? secondaryTarget.label : 'İkincil Düğüm'} üzerinde yerel tampon oluşturur ancak üst kademe darboğazı tamamen çözmez.`
+        notes: `${secondaryTarget ? secondaryTarget.label : 'İkincil Düğüm'} üzerinde yerel tampon oluşturur ancak üst kademe darboğazı tamamen çözmez (Şablon varsayım katsayısı).`
       }
     ];
 
@@ -2209,6 +2527,7 @@
       id: `USR_PACK_${dataPackage.dataset_id}`,
       blackswan_class: 'user_imported_world_model',
       sector: 'USER_IMPORTED_WORLD',
+      entity_inclusion_report: entityInclusionReport,
       labels: {
         node: primaryTarget ? primaryTarget.label : 'Birincil Varlık',
         edge: secondaryTarget ? secondaryTarget.label : 'İlişkili Varlık',
@@ -2222,8 +2541,8 @@
         region: 'USER_DATA_SCOPE',
         tick_minutes: 15,
         horizon_hours: 72,
-        synopsis: `${dataPackage.source_file} dosyasından doğrulanan ${entities.length} varlık ve ${relations.length} ilişki üzerinde deterministik etki analizi.`,
-        generated_by: 'CAELUS_FIRST_REAL_TASK_ENGINE_V1',
+        synopsis: `${dataPackage.source_file} dosyasından doğrulanan ${selectedEntities.length}/${entities.length} varlık ve ${relations.length} ilişki üzerinde varsayıma dayalı deterministik etki analizi.`,
+        generated_by: 'CAELUS_FIRST_REAL_TASK_ENGINE_V2',
         source_hash: dataPackage.source_hash
       },
       extended_causal_model: {
@@ -2295,6 +2614,7 @@
       return {
         node_id: n.id,
         node_label: n.label,
+        node_kind: n.kind,
         initial_stress: Number((n.state_fp / 1000000).toFixed(4)),
         final_stress: Number((finalFp / 1000000).toFixed(4)),
         delta_stress: Number(((finalFp - n.state_fp) / 1000000).toFixed(4)),
@@ -2304,8 +2624,10 @@
 
     const totalWeightFp = nodes.reduce((acc, n) => acc + (n.weight_fp || 200000), 0) || 1000000;
     const systemStress =
-      nodeOutcomes.reduce((acc, o, idx) => acc + o.final_stress * (nodes[idx].weight_fp || 200000), 0) /
-      totalWeightFp;
+      nodes.length === 0
+        ? 0
+        : nodeOutcomes.reduce((acc, o, idx) => acc + o.final_stress * (nodes[idx].weight_fp || 200000), 0) /
+          totalWeightFp;
 
     return {
       intervention_id: lever ? lever.id : 'BASELINE_NO_INTERVENTION',
@@ -2315,6 +2637,10 @@
       horizon_ticks: horizonTicks,
       system_stress_score: Number(systemStress.toFixed(4)),
       epistemic_status: 'SIMULE_EDILEN',
+      calculation_engine: 'CAELUS_JS_FIXED_POINT_PROPAGATION_V2',
+      calculation_engine_label_tr: 'JavaScript Sabit Noktalı Yayılım Modeli (Kullanıcı Tablosu Ağırlık Simülatörü)',
+      parameter_source: lever ? lever.parameter_source || 'VARSAYILAN_SABLON_KATSAYISI' : 'DOGRUDAN_TABLO_AGIRLIGI',
+      probability_calibration_status: 'KALIBRE_EDILMEMIS_VARSAYIM_AGIRLIGI',
       node_outcomes: nodeOutcomes
     };
   }
@@ -2332,6 +2658,7 @@
     const opt1Delta = Number((option1Run.system_stress_score - baselineRun.system_stress_score).toFixed(4));
     const opt2Delta = Number((option2Run.system_stress_score - baselineRun.system_stress_score).toFixed(4));
 
+    const hasSufficientData = (worldModel.entities || []).length > 0 && baselineRun.node_outcomes.length > 0;
     const recommendedOption =
       option1Run.system_stress_score <= option2Run.system_stress_score ? option1Run : option2Run;
 
@@ -2345,6 +2672,7 @@
       return {
         node_id: baseNode.node_id,
         node_label: baseNode.node_label,
+        node_kind: baseNode.node_kind || 'Service',
         baseline_stress: baseNode.final_stress,
         option1_stress: o1Node.final_stress,
         option2_stress: o2Node.final_stress,
@@ -2366,10 +2694,36 @@
       };
     });
 
+    const inclusionReport = worldModel.entity_inclusion_report ||
+      (pack && pack.entity_inclusion_report) || {
+        total_entity_count: (worldModel.entities || []).length,
+        included_entity_count: nodeComparisons.length,
+        excluded_entity_count: 0,
+        silent_truncation: false,
+        included_entities: [],
+        excluded_entities: []
+      };
+
     return {
       ok: true,
       comparison_id: `CMP_${worldModel.world_id}`,
       world_id: worldModel.world_id,
+      stance: hasSufficientData ? 'VARSAYIMA_BAGLI_KARSILASTIRMA' : 'YETERSIZ_VERI',
+      insufficient_data: !hasSufficientData,
+      calculation_engine: 'CAELUS_JS_FIXED_POINT_PROPAGATION_V2',
+      calculation_engine_label_tr: 'JavaScript Sabit Noktalı Yayılım Modeli (Kullanıcı Tablosu Ağırlık Simülatörü)',
+      used_fields_in_calculation: [
+        'source_entity_name (Kaynak Varlık / Kurum Adı)',
+        'target_entity_name (İlişkili / Hedef Varlık)',
+        'criticality_weight (Kritiklik / Kapasite Ağırlığı 0-1)',
+        'relation_type (İlişki / Bağımlılık Türü)'
+      ],
+      unused_fields_in_calculation: [
+        'quantity_value & unit (Miktar/Hacim ve Birim — doğrudan yayılım denklemine katılmaz; kaynak izi için korunur)',
+        'occurred_at (Olay Tarihi — kronolojik doğrulama ve çift zamanlı iz için kullanılır)',
+        'evidence_source & notes (Belge Kaynağı ve Notlar — kanıt izi için korunur)'
+      ],
+      entity_inclusion_report: inclusionReport,
       question_tr:
         options.questionTr ||
         `${worldModel.source_file} içindeki kritik darboğaz kesintisinde hangi müdahale seçeneği toplam sistem baskısını daha fazla düşürür?`,
@@ -2382,12 +2736,16 @@
         ...option2Run,
         delta_vs_baseline: opt2Delta
       },
-      recommended_option_id: recommendedOption.intervention_id,
-      recommended_option_label: recommendedOption.intervention_label,
-      recommendation_explanation_tr: `${recommendedOption.intervention_label}, müdahalesiz temel akış baskısını (${baselineRun.system_stress_score}) ${recommendedOption.system_stress_score} seviyesine çekerek en yüksek sistemik rahatlamayı sağlar. Bu sonuç doğrudan ${worldModel.source_file} (${worldModel.source_sheet}) içindeki doğrulanmış satırlardan ve açık yayılım varsayımlarından üretilmiştir.`,
+      recommended_option_id: hasSufficientData ? recommendedOption.intervention_id : 'INSUFFICIENT_DATA',
+      recommended_option_label: hasSufficientData
+        ? recommendedOption.intervention_label
+        : 'Bu sonuç için yeterli bilgi yok.',
+      recommendation_explanation_tr: hasSufficientData
+        ? `Seçilen varsayımlar altında (${worldModel.source_file} / ${worldModel.source_sheet} içindeki doğrulanmış Kritiklik Ağırlıkları ve varsayılan şablon müdahale katsayıları kullanılarak yapılan hesaplamaya göre), ${recommendedOption.intervention_label} müdahalesiz temel akış baskısını (${baselineRun.system_stress_score}) ${recommendedOption.system_stress_score} seviyesine çekerek daha yüksek göreceli rahatlama sağlar. Bu çıktı kesin gerçekleşme tahmini değil, varsayıma dayalı senaryo karşılaştırmasıdır.`
+        : 'Bu sonuç için yeterli bilgi yok. Karşılaştırma yapılabilmesi için en az bir doğrulanmış varlık ve ilişki kaydı gereklidir.',
       epistemic_separation: {
-        user_data_claims: `${worldModel.entities.length} varlık ve ${worldModel.relations.length} ilişki (Bilgi sınıfı: KAYNAKTA_IDDIA_EDILEN)`,
-        model_assumptions: `${worldModel.assumptions.length} açık model varsayımı (Bilgi sınıfı: VARSAYILAN)`,
+        user_data_claims: `${worldModel.entities.length} varlık (${inclusionReport.included_entity_count} dahil, ${inclusionReport.excluded_entity_count} dışarıda) ve ${worldModel.relations.length} ilişki (Bilgi sınıfı: KAYNAKTA_IDDIA_EDILEN)`,
+        model_assumptions: `${worldModel.assumptions.length} açık model varsayımı ve şablon müdahale katsayısı (Bilgi sınıfı: VARSAYILAN)`,
         simulated_outcomes: `3 senaryo koşusu ve ${nodeComparisons.length} düğüm karşılaştırması (Bilgi sınıfı: SIMULE_EDILEN)`,
         missing_or_invalid: `${worldModel.import_errors.length} satır/alan doğrulama hatası (Bilgi sınıfı: BILINMEYEN / HATA)`
       },
@@ -2415,6 +2773,388 @@
   }
 
   /**
+   * 12 Hedef Dil İçin Rapor ve Dışa Aktarma Çeviri Paketleri (Bölüm 6 & Bölüm 7).
+   * Kullanıcı varlık adları, dosya adları ve sayfa adları çevrilmez; yalnızca
+   * rapor başlıkları, bölüm başlıkları, tablo sütunları ve epistemik rozet açıklamaları seçilen dile çevrilir.
+   */
+  const REPORT_I18N_PACKS = Object.freeze({
+    'tr-TR': {
+      langAttr: 'tr',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Açıklanabilir Analiz, Seçenek Karşılaştırması ve Kaynak İzi Raporu',
+      sheetTitles: ['Özet', 'Varlıklar', 'İlişkiler', 'Senaryo Karşılaştırması', 'Varsayımlar', 'Hatalar ve Eksik Veriler', 'Kaynak İzleri'],
+      badgeData: '[● KULLANICI VERİSİ]',
+      badgeAssump: '[◆ VARSAYIM]',
+      badgeSim: '[▲ SİMÜLASYON]',
+      badgeErr: '[✖ HATA/EKSİK]',
+      page1Title: '1. İlk Sayfa Karar Özeti (Sade Kullanıcı Görünümü)',
+      p1Item1Label: '1. Sorulan soru',
+      p1Item2Label: '2. Kısa sonuç',
+      p1Item3Label: '3. Karşılaştırılan seçenekler',
+      p1Item4Label: '4. Sonucu etkileyen en önemli varsayımlar',
+      p1Item5Label: '5. Eksik bilgi ve sınırlamalar',
+      p1Item6Label: '6. Kaynağa ve ayrıntıya geçiş',
+      p1Item6Text: 'Aşağıdaki 2–7. bölümlerde her varlık, ilişki, varsayım, hata satırı ve SHA-256 kaynak izi ayrıntılı tablolar halinde yer almaktadır.',
+      techBoxTitle: 'Teknik Özet ve Tekrar Üretilebilirlik (Aynı Verilerle Tekrar Hesaplama)',
+      sec2Title: '2. Senaryo ve Müdahale Seçenekleri Karşılaştırması',
+      sec3Title: '3. Doğrulanmış Varlıklar ve Tekilleştirme Kararları',
+      sec4Title: '4. Doğrulanmış İlişkiler ve Bağımlılıklar',
+      sec5Title: '5. Açık Model Varsayımları',
+      sec6Title: '6. Satır Bazlı Doğrulama Hataları ve Eksik Veriler',
+      sec7Title: '7. Satır Bazlı Kaynak İzleri (Bu Bilgi Nereden Geliyor?)',
+      colField: 'Alan',
+      colValue: 'Değer',
+      colExplanation: 'Açıklama ve Bilgi Sınıfı',
+      noErrorsText: 'Doğrulama hatası bulunmadı.'
+    },
+    'en-US': {
+      langAttr: 'en',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Explainable Decision, Option Comparison & Provenance Report',
+      sheetTitles: ['Summary', 'Entities', 'Relationships', 'Scenario Comparison', 'Assumptions', 'Errors and Missing Data', 'Provenance Traces'],
+      badgeData: '[● USER DATA]',
+      badgeAssump: '[◆ ASSUMPTION]',
+      badgeSim: '[▲ SIMULATION]',
+      badgeErr: '[✖ ERROR/MISSING]',
+      page1Title: '1. First-Page Executive Summary (Plain-Language View)',
+      p1Item1Label: '1. Question asked',
+      p1Item2Label: '2. Brief conclusion',
+      p1Item3Label: '3. Compared options',
+      p1Item4Label: '4. Key assumptions affecting the result',
+      p1Item5Label: '5. Missing information and limitations',
+      p1Item6Label: '6. Jump to source and details',
+      p1Item6Text: 'Sections 2–7 below provide row-level tables for entities, relationships, explicit assumptions, validation errors, and SHA-256 provenance traces.',
+      techBoxTitle: 'Technical Summary & Reproducibility (Recalculate with Same Data)',
+      sec2Title: '2. Scenario & Intervention Option Comparison',
+      sec3Title: '3. Validated Entities & Deduplication Decisions',
+      sec4Title: '4. Validated Relationships & Dependencies',
+      sec5Title: '5. Explicit Model Assumptions',
+      sec6Title: '6. Row-Level Validation Errors & Missing Data',
+      sec7Title: '7. Row-Level Provenance Traces (Where Does This Come From?)',
+      colField: 'Field',
+      colValue: 'Value',
+      colExplanation: 'Explanation & Epistemic Class',
+      noErrorsText: 'No validation errors found.'
+    },
+    'el-GR': {
+      langAttr: 'el',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Επεξηγήσιμη Αναφορά Ανάλυσης, Σύγκρισης Επιλογών και Προέλευσης',
+      sheetTitles: ['Σύνοψη', 'Οντότητες', 'Σχέσεις', 'Σύγκριση Σεναρίων', 'Παραδοχές', 'Σφάλματα και Ελλείψεις', 'Ίχνη Προέλευσης'],
+      badgeData: '[● ΔΕΔΟΜΕΝΑ ΧΡΗΣΤΗ]',
+      badgeAssump: '[◆ ΠΑΡΑΔΟΧΗ]',
+      badgeSim: '[▲ ΠΡΟΣΟΜΟΙΩΣΗ]',
+      badgeErr: '[✖ ΣΦΑΛΜΑ/ΕΛΛΕΙΨΗ]',
+      page1Title: '1. Σύνοψη Πρώτης Σελίδας (Απλή Γλώσσα)',
+      p1Item1Label: '1. Ερώτημα που τέθηκε',
+      p1Item2Label: '2. Σύντομο συμπέρασμα',
+      p1Item3Label: '3. Συγκρινόμενες επιλογές',
+      p1Item4Label: '4. Βασικές παραδοχές που επηρεάζουν το αποτέλεσμα',
+      p1Item5Label: '5. Ελλιπείς πληροφορίες και περιορισμοί',
+      p1Item6Label: '6. Μετάβαση στην πηγή και τις λεπτομέρειες',
+      p1Item6Text: 'Οι ενότητες 2–7 παρακάτω περιέχουν αναλυτικούς πίνακες για οντότητες, σχέσεις, παραδοχές, σφάλματα και ίχνη SHA-256.',
+      techBoxTitle: 'Τεχνική Σύνοψη & Επαναληψιμότητα (Επανυπολογισμός με τα ίδια δεδομένα)',
+      sec2Title: '2. Σύγκριση Σεναρίων και Επιλογών Παρέμβασης',
+      sec3Title: '3. Επικυρωμένες Οντότητες',
+      sec4Title: '4. Επικυρωμένες Σχέσεις και Εξαρτήσεις',
+      sec5Title: '5. Ρητές Παραδοχές Μοντέλου',
+      sec6Title: '6. Σφάλματα Επικύρωσης και Ελλιπή Δεδομένα',
+      sec7Title: '7. Ίχνη Προέλευσης ανά Γραμμή',
+      colField: 'Πεδίο',
+      colValue: 'Τιμή',
+      colExplanation: 'Επεξήγηση & Κατηγορία Γνώσης',
+      noErrorsText: 'Δεν βρέθηκαν σφάλματα επικύρωσης.'
+    },
+    'de-DE': {
+      langAttr: 'de',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Erklärbarer Analyse-, Optionenvergleichs- und Herkunftsbericht',
+      sheetTitles: ['Zusammenfassung', 'Einheiten', 'Beziehungen', 'Szenarienvergleich', 'Annahmen', 'Fehler und Fehlende Daten', 'Herkunftsspuren'],
+      badgeData: '[● NUTZERDATEN]',
+      badgeAssump: '[◆ ANNAHME]',
+      badgeSim: '[▲ SIMULATION]',
+      badgeErr: '[✖ FEHLER/FEHLEND]',
+      page1Title: '1. Zusammenfassung auf Seite 1 (Klartext-Ansicht)',
+      p1Item1Label: '1. Gestellte Frage',
+      p1Item2Label: '2. Kurzes Ergebnis',
+      p1Item3Label: '3. Verglichene Optionen',
+      p1Item4Label: '4. Wichtigste Annahmen für das Ergebnis',
+      p1Item5Label: '5. Fehlende Informationen und Grenzen',
+      p1Item6Label: '6. Übergang zu Quelle und Details',
+      p1Item6Text: 'Die Abschnitte 2–7 enthalten detaillierte Tabellen für Einheiten, Beziehungen, Annahmen, Zeilenfehler und SHA-256-Herkunftsnachweise.',
+      techBoxTitle: 'Technische Zusammenfassung & Reproduzierbarkeit',
+      sec2Title: '2. Szenario- und Handlungsoptionen-Vergleich',
+      sec3Title: '3. Validierte Einheiten und Dublettenentscheidungen',
+      sec4Title: '4. Validierte Beziehungen und Abhängigkeiten',
+      sec5Title: '5. Explizite Modellannahmen',
+      sec6Title: '6. Zeilenweise Validierungsfehler und fehlende Daten',
+      sec7Title: '7. Zeilenweise Herkunftsspuren (Woher stammt diese Information?)',
+      colField: 'Feld',
+      colValue: 'Wert',
+      colExplanation: 'Erläuterung & Wissensklasse',
+      noErrorsText: 'Keine Validierungsfehler gefunden.'
+    },
+    'fr-FR': {
+      langAttr: 'fr',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Rapport Explicable d’Analyse, de Comparaison d’Options et de Traçabilité',
+      sheetTitles: ['Résumé', 'Entités', 'Relations', 'Comparaison de Scénarios', 'Hypothèses', 'Erreurs et Données Manquantes', 'Traces de Provenance'],
+      badgeData: '[● DONNÉES UTILISATEUR]',
+      badgeAssump: '[◆ HYPOTHÈSE]',
+      badgeSim: '[▲ SIMULATION]',
+      badgeErr: '[✖ ERREUR/MANQUANT]',
+      page1Title: '1. Synthèse de Première Page (Langage Clair)',
+      p1Item1Label: '1. Question posée',
+      p1Item2Label: '2. Conclusion brève',
+      p1Item3Label: '3. Options comparées',
+      p1Item4Label: '4. Hypothèses clés influençant le résultat',
+      p1Item5Label: '5. Informations manquantes et limites',
+      p1Item6Label: '6. Accès à la source et aux détails',
+      p1Item6Text: 'Les sections 2 à 7 présentent les tableaux détaillés des entités, relations, hypothèses, erreurs de ligne et traces SHA-256.',
+      techBoxTitle: 'Synthèse Technique et Reproductibilité',
+      sec2Title: '2. Comparaison des Scénarios et Options d’Intervention',
+      sec3Title: '3. Entités Validées et Décisions de Dédoublonnage',
+      sec4Title: '4. Relations et Dépendances Validées',
+      sec5Title: '5. Hypothèses Explicites du Modèle',
+      sec6Title: '6. Erreurs de Validation par Ligne et Données Manquantes',
+      sec7Title: '7. Traces de Provenance par Ligne (D’où vient cette information ?)',
+      colField: 'Champ',
+      colValue: 'Valeur',
+      colExplanation: 'Explication et Classe Épistémique',
+      noErrorsText: 'Aucune erreur de validation détectée.'
+    },
+    'es-ES': {
+      langAttr: 'es',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Informe Explicable de Análisis, Comparación de Opciones y Trazabilidad',
+      sheetTitles: ['Resumen', 'Entidades', 'Relaciones', 'Comparación de Escenarios', 'Supuestos', 'Errores y Datos Faltantes', 'Trazas de Origen'],
+      badgeData: '[● DATOS DE USUARIO]',
+      badgeAssump: '[◆ SUPUESTO]',
+      badgeSim: '[▲ SIMULACIÓN]',
+      badgeErr: '[✖ ERROR/FALTANTE]',
+      page1Title: '1. Resumen Ejecutivo en Primera Página (Lenguaje Claro)',
+      p1Item1Label: '1. Pregunta planteada',
+      p1Item2Label: '2. Conclusión breve',
+      p1Item3Label: '3. Opciones comparadas',
+      p1Item4Label: '4. Supuestos clave que afectan al resultado',
+      p1Item5Label: '5. Información faltante y limitaciones',
+      p1Item6Label: '6. Paso a la fuente y los detalles',
+      p1Item6Text: 'Las secciones 2 a 7 incluyen tablas detalladas de entidades, relaciones, supuestos, errores por fila y trazas SHA-256.',
+      techBoxTitle: 'Resumen Técnico y Reproducibilidad',
+      sec2Title: '2. Comparación de Escenarios y Opciones de Intervención',
+      sec3Title: '3. Entidades Validadas y Decisiones de Deduplicación',
+      sec4Title: '4. Relaciones y Dependencias Validadas',
+      sec5Title: '5. Supuestos Explícitos del Modelo',
+      sec6Title: '6. Errores de Validación por Fila y Datos Faltantes',
+      sec7Title: '7. Trazas de Origen por Fila (¿De dónde viene esta información?)',
+      colField: 'Campo',
+      colValue: 'Valor',
+      colExplanation: 'Explicación y Clase Epistémica',
+      noErrorsText: 'No se encontraron errores de validación.'
+    },
+    'it-IT': {
+      langAttr: 'it',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Rapporto Spiegabile di Analisi, Confronto Opzioni e Tracciabilità',
+      sheetTitles: ['Riepilogo', 'Entità', 'Relazioni', 'Confronto Scenari', 'Ipotesi', 'Errori e Dati Mancanti', 'Tracce di Origine'],
+      badgeData: '[● DATI UTENTE]',
+      badgeAssump: '[◆ IPOTESI]',
+      badgeSim: '[▲ SIMULAZIONE]',
+      badgeErr: '[✖ ERRORE/MANCANTE]',
+      page1Title: '1. Sintesi in Prima Pagina (Linguaggio Semplice)',
+      p1Item1Label: '1. Domanda posta',
+      p1Item2Label: '2. Conclusione breve',
+      p1Item3Label: '3. Opzioni confrontate',
+      p1Item4Label: '4. Ipotesi principali che influenzano il risultato',
+      p1Item5Label: '5. Informazioni mancanti e limitazioni',
+      p1Item6Label: '6. Passaggio alla fonte e ai dettagli',
+      p1Item6Text: 'Le sezioni 2–7 riportano le tabelle dettagliate di entità, relazioni, ipotesi, errori di riga e tracce SHA-256.',
+      techBoxTitle: 'Riepilogo Tecnico e Riproducibilità',
+      sec2Title: '2. Confronto Scenari e Opzioni di Intervento',
+      sec3Title: '3. Entità Convalidate e Decisioni di Deduplicazione',
+      sec4Title: '4. Relazioni e Dipendenze Convalidate',
+      sec5Title: '5. Ipotesi Esplicite del Modello',
+      sec6Title: '6. Errori di Convalida per Riga e Dati Mancanti',
+      sec7Title: '7. Tracce di Origine per Riga (Da dove proviene questa informazione?)',
+      colField: 'Campo',
+      colValue: 'Valore',
+      colExplanation: 'Spiegazione e Classe Epistemica',
+      noErrorsText: 'Nessun errore di convalida rilevato.'
+    },
+    'pt-BR': {
+      langAttr: 'pt-BR',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Relatório Explicável de Análise, Comparação de Opções e Rastreabilidade',
+      sheetTitles: ['Resumo', 'Entidades', 'Relações', 'Comparação de Cenários', 'Premissas', 'Erros e Dados Ausentes', 'Rastros de Origem'],
+      badgeData: '[● DADOS DO USUÁRIO]',
+      badgeAssump: '[◆ PREMISSA]',
+      badgeSim: '[▲ SIMULAÇÃO]',
+      badgeErr: '[✖ ERRO/AUSENTE]',
+      page1Title: '1. Resumo Executivo na Primeira Página (Linguagem Clara)',
+      p1Item1Label: '1. Pergunta feita',
+      p1Item2Label: '2. Conclusão curta',
+      p1Item3Label: '3. Opções comparadas',
+      p1Item4Label: '4. Principais premissas que afetam o resultado',
+      p1Item5Label: '5. Informações ausentes e limitações',
+      p1Item6Label: '6. Acesso à fonte e aos detalhes',
+      p1Item6Text: 'As seções 2 a 7 apresentam tabelas detalhadas de entidades, relações, premissas, erros por linha e rastros SHA-256.',
+      techBoxTitle: 'Resumo Técnico e Reprodutibilidade',
+      sec2Title: '2. Comparação de Cenários e Opções de Intervenção',
+      sec3Title: '3. Entidades Validadas e Decisões de Deduplicação',
+      sec4Title: '4. Relações e Dependências Validadas',
+      sec5Title: '5. Premissas Explícitas do Modelo',
+      sec6Title: '6. Erros de Validação por Linha e Dados Ausentes',
+      sec7Title: '7. Rastros de Origem por Linha (De onde vem esta informação?)',
+      colField: 'Campo',
+      colValue: 'Valor',
+      colExplanation: 'Explicação e Classe Epistêmica',
+      noErrorsText: 'Nenhum erro de validação encontrado.'
+    },
+    'ar-SA': {
+      langAttr: 'ar',
+      dir: 'rtl',
+      reportTitlePrefix: 'CAELUS — تقرير التحليل القابل للتفسير ومقارنة الخيارات وتتبع المصدر',
+      sheetTitles: ['الملخص', 'الكيانات', 'العلاقات', 'مقارنة السيناريوهات', 'الافتراضات', 'الأخطاء والبيانات المفقودة', 'آثار المصدر'],
+      badgeData: '[● بيانات المستخدم]',
+      badgeAssump: '[◆ افتراض]',
+      badgeSim: '[▲ محاكاة]',
+      badgeErr: '[✖ خطأ/مفقود]',
+      page1Title: '1. ملخص الصفحة الأولى (بلغة واضحة)',
+      p1Item1Label: '1. السؤال المطروح',
+      p1Item2Label: '2. النتيجة المختصرة',
+      p1Item3Label: '3. الخيارات التي تمت مقارنتها',
+      p1Item4Label: '4. أهم الافتراضات المؤثرة في النتيجة',
+      p1Item5Label: '5. المعلومات الناقصة والقيود',
+      p1Item6Label: '6. الانتقال إلى المصدر والتفاصيل',
+      p1Item6Text: 'تتضمن الأقسام 2–7 أدناه جداول تفصيلية للكيانات والعلاقات والافتراضات وأخطاء الصفوف وبصمات SHA-256.',
+      techBoxTitle: 'الملخص التقني وقابلية إعادة الحساب بنفس البيانات',
+      sec2Title: '2. مقارنة السيناريوهات وخيارات التدخل',
+      sec3Title: '3. الكيانات المتحقق منها وقرارات توحيد التكرار',
+      sec4Title: '4. العلاقات والاعتماديات المتحقق منها',
+      sec5Title: '5. افتراضات النموذج الصريحة',
+      sec6Title: '6. أخطاء التحقق على مستوى الصف والبيانات المفقودة',
+      sec7Title: '7. آثار المصدر على مستوى الصف (من أين جاءت هذه المعلومة؟)',
+      colField: 'الحقل',
+      colValue: 'القيمة',
+      colExplanation: 'الشرح وفئة المعرفة',
+      noErrorsText: 'لم يتم العثور على أخطاء تحقق.'
+    },
+    'he-IL': {
+      langAttr: 'he',
+      dir: 'rtl',
+      reportTitlePrefix: 'CAELUS — דוח ניתוח מוסבר, השוואת חלופות ומעקב מקור',
+      sheetTitles: ['תקציר', 'ישויות', 'קשרים', 'השוואת תרחישים', 'הנחות יסוד', 'שגיאות ונתונים חסרים', 'עקבות מקור'],
+      badgeData: '[● נתוני משתמש]',
+      badgeAssump: '[◆ הנחה]',
+      badgeSim: '[▲ סימולציה]',
+      badgeErr: '[✖ שגיאה/חסר]',
+      page1Title: '1. תקציר עמוד ראשון (שפה פשוטה וברורה)',
+      p1Item1Label: '1. השאלה שנשאלה',
+      p1Item2Label: '2. מסקנה קצרה',
+      p1Item3Label: '3. החלופות שהושוו',
+      p1Item4Label: '4. ההנחות המרכזיות המשפיעות על התוצאה',
+      p1Item5Label: '5. מידע חסר ומגבלות',
+      p1Item6Label: '6. מעבר למקור ולפרטים המלאים',
+      p1Item6Text: 'סעיפים 2–7 להלן מציגים טבלאות מפורטות עבור ישויות, קשרים, הנחות מודל, שגיאות שורה וחתימות SHA-256.',
+      techBoxTitle: 'סיכום טכני ושחזור חישוב עם אותם נתונים',
+      sec2Title: '2. השוואת תרחישים וחלופות התערבות',
+      sec3Title: '3. ישויות מאומתות והחלטות איחוד כפילויות',
+      sec4Title: '4. קשרים ותלויות מאומתים',
+      sec5Title: '5. הנחות מודל מפורשות',
+      sec6Title: '6. שגיאות אימות ברמת שורה ונתונים חסרים',
+      sec7Title: '7. עקבות מקור ברמת שורה (מאיפה המידע הזה מגיע?)',
+      colField: 'שדה',
+      colValue: 'ערך',
+      colExplanation: 'הסבר וסיווג מידע',
+      noErrorsText: 'לא נמצאו שגיאות אימות.'
+    },
+    'ru-RU': {
+      langAttr: 'ru',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — Объяснимый отчет об анализе, сравнении вариантов и происхождении данных',
+      sheetTitles: ['Сводка', 'Сущности', 'Связи', 'Сравнение сценариев', 'Допущения', 'Ошибки и пропуски', 'Следы источника'],
+      badgeData: '[● ДАННЫЕ ПОЛЬЗОВАТЕЛЯ]',
+      badgeAssump: '[◆ ДОПУЩЕНИЕ]',
+      badgeSim: '[▲ СИМУЛЯЦИЯ]',
+      badgeErr: '[✖ ОШИБКА/ПРОПУСК]',
+      page1Title: '1. Краткое резюме на первой странице (Понятный язык)',
+      p1Item1Label: '1. Заданный вопрос',
+      p1Item2Label: '2. Краткий вывод',
+      p1Item3Label: '3. Сравниваемые варианты',
+      p1Item4Label: '4. Ключевые допущения, влияющие на результат',
+      p1Item5Label: '5. Недостающая информация и ограничения',
+      p1Item6Label: '6. Переход к источнику и подробностям',
+      p1Item6Text: 'Разделы 2–7 содержат подробные таблицы сущностей, связей, допущений, ошибок строк и SHA-256 следов источника.',
+      techBoxTitle: 'Техническая сводка и воспроизводимость расчетов',
+      sec2Title: '2. Сравнение сценариев и вариантов вмешательства',
+      sec3Title: '3. Проверенные сущности и решения по дедупликации',
+      sec4Title: '4. Проверенные связи и зависимости',
+      sec5Title: '5. Явные допущения модели',
+      sec6Title: '6. Построчные ошибки проверки и недостающие данные',
+      sec7Title: '7. Построчные следы источника (Откуда получены эти данные?)',
+      colField: 'Поле',
+      colValue: 'Значение',
+      colExplanation: 'Пояснение и класс знания',
+      noErrorsText: 'Ошибок проверки не обнаружено.'
+    },
+    'zh-Hans': {
+      langAttr: 'zh-Hans',
+      dir: 'ltr',
+      reportTitlePrefix: 'CAELUS — 可解释分析、方案对比与数据溯源报告',
+      sheetTitles: ['摘要', '实体', '关系', '情景对比', '假设条件', '错误与缺失数据', '来源追踪'],
+      badgeData: '[● 用户数据]',
+      badgeAssump: '[◆ 模型假设]',
+      badgeSim: '[▲ 模拟推演]',
+      badgeErr: '[✖ 错误/缺失]',
+      page1Title: '1. 首页决策摘要（简明视图）',
+      p1Item1Label: '1. 提出的问题',
+      p1Item2Label: '2. 简明结论',
+      p1Item3Label: '3. 对比的备选方案',
+      p1Item4Label: '4. 影响结果的关键假设',
+      p1Item5Label: '5. 缺失信息与局限性',
+      p1Item6Label: '6. 跳转至数据来源与详细表格',
+      p1Item6Text: '下文第 2–7 节提供实体、关系、显式假设、行级验证错误和 SHA-256 来源追踪的完整表格。',
+      techBoxTitle: '技术摘要与可重复计算说明（使用相同数据重新计算）',
+      sec2Title: '2. 情景与干预方案对比',
+      sec3Title: '3. 已验证实体与去重决策',
+      sec4Title: '4. 已验证关系与依赖路径',
+      sec5Title: '5. 显式模型假设',
+      sec6Title: '6. 行级验证错误与缺失数据',
+      sec7Title: '7. 行级来源追踪（该信息来自何处？）',
+      colField: '字段',
+      colValue: '数值/内容',
+      colExplanation: '说明与知识分类',
+      noErrorsText: '未发现验证错误。'
+    }
+  });
+
+  function resolveReportLocale(localeInput) {
+    const raw = String(localeInput || 'tr-TR').trim();
+    if (REPORT_I18N_PACKS[raw]) return raw;
+    const short = raw.toLowerCase().split(/[-_]/)[0];
+    const map = {
+      tr: 'tr-TR',
+      en: 'en-US',
+      el: 'el-GR',
+      de: 'de-DE',
+      fr: 'fr-FR',
+      es: 'es-ES',
+      it: 'it-IT',
+      pt: 'pt-BR',
+      ar: 'ar-SA',
+      he: 'he-IL',
+      ru: 'ru-RU',
+      zh: 'zh-Hans'
+    };
+    return map[short] || 'tr-TR';
+  }
+
+  function getReportLocalePack(localeInput) {
+    const key = resolveReportLocale(localeInput);
+    return REPORT_I18N_PACKS[key] || REPORT_I18N_PACKS['tr-TR'];
+  }
+
+  /**
    * 7 zorunlu sayfalı (.xlsx) rapor içeriği oluşturucu:
    * 1. Özet
    * 2. Varlıklar
@@ -2424,45 +3164,58 @@
    * 6. Hatalar ve Eksik Veriler
    * 7. Kaynak İzleri
    */
-  function buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult) {
+  function buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult, options = {}) {
+    const localeKey = resolveReportLocale(options.locale);
+    const pack = getReportLocalePack(localeKey);
+    const inclusion = comparisonResult.entity_inclusion_report || worldModel.entity_inclusion_report || {
+      total_entity_count: (worldModel.entities || []).length,
+      included_entity_count: (worldModel.entities || []).length,
+      excluded_entity_count: 0
+    };
+
     const ozet = [
       {
-        alan: 'Rapor Başlığı',
-        deger: `CAELUS Açıklanabilir Karar ve Kaynak İzi Raporu — ${dataPackage.source_file}`,
-        aciklama: 'Kullanıcı verisinden deterministik dünya modeli ve senaryo karşılaştırma çıktısı'
+        alan: localeKey === 'tr-TR' ? 'Rapor Başlığı' : `${pack.colField}: Title`,
+        deger: `${pack.reportTitlePrefix} — ${dataPackage.source_file}`,
+        aciklama: `${pack.badgeData} / ${pack.badgeAssump} / ${pack.badgeSim}`
       },
       {
-        alan: 'Kaynak Dosya ve Sayfa',
+        alan: localeKey === 'tr-TR' ? 'Kaynak Dosya ve Sayfa' : 'Source File & Sheet',
         deger: `${dataPackage.source_file} / ${dataPackage.source_sheet}`,
-        aciklama: `SHA-256: ${dataPackage.source_hash}`
+        aciklama: `${dataPackage.hash_algorithm || HASH_ALGORITHM_LABEL}: ${dataPackage.source_hash}`
       },
       {
-        alan: 'Sürümlü Veri Sözleşmesi',
+        alan: localeKey === 'tr-TR' ? 'Sürümlü Veri Sözleşmesi' : 'Data Contract & Row Summary',
         deger: `${dataPackage.contract_name} (v${dataPackage.schema_version})`,
-        aciklama: `Geçerli Kayıt: ${dataPackage.valid_record_count} | Hatalı Satır: ${dataPackage.error_row_count}`
+        aciklama: `Geçerli Kayıt: ${dataPackage.valid_record_count} | Hatalı Satır: ${dataPackage.error_row_count} | Dahil Edilen Varlık: ${inclusion.included_entity_count}/${inclusion.total_entity_count}`
       },
       {
-        alan: 'Karar Sorusu',
+        alan: localeKey === 'tr-TR' ? 'Hesaplama Motoru' : 'Calculation Engine',
+        deger: comparisonResult.calculation_engine_label_tr || 'JavaScript Sabit Noktalı Yayılım Modeli',
+        aciklama: `Motor Kodu: ${comparisonResult.calculation_engine || 'CAELUS_JS_FIXED_POINT_PROPAGATION_V2'}`
+      },
+      {
+        alan: localeKey === 'tr-TR' ? 'Karar Sorusu' : pack.p1Item1Label,
         deger: comparisonResult.question_tr,
         aciklama: 'Senaryo motorunda karşılaştırılan karar problemi'
       },
       {
-        alan: 'Müdahalesiz Temel Akış Baskısı',
+        alan: localeKey === 'tr-TR' ? 'Müdahalesiz Temel Akış Baskısı' : 'Baseline Stress (No Intervention)',
         deger: String(comparisonResult.baseline.system_stress_score),
         aciklama: 'SIMULE_EDILEN — Hiçbir müdahale yapılmazsa 24 adım sonundaki sistem baskısı'
       },
       {
-        alan: 'Seçenek 1 Sonrası Baskı',
+        alan: localeKey === 'tr-TR' ? 'Seçenek 1 Sonrası Baskı' : 'Option 1 Post-Intervention Stress',
         deger: `${comparisonResult.option_1.system_stress_score} (Fark: ${comparisonResult.option_1.delta_vs_baseline})`,
         aciklama: comparisonResult.option_1.intervention_label
       },
       {
-        alan: 'Seçenek 2 Sonrası Baskı',
+        alan: localeKey === 'tr-TR' ? 'Seçenek 2 Sonrası Baskı' : 'Option 2 Post-Intervention Stress',
         deger: `${comparisonResult.option_2.system_stress_score} (Fark: ${comparisonResult.option_2.delta_vs_baseline})`,
         aciklama: comparisonResult.option_2.intervention_label
       },
       {
-        alan: 'Önerilen Seçenek ve Dayanağı',
+        alan: localeKey === 'tr-TR' ? 'Önerilen Seçenek ve Dayanağı' : pack.p1Item2Label,
         deger: comparisonResult.recommended_option_label,
         aciklama: comparisonResult.recommendation_explanation_tr
       }
@@ -2532,18 +3285,11 @@
     }));
 
     return {
-      report_version: '1.0.0',
+      report_version: '2.0.0',
+      locale: localeKey,
       dataset_id: dataPackage.dataset_id,
       world_id: worldModel.world_id,
-      sheet_titles: [
-        'Özet',
-        'Varlıklar',
-        'İlişkiler',
-        'Senaryo Karşılaştırması',
-        'Varsayımlar',
-        'Hatalar ve Eksik Veriler',
-        'Kaynak İzleri'
-      ],
+      sheet_titles: pack.sheetTitles.slice(),
       sheets: {
         Ozet: ozet,
         Varliklar: varliklar,
@@ -2674,15 +3420,20 @@
     );
   }
 
-  function generateExplainableXlsxBytes(reportSpec) {
+  function generateExplainableXlsxBytes(reportSpec, options = {}) {
+    const localeKey = resolveReportLocale(options.locale || (reportSpec && reportSpec.locale) || 'tr-TR');
+    const pack = getReportLocalePack(localeKey);
+    const titles = (reportSpec && Array.isArray(reportSpec.sheet_titles) && reportSpec.sheet_titles.length === 7)
+      ? reportSpec.sheet_titles
+      : pack.sheetTitles;
     const sheetConfigs = [
       {
-        title: 'Özet',
-        headers: ['Alan', 'Değer', 'Açıklama ve Epistemik Durum'],
+        title: titles[0],
+        headers: [pack.colField, pack.colValue, pack.colExplanation],
         rows: (reportSpec.sheets.Ozet || []).map((r) => [r.alan, r.deger, r.aciklama])
       },
       {
-        title: 'Varlıklar',
+        title: titles[1],
         headers: [
           'Varlık Kimliği',
           'Varlık Adı',
@@ -2705,7 +3456,7 @@
         ])
       },
       {
-        title: 'İlişkiler',
+        title: titles[2],
         headers: [
           'İlişki Kimliği',
           'Kaynak Varlık',
@@ -2728,7 +3479,7 @@
         ])
       },
       {
-        title: 'Senaryo Karşılaştırması',
+        title: titles[3],
         headers: [
           'Düğüm Kodu',
           'Varlık / Düğüm Adı',
@@ -2751,7 +3502,7 @@
         ])
       },
       {
-        title: 'Varsayımlar',
+        title: titles[4],
         headers: ['Varsayım Kodu', 'Epistemik Sınıf', 'Varsayım Tanımı', 'Varsayım Bozulursa Sonuca Etkisi'],
         rows: (reportSpec.sheets.Varsayimlar || []).map((r) => [
           r.assumption_id,
@@ -2761,7 +3512,7 @@
         ])
       },
       {
-        title: 'Hatalar ve Eksik Veriler',
+        title: titles[5],
         headers: ['Kaynak Satır', 'Sütun Adı', 'Hata / Eksiklik Kodu', 'Sorun Açıklaması', 'Düzeltme Önerisi'],
         rows: (reportSpec.sheets.Hatalar_ve_Eksik_Veriler || []).map((r) => [
           r.source_row,
@@ -2772,7 +3523,7 @@
         ])
       },
       {
-        title: 'Kaynak İzleri',
+        title: titles[6],
         headers: [
           'Kayıt Kimliği',
           'Kaynak Dosya',
@@ -2865,7 +3616,8 @@
   /**
    * Formül enjeksiyonuna karşı korumalı (.csv) dışa aktarma.
    */
-  function generateSafeCsvExport(dataPackage, worldModel, comparisonResult) {
+  function generateSafeCsvExport(dataPackage, worldModel, comparisonResult, options = {}) {
+    const pack = getReportLocalePack(options.locale);
     const headers = [
       'Kayıt_Türü',
       'Sembol_Etiketi',
@@ -2884,7 +3636,7 @@
     for (const nc of comparisonResult.node_comparisons || []) {
       rows.push([
         'SENARYO_KARSILASTIRMA',
-        '[▲ SİMÜLASYON]',
+        pack.badgeSim,
         nc.node_id,
         nc.node_label,
         `Temel:${nc.baseline_stress} | Seçenek1:${nc.option1_stress} | Seçenek2:${nc.option2_stress}`,
@@ -2900,7 +3652,7 @@
     for (const rec of dataPackage.records || []) {
       rows.push([
         'DOGRULANMIS_KAYIT',
-        '[● KULLANICI VERİSİ]',
+        pack.badgeData,
         rec.record_id,
         rec.entity_name,
         rec.target_entity_name || '-',
@@ -2916,7 +3668,7 @@
     for (const err of dataPackage.import_errors || []) {
       rows.push([
         'DOGRULAMA_HATASI',
-        '[✖ HATA/EKSİK]',
+        pack.badgeErr,
         err.error_code,
         err.column_name,
         err.raw_value,
@@ -2943,14 +3695,23 @@
 
   /**
    * Çok sayfalı baskı (@media print) ve PDF uyumlu, renkten bağımsız sembollü HTML rapor üreticisi.
+   * İlk sayfada sade dille 6 zorunlu karar bilgisini sunar; teknik/tekrar üretilebilirlik özetini ayrı kutuda verir.
    */
-  function generateExplainablePrintHtmlReport(dataPackage, worldModel, comparisonResult) {
-    const spec = buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult);
+  function generateExplainablePrintHtmlReport(dataPackage, worldModel, comparisonResult, options = {}) {
+    const localeKey = resolveReportLocale(options.locale);
+    const pack = getReportLocalePack(localeKey);
+    const spec = buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult, { locale: localeKey });
+    const inclusion = comparisonResult.entity_inclusion_report || worldModel.entity_inclusion_report || {
+      total_entity_count: (worldModel.entities || []).length,
+      included_entity_count: (worldModel.entities || []).length,
+      excluded_entity_count: 0
+    };
+    const textAlign = pack.dir === 'rtl' ? 'right' : 'left';
     return `<!doctype html>
-<html lang="tr">
+<html lang="${escapeHtml(pack.langAttr)}" dir="${escapeHtml(pack.dir)}">
 <head>
   <meta charset="utf-8" />
-  <title>CAELUS Açıklanabilir Analiz ve Kaynak İzi Raporu — ${escapeHtml(dataPackage.source_file)}</title>
+  <title>${escapeHtml(pack.reportTitlePrefix)} — ${escapeHtml(dataPackage.source_file)}</title>
   <style>
     :root {
       --ink: #0f172a;
@@ -2968,10 +3729,14 @@
       border-radius: 12px;
       line-height: 1.45;
       font-size: 12.5px;
+      direction: ${escapeHtml(pack.dir)};
+      text-align: ${textAlign};
     }
     .caelus-print-report-sheet h1,
     .caelus-print-report-sheet h2,
+    .caelus-print-report-sheet h3,
     .caelus-print-report-sheet p,
+    .caelus-print-report-sheet li,
     .caelus-print-report-sheet td,
     .caelus-print-report-sheet th,
     .caelus-print-report-sheet span,
@@ -3009,6 +3774,28 @@
       background: #f1f5f9 !important;
       letter-spacing: 0.02em;
     }
+    .caelus-print-report-sheet .page1-six-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 12px 0 16px 0;
+    }
+    .caelus-print-report-sheet .page1-card {
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f8fafc !important;
+      page-break-inside: avoid;
+    }
+    .caelus-print-report-sheet .tech-repro-box {
+      border: 1px dashed #475569;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 16px;
+      background: #f1f5f9 !important;
+      font-size: 11.5px;
+      page-break-inside: avoid;
+    }
     .caelus-print-report-sheet table {
       width: 100%;
       border-collapse: collapse;
@@ -3020,7 +3807,7 @@
     .caelus-print-report-sheet td {
       border: 1px solid #64748b;
       padding: 6px 8px;
-      text-align: left;
+      text-align: ${textAlign};
       vertical-align: top;
       overflow-wrap: anywhere;
       background: #ffffff !important;
@@ -3042,28 +3829,67 @@
   </style>
 </head>
 <body>
-  <div class="caelus-print-report-sheet">
+  <div class="caelus-print-report-sheet" lang="${escapeHtml(pack.langAttr)}" dir="${escapeHtml(pack.dir)}">
   <header class="report-header">
-    <h1>CAELUS — Açıklanabilir Dünya Modeli, Senaryo Karşılaştırması ve Kaynak İzi Raporu</h1>
+    <h1>${escapeHtml(pack.reportTitlePrefix)}</h1>
     <div class="meta-strip">
       <span><strong>Kaynak Dosya:</strong> ${escapeHtml(dataPackage.source_file)}</span>
       <span><strong>Kaynak Sayfa:</strong> ${escapeHtml(dataPackage.source_sheet)}</span>
       <span><strong>Kaynak SHA-256:</strong> <code>${escapeHtml(dataPackage.source_hash.slice(0, 24))}…</code></span>
-      <span><strong>Sözleşme:</strong> ${escapeHtml(dataPackage.contract_name)} (v${escapeHtml(dataPackage.schema_version)})</span>
+      <span><strong>Dil / Locale:</strong> <code>${escapeHtml(localeKey)}</code></span>
     </div>
   </header>
 
   <section class="print-section" id="sec-ozet">
-    <h2>1. Yönetici Özeti ve Epistemik Ayrım ([● VERİ] / [◆ VARSAYIM] / [▲ SİMÜLASYON] / [✖ HATA])</h2>
-    <p><strong>Karar Sorusu:</strong> ${escapeHtml(comparisonResult.question_tr)}</p>
-    <p><strong>Önerilen Seçenek:</strong> <span class="epistemic-badge">[▲ SİMÜLASYON]</span> ${escapeHtml(comparisonResult.recommended_option_label)}</p>
-    <p>${escapeHtml(comparisonResult.recommendation_explanation_tr)}</p>
+    <h2>${escapeHtml(pack.page1Title)} ([● VERİ] / [◆ VARSAYIM] / [▲ SİMÜLASYON] / [✖ HATA])</h2>
+    <div class="page1-six-grid">
+      <div class="page1-card">
+        <strong>${escapeHtml(pack.p1Item1Label)}:</strong>
+        <p style="margin:4px 0 0 0;">${escapeHtml(comparisonResult.question_tr)}</p>
+      </div>
+      <div class="page1-card">
+        <strong>${escapeHtml(pack.p1Item2Label)}:</strong>
+        <p style="margin:4px 0 0 0;"><span class="epistemic-badge">[▲ SİMÜLASYON]</span> <strong>${escapeHtml(comparisonResult.recommended_option_label)}</strong><br/>${escapeHtml(comparisonResult.recommendation_explanation_tr)}</p>
+      </div>
+      <div class="page1-card">
+        <strong>${escapeHtml(pack.p1Item3Label)}:</strong>
+        <p style="margin:4px 0 0 0;">
+          • Müdahalesiz: <strong>${escapeHtml(String(comparisonResult.baseline.system_stress_score))}</strong><br/>
+          • ${escapeHtml(comparisonResult.option_1.intervention_label)}: <strong>${escapeHtml(String(comparisonResult.option_1.system_stress_score))}</strong> (${escapeHtml(String(comparisonResult.option_1.delta_vs_baseline))})<br/>
+          • ${escapeHtml(comparisonResult.option_2.intervention_label)}: <strong>${escapeHtml(String(comparisonResult.option_2.system_stress_score))}</strong> (${escapeHtml(String(comparisonResult.option_2.delta_vs_baseline))})
+        </p>
+      </div>
+      <div class="page1-card">
+        <strong>${escapeHtml(pack.p1Item4Label)}:</strong>
+        <p style="margin:4px 0 0 0;"><span class="epistemic-badge">[◆ VARSAYIM]</span> ${(worldModel.assumptions || []).map((a) => escapeHtml(a.statement)).join(' ')}</p>
+      </div>
+      <div class="page1-card">
+        <strong>${escapeHtml(pack.p1Item5Label)}:</strong>
+        <p style="margin:4px 0 0 0;">
+          Doğrulama hatası nedeniyle dışlanan satır sayısı: <strong>${escapeHtml(String(dataPackage.error_row_count))}</strong> (${escapeHtml(String((dataPackage.import_errors || []).length))} alan uyarısı).
+          Simülasyona dahil edilen varlık: <strong>${escapeHtml(String(inclusion.included_entity_count))}/${escapeHtml(String(inclusion.total_entity_count))}</strong> (Dışarıda bırakılan: ${escapeHtml(String(inclusion.excluded_entity_count))}).
+        </p>
+      </div>
+      <div class="page1-card">
+        <strong>${escapeHtml(pack.p1Item6Label)}:</strong>
+        <p style="margin:4px 0 0 0;">${escapeHtml(pack.p1Item6Text)}</p>
+      </div>
+    </div>
+
+    <div class="tech-repro-box">
+      <strong>${escapeHtml(pack.techBoxTitle)}:</strong><br/>
+      <span>• <strong>Bütünlük Özeti Algoritması:</strong> <code>${escapeHtml(dataPackage.hash_algorithm || HASH_ALGORITHM_LABEL)}</code> (${escapeHtml(dataPackage.hash_scheme_version || HASH_SCHEME_VERSION)}) — Tam SHA-256: <code>${escapeHtml(dataPackage.source_hash)}</code></span><br/>
+      <span>• <strong>Çalışan Hesaplama Motoru:</strong> ${escapeHtml(comparisonResult.calculation_engine_label_tr || 'JavaScript Sabit Noktalı Yayılım Modeli')} (<code>${escapeHtml(comparisonResult.calculation_engine || 'CAELUS_JS_FIXED_POINT_PROPAGATION_V2')}</code>)</span><br/>
+      <span>• <strong>Hesaba Katılan Alanlar:</strong> ${escapeHtml((comparisonResult.used_fields_in_calculation || []).join(', '))}</span><br/>
+      <span>• <strong>Hesaba Katılmayan (İzlenebilirlik İçin Korunan) Alanlar:</strong> ${escapeHtml((comparisonResult.unused_fields_in_calculation || []).join('; '))}</span>
+    </div>
+
     <table>
       <thead>
         <tr>
-          <th style="width:28%;">Alan</th>
-          <th style="width:34%;">Değer</th>
-          <th style="width:38%;">Açıklama ve Epistemik Sınıf</th>
+          <th style="width:28%;">${escapeHtml(pack.colField)}</th>
+          <th style="width:34%;">${escapeHtml(pack.colValue)}</th>
+          <th style="width:38%;">${escapeHtml(pack.colExplanation)}</th>
         </tr>
       </thead>
       <tbody>
@@ -3076,7 +3902,7 @@
   </section>
 
   <section class="print-section" id="sec-senaryo">
-    <h2>2. Senaryo ve Müdahale Seçenekleri Karşılaştırması ([▲ SİMÜLASYON])</h2>
+    <h2>${escapeHtml(pack.sec2Title)} ([▲ SİMÜLASYON])</h2>
     <table>
       <thead>
         <tr>
@@ -3103,7 +3929,7 @@
   </section>
 
   <section class="print-section page-break-before" id="sec-varliklar-iliskiler">
-    <h2>3. Doğrulanmış Varlıklar ve Tekilleştirme Kararları ([● KULLANICI VERİSİ])</h2>
+    <h2>${escapeHtml(pack.sec3Title)} ([● KULLANICI VERİSİ])</h2>
     <table>
       <thead>
         <tr>
@@ -3128,7 +3954,7 @@
       </tbody>
     </table>
 
-    <h2>4. Doğrulanmış İlişkiler ve Bağımlılıklar ([● KULLANICI VERİSİ])</h2>
+    <h2>${escapeHtml(pack.sec4Title)} ([● KULLANICI VERİSİ])</h2>
     <table>
       <thead>
         <tr>
@@ -3155,7 +3981,7 @@
   </section>
 
   <section class="print-section page-break-before" id="sec-varsayim-hata-kaynak">
-    <h2>5. Açık Model Varsayımları ([◆ VARSAYIM])</h2>
+    <h2>${escapeHtml(pack.sec5Title)} ([◆ VARSAYIM])</h2>
     <table>
       <thead>
         <tr>
@@ -3176,7 +4002,7 @@
       </tbody>
     </table>
 
-    <h2>6. Satır Bazlı Doğrulama Hataları ve Eksik Veriler ([✖ HATA / EKSİK VERİ])</h2>
+    <h2>${escapeHtml(pack.sec6Title)} ([✖ HATA / EKSİK VERİ])</h2>
     <table>
       <thead>
         <tr>
@@ -3200,12 +4026,12 @@
                     <td>${escapeHtml(err.remediation_tr)}</td>
                   </tr>`
               ).join('')
-            : '<tr><td colspan="5">Doğrulama hatası bulunmadı.</td></tr>'
+            : `<tr><td colspan="5">${escapeHtml(pack.noErrorsText)}</td></tr>`
         }
       </tbody>
     </table>
 
-    <h2>7. Satır Bazlı Kaynak İzleri (Provenance & Çift Zamanlı Zincir)</h2>
+    <h2>${escapeHtml(pack.sec7Title)}</h2>
     <table>
       <thead>
         <tr>
@@ -3367,7 +4193,9 @@
       option1Id: options.option1Id,
       option2Id: options.option2Id
     });
-    const workbookSpec = buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult);
+    const workbookSpec = buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult, {
+      locale: options.locale
+    });
 
     return {
       ok: true,
@@ -3381,9 +4209,22 @@
       comparison_result: comparisonResult,
       workbook_spec: workbookSpec,
       export_builders: {
-        buildXlsxBytes: () => generateExplainableXlsxBytes(workbookSpec),
-        buildSafeCsv: () => generateSafeCsvExport(dataPackage, worldModel, comparisonResult),
-        buildPrintHtml: () => generateExplainablePrintHtmlReport(dataPackage, worldModel, comparisonResult)
+        buildXlsxBytes: (exportOpts = {}) => {
+          const loc = exportOpts.locale || options.locale || 'tr-TR';
+          const specForLoc =
+            loc && resolveReportLocale(loc) !== workbookSpec.locale
+              ? buildReportWorkbookSpec(dataPackage, worldModel, comparisonResult, { locale: loc })
+              : workbookSpec;
+          return generateExplainableXlsxBytes(specForLoc, { locale: loc });
+        },
+        buildSafeCsv: (exportOpts = {}) =>
+          generateSafeCsvExport(dataPackage, worldModel, comparisonResult, {
+            locale: exportOpts.locale || options.locale || 'tr-TR'
+          }),
+        buildPrintHtml: (exportOpts = {}) =>
+          generateExplainablePrintHtmlReport(dataPackage, worldModel, comparisonResult, {
+            locale: exportOpts.locale || options.locale || 'tr-TR'
+          })
       }
     };
   }
@@ -3653,8 +4494,17 @@
     CAELUS_DATA_PACKAGE_SCHEMA_V1,
     BUILTIN_CASES,
     FIRST_REAL_TASK_MCP_TOOLS_10,
+    HASH_SCHEME_VERSION,
+    HASH_ALGORITHM_LABEL,
+    REPORT_I18N_PACKS,
+    resolveReportLocale,
+    getReportLocalePack,
     foldTurkish,
     computeSha256Hex,
+    computeSha256HexFips180_4,
+    computeSha256HexAsync,
+    inspectAndMigrateStoredDigest,
+    inferSemanticNodeKind,
     parseStrictCalendarDate,
     parseFlexibleNumber,
     detectFormulaInjectionRisk,

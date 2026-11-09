@@ -52,6 +52,8 @@ def main() -> int:
     dvejs = dvejs_path.read_text(encoding="utf-8") if dvejs_path.exists() else ""
     frtjs_path = ROOT / "ui/first_real_task_engine.js"
     frtjs = frtjs_path.read_text(encoding="utf-8") if frtjs_path.exists() else ""
+    paajs_path = ROOT / "ui/personal_agent_and_advisor.js"
+    paajs = paajs_path.read_text(encoding="utf-8") if paajs_path.exists() else ""
     spjs_path = ROOT / "ui/spatial_experience.js"
     spjs = spjs_path.read_text(encoding="utf-8") if spjs_path.exists() else ""
     appjs = (ROOT / "ui/app.js").read_text(encoding="utf-8")
@@ -102,6 +104,7 @@ def main() -> int:
             + ("<script>\n" + lwmjs + "\n</script>\n" if lwmjs else "")
             + ("<script>\n" + dvejs + "\n</script>\n" if dvejs else "")
             + ("<script>\n" + frtjs + "\n</script>\n" if frtjs else "")
+            + ("<script>\n" + paajs + "\n</script>\n" if paajs else "")
             + ("<script>\n" + spjs + "\n</script>\n" if spjs else "")
             + "<script>\n" + appjs + "\n</script>"
         ),

@@ -320,3 +320,200 @@ test('Senaryo 14 & 15: Ağsız (Air-Gapped) çekirdek doğrulaması, Grafik Öğ
   assert.ok(appJs.includes('initCaelusLivingWorldModelUI'));
   assert.ok(appJs.includes('runAndRenderLivingWorldModel'));
 });
+
+test('Senaryo 16: Yaşayan Dünya V2 — Örnek Senaryo Ayrımı, 12 Dil Boş Durum Metni ve CAELUS_WORLD_DATA_CONTRACT_V2 (5 Zaman Alanı)', () => {
+  // 1. Örnek senaryolar varsayılan gerçek dünya deneyimiyle karıştırılmaz
+  const sep = lwm.inspectAndSeparateSampleFromRealWorldState(
+    [{ record_id: 'BS-01_SAHTE_UFUK', title: 'Örnek Senaryo' }],
+    { locale: 'tr-TR' }
+  );
+  assert.equal(sep.defaultShowsSampleAsReal, false);
+  assert.equal(sep.emptyStateVisibleByDefault, true);
+  assert.equal(
+    sep.emptyStateText,
+    'Henüz dünya verisi yok.\nGerçek veri kaynaklarını bağlayabilir veya kendi dosyanı yükleyebilirsin.'
+  );
+  assert.equal(Object.keys(lwm.EMPTY_WORLD_MESSAGES_12).length, 12);
+
+  // 2. Olay zamanı (event_time) bilinmediğinde ingested_at ile ASLA karıştırılmaz
+  const normRes = lwm.normalizeAndValidateWorldRecord({
+    source_id: 'gdelt_doc_v2',
+    subject: { id: 'TOPIC:RED_SEA', name: 'Kızıldeniz nakliye gecikmesi haberi' },
+    relation: 'REPORTED_DELAY',
+    object: 'Haberde tam olay saati belirtilmedi.',
+    ingested_at: '2026-03-10T12:00:00.000Z',
+    last_checked_at: '2026-03-10T12:00:00.000Z',
+    source_published_at: '2026-03-10T09:00:00.000Z',
+    event_time: null
+  });
+  assert.equal(normRes.valid, true);
+  const recNoEventTime = normRes.record;
+  assert.equal(recNoEventTime.schema_version, '2.0.0');
+  assert.equal(recNoEventTime.event_time, 'not_provided');
+  assert.equal(recNoEventTime.event_time_status, 'NOT_PROVIDED_BY_SOURCE');
+  assert.notEqual(recNoEventTime.event_time, recNoEventTime.ingested_at);
+});
+
+test('Senaryo 17: 5 Gerçek Kaynak Ayrıştırıcısı, Sendikasyon Tekilleştirme, Bozuk Veri Reddi ve Zamanlayıcı', async () => {
+  const nowIso = '2026-03-10T12:00:00.000Z';
+
+  // 1. Wikidata
+  const wdOut = lwm.parseWikidataEntityResponse({
+    entities: {
+      Q312: {
+        id: 'Q312',
+        lastrevid: 999,
+        modified: '2026-03-01T10:00:00Z',
+        labels: { tr: { value: 'Apple Inc.' } },
+        descriptions: { tr: { value: 'Amerikan teknoloji şirketi' } },
+        claims: {}
+      }
+    }
+  }, { nowIso });
+  assert.equal(wdOut.ok, true);
+  assert.equal(wdOut.records.length, 1);
+  assert.equal(wdOut.records[0].subject.external_ids.wikidata_qid, 'Q312');
+
+  // 2. GDELT + Sendikasyon Tekilleştirme (aynı başlık farklı sitelerde çoğaldığında bağımsız kanıt sayılmaz)
+  const gdeltOut = lwm.parseGdeltArtListResponse({
+    articles: [
+      { url: 'https://news-a.example/1', title: 'Global semiconductor supply warning issued today', seendate: '20260310T080000Z', domain: 'news-a.example' },
+      { url: 'https://news-b.example/2', title: 'Global semiconductor supply warning issued today!', seendate: '20260310T080500Z', domain: 'news-b.example' }
+    ]
+  }, { nowIso });
+  assert.equal(gdeltOut.ok, true);
+  assert.equal(gdeltOut.records.length, 2);
+  assert.equal(gdeltOut.records[0].is_syndicated_duplicate, false);
+  assert.equal(gdeltOut.records[1].is_syndicated_duplicate, true);
+  assert.equal(gdeltOut.syndicationGroups.length, 1);
+  assert.equal(gdeltOut.syndicationGroups[0].independentEvidenceCount, 1);
+
+  // 3. World Bank Indicators v2
+  const wbOut = lwm.parseWorldBankIndicatorResponse([
+    { page: 1, lastupdated: '2025-12-15' },
+    [{ countryiso3code: 'TUR', country: { value: 'Turkiye' }, indicator: { id: 'FP.CPI.TOTL.ZG', value: 'Inflation' }, date: '2024', value: 58.5 }]
+  ], { nowIso });
+  assert.equal(wbOut.ok, true);
+  assert.equal(wbOut.records.length, 1);
+  assert.equal(wbOut.records[0].epistemic_status, 'GERCEK_KAYNAK_KAYDI');
+  assert.equal(wbOut.records[0].event_time, '2024-12-31T00:00:00.000Z');
+
+  // 4. SEC EDGAR Submissions
+  const secOut = lwm.parseSecEdgarSubmissionsResponse({
+    cik: '320193',
+    name: 'Apple Inc.',
+    tickers: ['AAPL'],
+    filings: {
+      recent: {
+        accessionNumber: ['0000320193-25-000001'],
+        form: ['10-K'],
+        filingDate: ['2025-11-01'],
+        reportDate: ['2025-09-27'],
+        primaryDocument: ['aapl-20250927.htm']
+      }
+    }
+  }, { nowIso });
+  assert.equal(secOut.ok, true);
+  assert.equal(secOut.records.length, 1);
+  assert.equal(secOut.records[0].subject.external_ids.sec_cik, '0000320193');
+
+  // 5. OpenAlex Works
+  const oaOut = lwm.parseOpenAlexWorksResponse({
+    results: [
+      {
+        id: 'https://openalex.org/W12345',
+        display_name: 'Cascading Semiconductor Supply Chain Disruptions',
+        publication_date: '2025-05-12',
+        doi: 'https://doi.org/10.1000/test',
+        authorships: [{ institutions: [{ id: 'https://openalex.org/I99', display_name: 'MIT', ror: 'https://ror.org/042nb2s44' }] }],
+        concepts: [{ display_name: 'Supply chain' }, { display_name: 'Semiconductor' }]
+      }
+    ]
+  }, { nowIso });
+  assert.equal(oaOut.ok, true);
+  assert.equal(oaOut.records.length, 1);
+
+  // 6. Bozuk veri reddi (çökmeden ok: false ve boş dizi döner)
+  assert.equal(lwm.parseWikidataEntityResponse(null, { nowIso }).ok, false);
+  assert.equal(lwm.parseWorldBankIndicatorResponse({ invalid: true }, { nowIso }).ok, false);
+
+  // 7. Zamanlayıcı: YALNIZ_UYGULAMA_ACIKKEN ve tekrar kayıt engelleme
+  const scheduler = lwm.createLivingWorldScheduler();
+  assert.equal(scheduler.getSchedulerRuntimeSummary().executionEnvironmentMode, 'YALNIZ_UYGULAMA_ACIKKEN');
+  const ing1 = scheduler.ingestNormalizedRecordsIntoScheduler('wikidata', wdOut.records, nowIso);
+  const ing2 = scheduler.ingestNormalizedRecordsIntoScheduler('wikidata', wdOut.records, nowIso);
+  assert.equal(ing1.addedCount, 1);
+  assert.equal(ing2.addedCount, 0);
+  assert.equal(ing2.duplicateCount, 1);
+});
+
+test('Senaryo 18: Yanlış Birleştirme Korumalı Varlık Çözümleme, Alanlar Arası Bağlantılar, Çevrim Dışı Paket ve 9 MCP Aracı', async () => {
+  const r1 = lwm.normalizeAndValidateWorldRecord({
+    record_id: 'REC-1',
+    record_type: 'RELATION',
+    source_id: 'wikidata',
+    source_publisher: 'Wikidata',
+    subject: { id: 'ENT:DELTA_TR', name: 'Delta Enerji Corp.', entity_type: 'COMPANY', domain: 'ENERGY', external_ids: {} },
+    relation: 'SUPPLIES_POWER_TO',
+    object: 'ENT:FAB_1',
+    epistemic_status: 'GERCEK_KAYNAK_KAYDI'
+  }).record;
+  const r2 = lwm.normalizeAndValidateWorldRecord({
+    record_id: 'REC-2',
+    record_type: 'RELATION',
+    source_id: 'sec_edgar_submissions',
+    source_publisher: 'SEC EDGAR',
+    subject: { id: 'ENT:DELTA_DE', name: 'Delta Enerji Holding Inc.', entity_type: 'COMPANY', domain: 'FINANCE', external_ids: {} },
+    relation: 'FINANCES_LOGISTICS_AT',
+    object: 'ENT:PORT_EU',
+    epistemic_status: 'GERCEK_KAYNAK_KAYDI'
+  }).record;
+
+  // 1. Varlık çözümleme: sessiz otomatik birleştirme yapılmaz, kullanıcı onayına sunulur
+  const entRes = lwm.resolveLivingWorldEntities([r1, r2]);
+  assert.equal(entRes.silentMergePerformed, false);
+  assert.ok(entRes.candidateMatches.length >= 1);
+  assert.equal(entRes.candidateMatches[0].auto_merged, false);
+  assert.ok(entRes.candidateMatches[0].status_message_tr.includes('Bu iki kayıt aynı kuruma ait olabilir'));
+
+  // 2. Alanlar arası bağlantı keşfi
+  const connRes = lwm.discoverCrossDomainLivingConnections([r1, r2]);
+  assert.ok(connRes.directRelations.length >= 2);
+  assert.ok(connRes.candidateHypothesisPaths.length >= 1);
+  assert.equal(connRes.candidateHypothesisPaths[0].is_causal_proof, false);
+
+  // 3. Çevrim dışı çekirdek paketi: Ağ tamamen kapalıyken deterministik çalışır
+  const pkg = lwm.buildVersionedCoreAnalysisPackage([r1, r2]);
+  const replay = lwm.runOfflineCorePackageReplay(pkg);
+  assert.equal(replay.ok, true);
+  assert.equal(replay.networkCallsMade, 0);
+  assert.equal(replay.packageIntegrityUnmodified, true);
+
+  // 4. 9 Yaşayan Dünya MCP Aracı
+  const mcp = lwm.createLivingWorldMcpController();
+  mcp.scheduler.ingestNormalizedRecordsIntoScheduler('wikidata', [r1], '2026-03-10T12:00:00.000Z');
+  mcp.scheduler.ingestNormalizedRecordsIntoScheduler('sec_edgar_submissions', [r2], '2026-03-10T12:00:00.000Z');
+  assert.equal(lwm.LIVING_WORLD_MCP_TOOLS_CATALOG.length, 9);
+  for (const toolDef of lwm.LIVING_WORLD_MCP_TOOLS_CATALOG) {
+    const out = mcp.invokeLivingWorldMcpTool({
+      toolName: toolDef.name,
+      callerRole: 'OPERATOR',
+      arguments: {
+        source_id: 'wikidata',
+        record_id: r1.record_id,
+        entity: 'Delta',
+        action: 'pause',
+        userConsentConfirmed: true
+      }
+    });
+    assert.equal(out.ok, true, `MCP aracı başarısız: ${toolDef.name}`);
+  }
+  const blocked = mcp.invokeLivingWorldMcpTool({
+    toolName: 'control_source_sync_scheduler',
+    callerRole: 'READ_ONLY_AUDITOR',
+    arguments: { source_id: 'wikidata', action: 'pause', userConsentConfirmed: false }
+  });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.errorCode, 'USER_CONSENT_AND_OPERATOR_ROLE_REQUIRED');
+});
+

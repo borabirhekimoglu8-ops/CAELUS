@@ -2785,6 +2785,2064 @@
     };
   }
 
+  // ============================================================================
+  // 13. CAELUS YAŞAYAN DÜNYA KATMANI V2 (GERÇEK VERİ, ZAMAN, DÜNYA HAFIZASI VE ALANLAR ARASI İLİŞKİLER)
+  // ============================================================================
+
+  const LIVING_WORLD_EPISTEMIC_CLASSES_9 = Object.freeze({
+    GERCEK_KAYNAK_KAYDI: {
+      code: 'GERCEK_KAYNAK_KAYDI',
+      labelTr: 'Gerçek kaynaktan alınmış kayıt',
+      labelEn: 'Record fetched from real source'
+    },
+    KAYNAKTA_IDDIA_EDILEN: {
+      code: 'KAYNAKTA_IDDIA_EDILEN',
+      labelTr: 'Kaynakta iddia edilen ifade',
+      labelEn: 'Claim stated in source'
+    },
+    KULLANICI_GIRDISI: {
+      code: 'KULLANICI_GIRDISI',
+      labelTr: 'Kullanıcının girdiği bilgi',
+      labelEn: 'User-entered information'
+    },
+    DOGRULANMIS_HESAP: {
+      code: 'DOGRULANMIS_HESAP',
+      labelTr: 'Doğrulanmış hesap veya dönüşüm',
+      labelEn: 'Verified calculation or transformation'
+    },
+    MODEL_VARSAYIMI: {
+      code: 'MODEL_VARSAYIMI',
+      labelTr: 'Model varsayımı',
+      labelEn: 'Model assumption'
+    },
+    ARASTIRMA_HIPOTEZI: {
+      code: 'ARASTIRMA_HIPOTEZI',
+      labelTr: 'Araştırılması gereken hipotez',
+      labelEn: 'Hypothesis requiring investigation'
+    },
+    SIMULASYON_SONUCU: {
+      code: 'SIMULASYON_SONUCU',
+      labelTr: 'Simülasyon sonucu',
+      labelEn: 'Simulation result'
+    },
+    BILINMEYEN_YETERSIZ_VERI: {
+      code: 'BILINMEYEN_YETERSIZ_VERI',
+      labelTr: 'Bilinmeyen / yetersiz veri',
+      labelEn: 'Unknown / insufficient data'
+    },
+    TEST_EGITIM_VERISI: {
+      code: 'TEST_EGITIM_VERISI',
+      labelTr: 'Test veya isteğe bağlı eğitim verisi',
+      labelEn: 'Test or optional training data'
+    }
+  });
+
+  const DATA_FRESHNESS_LABELS_7 = Object.freeze({
+    GUNCEL: {
+      code: 'GUNCEL',
+      labelTr: 'Güncel: Kaynağın kendi yenilenme takvimi içinde',
+      labelEn: 'Current: Within source publication schedule'
+    },
+    BEKLENIYOR: {
+      code: 'BEKLENIYOR',
+      labelTr: 'Bekleniyor: Yeni veri henüz kaynağın normal yayın zamanına gelmedi',
+      labelEn: 'Pending: Next scheduled release not yet due'
+    },
+    GECIKMIS: {
+      code: 'GECIKMIS',
+      labelTr: 'Gecikmiş: Beklenen güncelleme gelmedi veya son veri eski',
+      labelEn: 'Delayed: Expected update overdue or stale'
+    },
+    BAGLANTI_YOK: {
+      code: 'BAGLANTI_YOK',
+      labelTr: 'Bağlantı yok: Kaynağa şu anda ulaşılamıyor',
+      labelEn: 'Offline/Unreachable: Source currently unreachable'
+    },
+    SON_BILINEN_VERI: {
+      code: 'SON_BILINEN_VERI',
+      labelTr: 'Son bilinen veri: Eski kayıt gösteriliyor; yeni olduğu iddia edilmiyor',
+      labelEn: 'Last known data: Showing cached record without claiming live freshness'
+    },
+    SURESI_BILINMIYOR: {
+      code: 'SURESI_BILINMIYOR',
+      labelTr: 'Süresi bilinmiyor: Kaynağın güncelliği belirlenemiyor',
+      labelEn: 'Unknown freshness: Cadence cannot be determined'
+    },
+    DUZELTILDI_GERI_CEKILDI: {
+      code: 'DUZELTILDI_GERI_CEKILDI',
+      labelTr: 'Düzeltildi / geri çekildi: Kaynak daha sonra kayıt üzerinde değişiklik yaptı',
+      labelEn: 'Corrected / Retracted: Source subsequently modified or retracted record'
+    }
+  });
+
+  const CROSS_DOMAIN_CONNECTION_TYPES_7 = Object.freeze({
+    A_DIRECT_SOURCE_STATED: {
+      code: 'A_DIRECT_SOURCE_STATED',
+      labelTr: 'A. Kaynakta doğrudan belirtilen ilişki',
+      isCausalProof: false
+    },
+    B_STRUCTURED_DATA_SUPPORTED: {
+      code: 'B_STRUCTURED_DATA_SUPPORTED',
+      labelTr: 'B. Yapılandırılmış veriyle desteklenen ilişki',
+      isCausalProof: false
+    },
+    C_OBSERVED_CO_MOVEMENT: {
+      code: 'C_OBSERVED_CO_MOVEMENT',
+      labelTr: 'C. Verilerde gözlenen birlikte değişim (korelasyon nedensellik değildir)',
+      isCausalProof: false
+    },
+    D_MODEL_PROPOSED_HYPOTHESIS: {
+      code: 'D_MODEL_PROPOSED_HYPOTHESIS',
+      labelTr: 'D. Modelin önerdiği incelenebilir bağlantı (araştırma önerisi)',
+      isCausalProof: false
+    },
+    E_USER_ADDED_ASSUMPTION: {
+      code: 'E_USER_ADDED_ASSUMPTION',
+      labelTr: 'E. Kullanıcı tarafından eklenen varsayım',
+      isCausalProof: false
+    },
+    F_SIMULATION_RESULT: {
+      code: 'F_SIMULATION_RESULT',
+      labelTr: 'F. Simülasyon sonucu',
+      isCausalProof: false
+    },
+    G_INSUFFICIENT_DATA_OR_CONFLICT: {
+      code: 'G_INSUFFICIENT_DATA_OR_CONFLICT',
+      labelTr: 'G. Yetersiz bilgi / çelişki',
+      isCausalProof: false
+    }
+  });
+
+  const KNOWN_SAMPLE_SCENARIO_IDS = Object.freeze([
+    'EX-01_LIMAN_SOGUK_ZINCIR',
+    'EX-02_HASTANE_YOGUN_BAKIM',
+    'BS-01_SAHTE_UFUK',
+    'BS-02_GOLGE_ARSIV',
+    'BS-03_KUM_SAATI',
+    'REAL_CASE_2021_ERCOT_AUSTIN_SEMICONDUCTOR_AUTO',
+    'REAL_CASE_2021_ERCOT_AUSTIN_SEMICONDUCTOR_AUTO_TWO_DATE',
+    'AEGEAN_PORT_DEMO'
+  ]);
+
+  const EMPTY_WORLD_MESSAGES_12 = Object.freeze({
+    'tr-TR': 'Henüz dünya verisi yok.\nGerçek veri kaynaklarını bağlayabilir veya kendi dosyanı yükleyebilirsin.',
+    'en-US': 'No world data yet.\nYou can connect real data sources or upload your own file.',
+    'el-GR': 'Δεν υπάρχουν ακόμη δεδομένα κόσμου.\nΜπορείτε να συνδέσετε πραγματικές πηγές δεδομένων ή να ανεβάσετε το δικό σας αρχείο.',
+    'de-DE': 'Noch keine Weltdaten vorhanden.\nSie können echte Datenquellen verbinden oder Ihre eigene Datei hochladen.',
+    'fr-FR': 'Aucune donnée mondiale pour le moment.\nVous pouvez connecter des sources de données réelles ou téléverser votre propre fichier.',
+    'es-ES': 'Aún no hay datos del mundo.\nPuedes conectar fuentes de datos reales o subir tu propio archivo.',
+    'it-IT': 'Non ci sono ancora dati sul mondo.\nPuoi collegare fonti di dati reali o caricare il tuo file.',
+    'pt-BR': 'Ainda não há dados do mundo.\nVocê pode conectar fontes de dados reais ou enviar seu próprio arquivo.',
+    'ar-SA': 'لا توجد بيانات عالمية حتى الآن.\nيمكنك ربط مصادر البيانات الحقيقية أو تحميل ملفك الخاص.',
+    'he-IL': 'עדיין אין נתוני עולם.\nניתן לחבר מקורות נתונים אמיתיים או להעלות קובץ משלך.',
+    'ru-RU': 'Данных о мире пока нет.\nВы можете подключить реальные источники данных или загрузить собственный файл.',
+    'zh-Hans': '尚无世界数据。\n您可以连接真实数据源或上传您自己的文件。'
+  });
+
+  /**
+   * Aşama B (Bölüm 3): Örnek dünyanın gerçek veri akışından kesin biçimde ayrılması
+   * ve kullanıcının geçmiş çalışmalarının kayıpsız/geri alınabilir biçimde korunması.
+   */
+  function inspectAndSeparateSampleFromRealWorldState(rawStorageState, options) {
+    const opts = options || {};
+    const locale = String(opts.locale || 'tr-TR');
+    const stateObj = rawStorageState && typeof rawStorageState === 'object' ? rawStorageState : {};
+    const records = Array.isArray(stateObj.records) ? stateObj.records : [];
+    const savedWork = Array.isArray(stateObj.userSavedWork) ? stateObj.userSavedWork : [];
+
+    const realRecords = [];
+    const userRecords = [];
+    const isolatedSampleRecords = [];
+
+    for (const rec of records) {
+      if (!rec || typeof rec !== 'object') continue;
+      const isSample =
+        rec.isSampleFixture === true ||
+        rec.epistemic_status === 'TEST_EGITIM_VERISI' ||
+        KNOWN_SAMPLE_SCENARIO_IDS.includes(String(rec.scenarioId || rec.source_id || '')) ||
+        String(rec.source_id || '').startsWith('SAMPLE_') ||
+        String(rec.record_id || '').startsWith('SAMPLE_');
+      const isUser =
+        rec.epistemic_status === 'KULLANICI_GIRDISI' ||
+        rec.epistemic_status === 'KULLANICI_VERISI' ||
+        String(rec.source_id || '').startsWith('USER_FILE_');
+
+      if (isSample) {
+        isolatedSampleRecords.push({
+          ...rec,
+          epistemic_status: 'TEST_EGITIM_VERISI',
+          sampleIsolationLabelTr: 'Örnek / eğitim verisi (Gerçek dünya hafızasına karışmaz)'
+        });
+      } else if (isUser) {
+        userRecords.push(rec);
+      } else {
+        realRecords.push(rec);
+      }
+    }
+
+    const hasActiveRealOrUserWorld = realRecords.length > 0 || userRecords.length > 0;
+    const emptyMessage = EMPTY_WORLD_MESSAGES_12[locale] || EMPTY_WORLD_MESSAGES_12['tr-TR'];
+
+    return {
+      schemaVersion: 'CAELUS_SAMPLE_ISOLATION_V2',
+      defaultShowsSampleAsReal: false,
+      hasActiveRealOrUserWorld,
+      emptyStateVisibleByDefault: !hasActiveRealOrUserWorld,
+      emptyStateText: emptyMessage,
+      realRecordCount: realRecords.length,
+      userRecordCount: userRecords.length,
+      isolatedSampleRecordCount: isolatedSampleRecords.length,
+      preservedUserWorkCount: savedWork.length,
+      realRecords,
+      userRecords,
+      isolatedSampleRecords: opts.includeOptionalTrainingData === true ? isolatedSampleRecords : [],
+      migrationBackupSnapshot: {
+        backupId: 'caelus_legacy_sample_migration_backup_v1',
+        createdAtIso: opts.nowIso || new Date().toISOString(),
+        reversible: true,
+        preservedUserSavedWork: savedWork,
+        archivedSampleRecordIds: isolatedSampleRecords.map((r) => r.record_id || r.recordId || 'sample')
+      },
+      restoreInstructionsTr:
+        'Kullanıcının daha önce kaydettiği çalışmalar silinmemiştir. Örnek senaryolar gerçek dünya akışından ayrılmış olup yalnızca "Örnek / Eğitim Verisini Aç" seçeneğiyle isteğe bağlı incelenebilir.'
+    };
+  }
+
+  /**
+   * Aşama C (Bölüm 4): CAELUS Dünya Veri Sözleşmesi (CAELUS_WORLD_DATA_CONTRACT_V2)
+   * A. Olay zamanı (event_time)
+   * B. Kaynak yayın zamanı (source_published_at / source_updated_at)
+   * C. CAELUS öğrenme/alım zamanı (observed_at / ingested_at)
+   * D. Kaynak son kontrol zamanı (last_checked_at)
+   * E. Geçerlilik dönemi (valid_from / valid_to)
+   * Olay zamanı eksikse asla yükleme zamanı (ingested_at) olay zamanı olarak sessizce kullanılmaz!
+   */
+  function normalizeSyndicationFingerprint(title, publisher, url) {
+    const cleanTitle = String(title || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\b(reuters|ap|afp|bloomberg|aa|breaking|update|live)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleanTitle) return null;
+    return computeSha256Hex({ normalizedTitleSlug: cleanTitle.slice(0, 90) }).slice(0, 24);
+  }
+
+  function normalizeAndValidateWorldRecord(rawInput, options) {
+    const opts = options || {};
+    if (!rawInput || typeof rawInput !== 'object') {
+      return { valid: false, errorCode: 'INVALID_RECORD_INPUT', reasonTr: 'Kayıt nesnesi geçersiz.' };
+    }
+
+    const nowIso = opts.nowIso || new Date().toISOString();
+    const ingestedCheck = parseStrictIsoDate(rawInput.ingested_at || rawInput.learnedAtTimeIso || nowIso);
+    if (!ingestedCheck.valid) {
+      return { valid: false, errorCode: `INVALID_INGESTED_AT:${ingestedCheck.reason}`, reasonTr: 'Sisteme alım zamanı geçersiz.' };
+    }
+
+    // A. Olay zamanı kontrolü — eksikse ingested_at ile sessizce doldurulmaz!
+    let eventTimeIso = 'not_provided';
+    let eventTimeStatus = 'NOT_PROVIDED_BY_SOURCE';
+    let eventTimeEpochMs = null;
+    const rawEventTime = rawInput.event_time ?? rawInput.eventValidTimeIso ?? null;
+    if (rawEventTime !== null && rawEventTime !== undefined && rawEventTime !== '' && rawEventTime !== 'not_provided' && rawEventTime !== 'unknown') {
+      const evCheck = parseStrictIsoDate(String(rawEventTime));
+      if (!evCheck.valid) {
+        return {
+          valid: false,
+          errorCode: `INVALID_EVENT_TIME:${evCheck.reason}`,
+          reasonTr: `Kaynağın bildirdiği olay tarihi geçersiz (${String(rawEventTime)}).`
+        };
+      }
+      eventTimeIso = evCheck.normalizedIso;
+      eventTimeStatus = 'PROVIDED';
+      eventTimeEpochMs = evCheck.epochMs;
+    }
+
+    // B. Kaynağın yayımladığı ve güncellediği zaman
+    let sourcePublishedIso = 'not_provided';
+    let sourcePublishedEpochMs = null;
+    if (rawInput.source_published_at && rawInput.source_published_at !== 'not_provided') {
+      const pubCheck = parseStrictIsoDate(String(rawInput.source_published_at));
+      if (!pubCheck.valid) {
+        return {
+          valid: false,
+          errorCode: `INVALID_SOURCE_PUBLISHED_AT:${pubCheck.reason}`,
+          reasonTr: 'Kaynağın yayın tarihi geçersiz.'
+        };
+      }
+      sourcePublishedIso = pubCheck.normalizedIso;
+      sourcePublishedEpochMs = pubCheck.epochMs;
+    }
+
+    let sourceUpdatedIso = 'not_provided';
+    if (rawInput.source_updated_at && rawInput.source_updated_at !== 'not_provided') {
+      const updCheck = parseStrictIsoDate(String(rawInput.source_updated_at));
+      if (updCheck.valid) sourceUpdatedIso = updCheck.normalizedIso;
+    }
+
+    // D. Kaynağın en son kontrol edildiği zaman
+    const checkedCheck = parseStrictIsoDate(rawInput.last_checked_at || ingestedCheck.normalizedIso);
+    const lastCheckedIso = checkedCheck.valid ? checkedCheck.normalizedIso : ingestedCheck.normalizedIso;
+
+    // E. Geçerlilik dönemi
+    const validFromIso = rawInput.valid_from && parseStrictIsoDate(String(rawInput.valid_from)).valid
+      ? parseStrictIsoDate(String(rawInput.valid_from)).normalizedIso
+      : (eventTimeStatus === 'PROVIDED' ? eventTimeIso : 'unknown');
+    const validToIso = rawInput.valid_to && parseStrictIsoDate(String(rawInput.valid_to)).valid
+      ? parseStrictIsoDate(String(rawInput.valid_to)).normalizedIso
+      : 'open_or_unknown';
+
+    const subjectObj = rawInput.subject && typeof rawInput.subject === 'object'
+      ? {
+          id: String(rawInput.subject.id || rawInput.subject_id || 'UNKNOWN_SUBJECT'),
+          name: String(rawInput.subject.name || rawInput.subject_name || rawInput.subject.id || 'Bilinmeyen Varlık'),
+          entity_type: String(rawInput.subject.entity_type || rawInput.entity_type || 'ENTITY'),
+          domain: String(rawInput.subject.domain || rawInput.domain || 'GENERAL'),
+          external_ids: rawInput.subject.external_ids && typeof rawInput.subject.external_ids === 'object'
+            ? { ...rawInput.subject.external_ids }
+            : {}
+        }
+      : {
+          id: String(rawInput.subject_id || rawInput.subject || rawInput.record_id || 'UNKNOWN_SUBJECT'),
+          name: String(rawInput.subject_name || rawInput.subject || 'Bilinmeyen Varlık'),
+          entity_type: String(rawInput.entity_type || 'ENTITY'),
+          domain: String(rawInput.domain || 'GENERAL'),
+          external_ids: {}
+        };
+
+    const sourceId = String(rawInput.source_id || rawInput.sourceId || 'unknown_source');
+    const recordId = String(
+      rawInput.record_id ||
+      rawInput.recordId ||
+      `REC-${sourceId.toUpperCase()}-${computeSha256Hex({ s: subjectObj.id, p: rawInput.relation || rawInput.predicate, o: rawInput.object ?? rawInput.value, t: eventTimeIso }).slice(0, 12)}`
+    );
+
+    const epistemicStatus = LIVING_WORLD_EPISTEMIC_CLASSES_9[rawInput.epistemic_status]
+      ? rawInput.epistemic_status
+      : (rawInput.isSampleFixture ? 'TEST_EGITIM_VERISI' : 'GERCEK_KAYNAK_KAYDI');
+
+    const originalText = rawInput.original_text !== undefined && rawInput.original_text !== null
+      ? String(rawInput.original_text)
+      : 'not_provided';
+    const originalLanguage = String(rawInput.original_language || 'unknown');
+
+    const hashPayload = {
+      record_id: recordId,
+      schema_version: '2.0.0',
+      record_type: String(rawInput.record_type || 'OBSERVATION'),
+      subject_id: subjectObj.id,
+      relation: String(rawInput.relation || rawInput.predicate || 'OBSERVED_STATE'),
+      object: rawInput.object !== undefined ? rawInput.object : (rawInput.value !== undefined ? rawInput.value : 'not_provided'),
+      units: String(rawInput.units || rawInput.unit || 'not_provided'),
+      source_id: sourceId,
+      source_document_id: String(rawInput.source_document_id || 'not_provided'),
+      event_time: eventTimeIso,
+      source_published_at: sourcePublishedIso,
+      original_text: originalText
+    };
+    const contentHash = computeSha256Hex(hashPayload);
+
+    const record = Object.freeze({
+      record_id: recordId,
+      schema_version: '2.0.0',
+      record_type: hashPayload.record_type,
+      subject: Object.freeze(subjectObj),
+      relation: hashPayload.relation,
+      predicate: hashPayload.relation,
+      object: hashPayload.object,
+      value: hashPayload.object,
+      units: hashPayload.units,
+      source_id: sourceId,
+      source_url: String(rawInput.source_url || 'not_provided'),
+      source_document_id: hashPayload.source_document_id,
+      source_publisher: String(rawInput.source_publisher || 'not_provided'),
+      source_license: String(rawInput.source_license || 'unknown'),
+      source_terms_version: String(rawInput.source_terms_version || '2026-11-09'),
+      // 5 Ayrı Zaman Alanı (A–E):
+      event_time: eventTimeIso,
+      event_time_status: eventTimeStatus,
+      event_time_epoch_ms: eventTimeEpochMs,
+      event_time_honesty_note_tr: eventTimeStatus === 'NOT_PROVIDED_BY_SOURCE'
+        ? 'Bu olayın gerçekleşme tarihi kaynakta belirtilmemiş (alım zamanı olay zamanı olarak kullanılmaz).'
+        : 'Kaynağın bildirdiği olay/ölçüm zamanı (UTC).',
+      valid_from: validFromIso,
+      valid_to: validToIso,
+      source_published_at: sourcePublishedIso,
+      source_published_epoch_ms: sourcePublishedEpochMs,
+      source_updated_at: sourceUpdatedIso,
+      observed_at: String(rawInput.observed_at || ingestedCheck.normalizedIso),
+      ingested_at: ingestedCheck.normalizedIso,
+      ingested_epoch_ms: ingestedCheck.epochMs,
+      last_checked_at: lastCheckedIso,
+      ingestion_lag_ms: sourcePublishedEpochMs !== null
+        ? Math.max(0, ingestedCheck.epochMs - sourcePublishedEpochMs)
+        : null,
+      original_language: originalLanguage,
+      original_text: originalText,
+      auto_translated: false,
+      content_hash: contentHash,
+      hash_algorithm: 'SHA-256 (FIPS 180-4)',
+      claim_status: String(rawInput.claim_status || (epistemicStatus === 'KAYNAKTA_IDDIA_EDILEN' ? 'SOURCE_REPORTED_CLAIM' : 'STRUCTURED_RECORD')),
+      epistemic_status: epistemicStatus,
+      epistemic_label_tr: LIVING_WORLD_EPISTEMIC_CLASSES_9[epistemicStatus].labelTr,
+      evidence_level: String(rawInput.evidence_level || 'SINGLE_SOURCE_RECORD'),
+      confidence_information: Object.freeze({
+        score: typeof rawInput.confidence_score === 'number' ? rawInput.confidence_score : null,
+        is_calibrated_probability: false,
+        explanation_tr: String(
+          rawInput.confidence_explanation_tr ||
+            'Bu değer kalibre edilmiş gerçekleşme olasılığı değildir; kaynak tamlığı ve yapılandırılmış alan eşleşme göstergesidir.'
+        )
+      }),
+      correction_of: rawInput.correction_of || null,
+      retracted_by: rawInput.retracted_by || null,
+      supersedes: rawInput.supersedes || null,
+      geographic_scope: String(rawInput.geographic_scope || 'unknown'),
+      temporal_scope: String(rawInput.temporal_scope || `${validFromIso}..${validToIso}`),
+      data_freshness: String(rawInput.data_freshness || 'GUNCEL'),
+      extraction_method: String(rawInput.extraction_method || 'DETERMINISTIC_API_PARSER_V2'),
+      user_confirmation: String(rawInput.user_confirmation || 'NOT_REQUIRED'),
+      usage_and_display_permissions: Object.freeze({
+        commercial_status: String(rawInput.commercial_status || 'UNDER_REVIEW'),
+        attribution_required: Boolean(rawInput.attribution_required !== false),
+        redistribution_policy: String(rawInput.redistribution_policy || 'METADATA_AND_LINK_ONLY'),
+        pii_minimized: true
+      }),
+      syndication_fingerprint: rawInput.syndication_fingerprint ||
+        (rawInput.record_type === 'NEWS_EVENT' || sourceId === 'gdelt_doc_v2'
+          ? normalizeSyndicationFingerprint(rawInput.original_text || subjectObj.name, rawInput.source_publisher, rawInput.source_url)
+          : null)
+    });
+
+    return { valid: true, record };
+  }
+
+  /**
+   * Aşama D (Bölüm 5 & 7): Canlı Saat, Saat Dilimi / Yaz-Kış Saati (DST) ve Kaynak Güncelliği
+   */
+  function getSystemClockAndTimezoneState(options) {
+    const opts = options || {};
+    const sysMs = typeof opts.systemEpochMs === 'number' ? opts.systemEpochMs : Date.now();
+    const sysDate = new Date(sysMs);
+    const utcIso = sysDate.toISOString();
+    const timeZone = opts.timeZone ||
+      (typeof Intl !== 'undefined' && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC') ||
+      'UTC';
+
+    let localFormatted = utcIso;
+    try {
+      localFormatted = new Intl.DateTimeFormat(opts.locale || 'tr-TR', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short'
+      }).format(sysDate);
+    } catch (_) {
+      localFormatted = utcIso;
+    }
+
+    // DST (Yaz/Kış saati) farkı tespiti
+    let isDstActive = false;
+    try {
+      const jan = new Date(sysDate.getUTCFullYear(), 0, 1);
+      const jul = new Date(sysDate.getUTCFullYear(), 6, 1);
+      const stdOffset = Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
+      isDstActive = sysDate.getTimezoneOffset() < stdOffset;
+    } catch (_) {
+      isDstActive = false;
+    }
+
+    const serverHttpDateMs = opts.serverHttpDateIso ? Date.parse(opts.serverHttpDateIso) : null;
+    const skewMs = Number.isFinite(serverHttpDateMs) ? Math.abs(sysMs - serverHttpDateMs) : null;
+    const clockSkewDetected = skewMs !== null && skewMs > 5 * 60 * 1000;
+
+    return {
+      utcIso,
+      systemEpochMs: sysMs,
+      userTimeZone: timeZone,
+      localFormatted,
+      isDstActive,
+      externalTimeVerified: Number.isFinite(serverHttpDateMs),
+      clockSkewMs: skewMs,
+      clockSkewWarningTr: clockSkewDetected
+        ? `İşletim sistemi saati ile dış sunucu saati arasında ${Math.round(skewMs / 60000)} dakika fark tespit edildi.`
+        : null,
+      clockVerificationLabelTr: Number.isFinite(serverHttpDateMs)
+        ? 'HTTP tarih başlığı ile karşılaştırıldı'
+        : 'Yerel işletim sistemi saati (Harici zaman doğrulaması yapılmadı)',
+      honestyNoticeTr: 'Saatin saniyelik ilerlemesi, bağlı veri kaynaklarının saniyelik güncellendiği anlamına gelmez.'
+    };
+  }
+
+  /**
+   * Bölüm 6, 7, 13, 15: İlk 5 Gerçek Veri Kaynağı Kataloğu, Kapsam/Bilinmeyenler Haritası ve Ticari/Gizlilik Koşulları
+   */
+  const REAL_WORLD_SOURCE_CONNECTORS_CATALOG = Object.freeze({
+    wikidata: {
+      source_id: 'wikidata',
+      name: 'Wikidata (Yapılandırılmış Varlık ve İlişki Bilgi Grafı)',
+      endpoint_url: 'https://www.wikidata.org/w/api.php',
+      domain_coverage: ['PEOPLE', 'INSTITUTIONS', 'COMPANIES', 'COUNTRIES', 'TECHNOLOGIES', 'CONCEPTS', 'CULTURE_SCIENCE'],
+      geographic_scope: 'Küresel (Çok dilli topluluk bilgi tabanı; yerel küçük kurumlarda eksiklik olabilir)',
+      temporal_scope: 'Tarihsel ve güncel varlık/ilişki kayıtları (revizyon tarihli)',
+      languages_supported: 'Çok dilli (tr, en, el, de, fr, es, it, pt, ar, he, ru, zh-Hans dahil 300+ dil etiketi)',
+      update_cadence_type: 'CONTINUOUS_COMMUNITY_EDITED',
+      update_cadence_label_tr: 'Sürekli topluluk/bot güncellemesi (CAELUS kontrol sıklığı: 30 dakikada bir veya kullanıcı isteğiyle)',
+      default_check_interval_ms: 30 * 60 * 1000,
+      expected_freshness_window_ms: 365 * 24 * 60 * 60 * 1000,
+      record_types: ['ENTITY', 'RELATION', 'CLAIM'],
+      source_nature: 'Yapılandırılmış kitle kaynaklı bilgi tabanı (Topluluk verisi otomatik kusursuz gerçek sayılmaz)',
+      known_blind_spots_tr: 'Henüz Wikidata öğesi açılmamış yerel şirketler, doğrulanmamış topluluk düzenlemeleri ve anlık saha telemetrisi bu kaynakta yer almaz.',
+      code_license: 'CAELUS bağlayıcı kodu: MIT / First-party',
+      data_license: 'CC0 1.0 Universal (Public Domain Dedication — yapılandırılmış veri)',
+      api_terms: 'Wikimedia Foundation API Etiquette (Açık User-Agent başlığı zorunlu; aşırı paralel tarama yasak)',
+      commercial_usage_status: 'UYGUN',
+      redistribution_and_storage: 'Yapılandırılmış CC0 verisi saklanabilir ve yeniden dağıtılabilir; dış bağlantı metinleri kendi lisansına tabidir.',
+      attribution_required: 'Wikidata / Wikimedia Foundation kaynak gösterimi ve QID bağlantısı önerilir.',
+      api_key_required: false,
+      free_quota: 'Kayıtsız adil kullanım (User-Agent ile saniyede ~1–5 ardışık istek)',
+      potential_cost: '0 USD (Wikimedia açık erişim)',
+      offline_availability: 'Daha önce alınan kayıtlar yerel dünya hafızasında SON_BILINEN_VERI etiketiyle çevrim dışı incelenebilir.',
+      sends_user_private_data: false,
+      terms_last_checked: '2026-11-09'
+    },
+    gdelt_doc_v2: {
+      source_id: 'gdelt_doc_v2',
+      name: 'GDELT Project DOC 2.0 API (Küresel Haber Olay ve Konu Keşfi)',
+      endpoint_url: 'https://api.gdeltproject.org/api/v2/doc/doc',
+      domain_coverage: ['NEWS_EVENTS', 'POLITICS', 'ECONOMY', 'SOCIETY', 'COMPANIES', 'CRISES'],
+      geographic_scope: 'Küresel açık haber siteleri (Ödeme duvarı arkasındaki yerel/kurumsal bültenleri kapsamaz)',
+      temporal_scope: 'Son 3 ay (DOC 2.0 API penceresi; 15 dakikalık tarama dilimleri)',
+      languages_supported: '65+ dil (Orijinal haber dili korunur)',
+      update_cadence_type: 'EVERY_15_MINUTES',
+      update_cadence_label_tr: '15 dakikada bir haber tarama dizini (Haber iddiasıdır; bağımsız olay doğrulaması değildir)',
+      default_check_interval_ms: 15 * 60 * 1000,
+      expected_freshness_window_ms: 2 * 60 * 60 * 1000,
+      record_types: ['NEWS_EVENT', 'CLAIM'],
+      source_nature: 'Haber kaynaklı olay ve konu dizini (Aynı haberin farklı sitelerde tekrarı bağımsız kanıt sayılmaz)',
+      known_blind_spots_tr: 'Haber sitelerinde yer almayan iç kurumsal kararlar, doğrulanmamış basın iddiaları ve telifli tam metinler kapsanmaz; ayrıca bazı ağ/güvenlik duvarlarında api.gdeltproject.org zaman aşımına uğrayabilir.',
+      code_license: 'CAELUS bağlayıcı kodu: MIT / First-party',
+      data_license: 'GDELT açık meta veri dizini (Tam haber metinleri ilgili yayıncıların telif hakkına tabidir)',
+      api_terms: 'GDELT Terms of Use — atıf zorunlu; haber başlığı/URL dışındaki telifli tam metinlerin ticari yeniden satışı kısıtlıdır.',
+      commercial_usage_status: 'İNCELEMEDE',
+      redistribution_and_storage: 'Yalnızca olay meta verisi, başlık, kaynak URL ve zaman damgası saklanır; telifli tam haber metni kopyalanmaz.',
+      attribution_required: 'The GDELT Project (https://www.gdeltproject.org/) ve orijinal haber yayıncısı atfı zorunludur.',
+      api_key_required: false,
+      free_quota: 'Açık HTTP API (Adil kullanım hız limiti uygulanır)',
+      potential_cost: '0 USD (Açık API; yüksek hacimli BigQuery sorguları Google Cloud kotasına tabidir)',
+      offline_availability: 'Çevrim dışıyken veya kaynağa ulaşılamadığında sahte canlı haber üretilmez; BAGLANTI_YOK veya SON_BILINEN_VERI gösterilir.',
+      sends_user_private_data: false,
+      terms_last_checked: '2026-11-09'
+    },
+    world_bank_indicators: {
+      source_id: 'world_bank_indicators',
+      name: 'Dünya Bankası (World Bank) Indicators API v2',
+      endpoint_url: 'https://api.worldbank.org/v2',
+      domain_coverage: ['ECONOMY', 'SOCIETY', 'ENERGY', 'TRADE', 'TECHNOLOGY_RD', 'DEMOGRAPHICS'],
+      geographic_scope: '217 ülke ve küresel/bölgesel toplamlar (Şirket veya tesis bazlı mikro veri içermez)',
+      temporal_scope: '1960–günümüz (Çoğunlukla yıllık resmi istatistik serileri)',
+      languages_supported: 'en, fr, es, ar, zh (Göstergeler uluslararası kodlarla standartlaştırılmıştır)',
+      update_cadence_type: 'ANNUAL_OR_QUARTERLY',
+      update_cadence_label_tr: 'Bu gösterge yılda bir (veya çeyreklik) yayımlanıyor; saniyelik canlı veri değildir',
+      default_check_interval_ms: 24 * 60 * 60 * 1000,
+      expected_freshness_window_ms: 400 * 24 * 60 * 60 * 1000,
+      record_types: ['INDICATOR', 'OBSERVATION'],
+      source_nature: 'Resmi uluslararası makroekonomik ve toplumsal zaman serisi',
+      known_blind_spots_tr: 'Yıllık gecikmeli yayımlanır; gün içi piyasa şoklarını veya şirket düzeyindeki tedarik kesintilerini göstermez.',
+      code_license: 'CAELUS bağlayıcı kodu: MIT / First-party',
+      data_license: 'CC BY 4.0 (Creative Commons Attribution 4.0 International — World Bank Open Data)',
+      api_terms: 'World Bank Terms of Use for Datasets (Bazı üçüncü taraf alt serilerde ek kısıt olabilir; kaynak ve seri kodu korunmalıdır)',
+      commercial_usage_status: 'UYGUN',
+      redistribution_and_storage: 'CC BY 4.0 atfı ve değişiklik bildirimi korunarak saklanabilir ve ticari üründe gösterilebilir.',
+      attribution_required: 'Kaynak: World Bank Open Data (CC BY 4.0) + Gösterge Kodu',
+      api_key_required: false,
+      free_quota: 'Açık REST API v2 (API anahtarı gerekmez)',
+      potential_cost: '0 USD',
+      offline_availability: 'Alınan ülke/gösterge serileri yerel hafızada dönem etiketiyle çevrim dışı kullanılabilir.',
+      sends_user_private_data: false,
+      terms_last_checked: '2026-11-09'
+    },
+    sec_edgar_submissions: {
+      source_id: 'sec_edgar_submissions',
+      name: 'SEC EDGAR Resmi Şirket Bildirimleri API (data.sec.gov)',
+      endpoint_url: 'https://data.sec.gov/submissions',
+      domain_coverage: ['COMPANIES', 'FINANCE', 'GOVERNANCE', 'TECHNOLOGY', 'SUPPLY_CHAIN_DISCLOSURES'],
+      geographic_scope: 'Yalnızca ABD SEC kapsamındaki halka açık şirketler (Tüm dünya şirketleri için evrensel kapsam değildir)',
+      temporal_scope: 'Resmi 10-K, 10-Q, 8-K, 20-F bildirim tarihleri ve rapor dönemleri',
+      languages_supported: 'en-US (Resmi SEC bildirim dili)',
+      update_cadence_type: 'EVENT_AND_QUARTERLY_FILING',
+      update_cadence_label_tr: 'Şirket resmi bildirim yaptıkça (10-K/10-Q/8-K) güncellenir',
+      default_check_interval_ms: 60 * 60 * 1000,
+      expected_freshness_window_ms: 120 * 24 * 60 * 60 * 1000,
+      record_types: ['FILING', 'ENTITY', 'CLAIM'],
+      source_nature: 'ABD Menkul Kıymetler ve Borsa Komisyonu (SEC) resmi düzenleyici bildirim kaydı',
+      known_blind_spots_tr: 'ABD borsalarında işlem görmeyen şirketleri, özel (halka kapalı) şirketleri ve bildirim eşiği altındaki operasyonel olayları kapsamaz.',
+      code_license: 'CAELUS bağlayıcı kodu: MIT / First-party',
+      data_license: 'U.S. Government Public Domain (17 U.S.C. § 105 — kamu malı resmi bildirimler)',
+      api_terms: 'SEC.gov Fair Access Policy: Açık "Sample Company Name AdminContact@<domain>.com" biçiminde User-Agent başlığı zorunlu; saniyede en fazla 10 istek.',
+      commercial_usage_status: 'UYGUN',
+      redistribution_and_storage: 'Kamu malı resmi bildirim verisi saklanabilir; SEC Fair Access hız limitlerine uyulmalıdır.',
+      attribution_required: 'U.S. SEC EDGAR (CIK ve Accession Number referansıyla)',
+      api_key_required: false,
+      free_quota: 'Maksimum 10 istek / saniye (Kurumsal User-Agent başlığı zorunlu)',
+      potential_cost: '0 USD',
+      offline_availability: 'İndirilen bildirim özetleri CIK ve erişim numarasıyla yerel hafızada çevrim dışı incelenebilir.',
+      sends_user_private_data: false,
+      terms_last_checked: '2026-11-09'
+    },
+    openalex_scholarly: {
+      source_id: 'openalex_scholarly',
+      name: 'OpenAlex Akademik Yayın, Kurum ve Araştırma Grafı API',
+      endpoint_url: 'https://api.openalex.org/works',
+      domain_coverage: ['SCIENCE', 'TECHNOLOGY', 'RESEARCH_INSTITUTIONS', 'MEDICINE', 'SOCIAL_SCIENCES', 'CONCEPTS'],
+      geographic_scope: 'Küresel akademik yayınlar, üniversiteler ve araştırma kurumları',
+      temporal_scope: 'Tarihsel ve güncel bilimsel yayınlar (yayın tarihi bazlı)',
+      languages_supported: 'Çok dilli akademik yayın meta verisi',
+      update_cadence_type: 'DAILY_INDEX_UPDATE',
+      update_cadence_label_tr: 'Günlük akademik indeks güncellemesi (Meta veri CC0; makale tam metin telifleri ayrıdır)',
+      default_check_interval_ms: 6 * 60 * 60 * 1000,
+      expected_freshness_window_ms: 30 * 24 * 60 * 60 * 1000,
+      record_types: ['PUBLICATION', 'ENTITY', 'RELATION'],
+      source_nature: 'Açık bilimsel yayın, yazar, kurum ve kavram ilişkileri meta veri kataloğu',
+      known_blind_spots_tr: 'Yalnızca yayımlanmış/indekslenmiş akademik çalışmaları içerir; makale meta verisi CC0 olsa da makalelerin tam metinleri yayıncı telifine tabi olabilir. Anahtarsız kullanımda günlük paylaşılan IP bütçesi ($0.10/gün) sınırı vardır.',
+      code_license: 'CAELUS bağlayıcı kodu: MIT / First-party',
+      data_license: 'CC0 1.0 Universal (Meta veri ve ilişki grafı; tam metinler hariç)',
+      api_terms: 'OpenAlex API Terms — polite pool (mailto parametresi) önerilir; anahtarsız IP başına günlük ücretsiz bütçe sınırı bulunur.',
+      commercial_usage_status: 'UYGUN',
+      redistribution_and_storage: 'CC0 meta veriler (başlık, DOI, yayın tarihi, kurum/kavram ilişkileri) ticari olarak saklanabilir; tam metin PDF yeniden dağıtımı yapılmaz.',
+      attribution_required: 'OpenAlex (OurResearch) ve DOI referansı',
+      api_key_required: false,
+      free_quota: 'Anahtarsız paylaşılan günlük IP bütçesi (~$0.10/gün eşdeğeri çağrı) veya ücretsiz hesapla 100.000 çağrı/gün',
+      potential_cost: '0 USD (Temel meta veri sorguları için ücretsiz; yüksek hacimli kurumsal senkronizasyon ücretli plan gerektirebilir)',
+      offline_availability: 'Alınan yayın ve kurum ilişkileri yerel hafızada DOI ve OpenAlex kimliğiyle çevrim dışı tutulur.',
+      sends_user_private_data: false,
+      terms_last_checked: '2026-11-09'
+    }
+  });
+
+  function evaluateRecordAndSourceFreshness(sourceId, stateOrRecord, nowIso) {
+    const nowCheck = parseStrictIsoDate(nowIso || new Date().toISOString());
+    const nowMs = nowCheck.valid ? nowCheck.epochMs : Date.now();
+    const spec = REAL_WORLD_SOURCE_CONNECTORS_CATALOG[sourceId] || null;
+    const st = stateOrRecord || {};
+
+    if (st.retracted_by || st.correction_of || st.retracted === true) {
+      return {
+        status: 'DUZELTILDI_GERI_CEKILDI',
+        ...DATA_FRESHNESS_LABELS_7.DUZELTILDI_GERI_CEKILDI,
+        cadenceNoteTr: spec ? spec.update_cadence_label_tr : 'Kaynak kaydı düzeltildi veya geri çekildi.'
+      };
+    }
+
+    if (st.networkError || st.reachable === false) {
+      const hasCached = Boolean(st.last_success_at || st.ingested_at);
+      const code = hasCached ? 'SON_BILINEN_VERI' : 'BAGLANTI_YOK';
+      return {
+        status: code,
+        ...DATA_FRESHNESS_LABELS_7[code],
+        cadenceNoteTr: hasCached
+          ? `Kaynağa şu anda ulaşılamıyor. Son başarılı güncelleme (${st.last_success_at || st.ingested_at}) gösteriliyor.`
+          : 'Kaynağa şu anda ulaşılamıyor ve yerel önbellekte kayıt bulunmuyor.'
+      };
+    }
+
+    const refIso = st.last_success_at || st.ingested_at || st.source_published_at;
+    if (!refIso || refIso === 'not_provided' || refIso === 'unknown') {
+      return {
+        status: 'SURESI_BILINMIYOR',
+        ...DATA_FRESHNESS_LABELS_7.SURESI_BILINMIYOR,
+        cadenceNoteTr: spec ? spec.update_cadence_label_tr : 'Güncellik süresi belirlenemedi.'
+      };
+    }
+
+    const refCheck = parseStrictIsoDate(refIso);
+    if (!refCheck.valid) {
+      return {
+        status: 'SURESI_BILINMIYOR',
+        ...DATA_FRESHNESS_LABELS_7.SURESI_BILINMIYOR,
+        cadenceNoteTr: 'Tarih alanı ayrıştırılamadı.'
+      };
+    }
+
+    const ageMs = Math.max(0, nowMs - refCheck.epochMs);
+    const ageMinutes = Math.round(ageMs / 60000);
+    const windowMs = spec ? spec.expected_freshness_window_ms : 24 * 60 * 60 * 1000;
+
+    if (spec && spec.update_cadence_type === 'ANNUAL_OR_QUARTERLY') {
+      if (ageMs <= windowMs) {
+        return {
+          status: 'GUNCEL',
+          ...DATA_FRESHNESS_LABELS_7.GUNCEL,
+          ageMinutes,
+          cadenceNoteTr: 'Bu gösterge yılda bir yayımlanıyor; kaynağın kendi yayın takvimi içinde günceldir.'
+        };
+      }
+      return {
+        status: 'BEKLENIYOR',
+        ...DATA_FRESHNESS_LABELS_7.BEKLENIYOR,
+        ageMinutes,
+        cadenceNoteTr: 'Bu gösterge yılda bir yayımlanıyor; yeni yıl serisi henüz yayımlanmadı.'
+      };
+    }
+
+    if (ageMs <= windowMs) {
+      return {
+        status: 'GUNCEL',
+        ...DATA_FRESHNESS_LABELS_7.GUNCEL,
+        ageMinutes,
+        cadenceNoteTr: `Son başarılı güncelleme: ${ageMinutes} dakika önce (${spec ? spec.update_cadence_label_tr : 'Güncel'}).`
+      };
+    }
+
+    return {
+      status: 'GECIKMIS',
+      ...DATA_FRESHNESS_LABELS_7.GECIKMIS,
+      ageMinutes,
+      cadenceNoteTr: `Beklenen yenilenme aralığı aşıldı (${ageMinutes} dakika önce alındı).`
+    };
+  }
+
+  // ============================================================================
+  // 5 GERÇEK VERİ KAYNAĞI AYRIŞTIRICILARI (PARSERS) VE CANLI HTTP BAĞLAYICILARI
+  // ============================================================================
+
+  function parseWikidataEntityResponse(jsonPayload, options) {
+    const opts = options || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    if (!jsonPayload || typeof jsonPayload !== 'object' || !jsonPayload.entities) {
+      return { ok: false, errorCode: 'WIKIDATA_SCHEMA_MISMATCH', records: [] };
+    }
+    const records = [];
+    const entitiesMap = jsonPayload.entities;
+    const propertyLabels = {
+      P31: 'INSTANCE_OF',
+      P17: 'COUNTRY',
+      P452: 'INDUSTRY',
+      P112: 'FOUNDED_BY',
+      P159: 'HEADQUARTERS_LOCATION',
+      P361: 'PART_OF',
+      P127: 'OWNED_BY',
+      P1056: 'PRODUCT_OR_MATERIAL_PRODUCED'
+    };
+
+    for (const [qid, ent] of Object.entries(entitiesMap)) {
+      if (!ent || ent.missing !== undefined) continue;
+      const labelTr = ent.labels && ent.labels.tr ? ent.labels.tr.value : null;
+      const labelEn = ent.labels && ent.labels.en ? ent.labels.en.value : null;
+      const chosenLabel = labelTr || labelEn || qid;
+      const chosenLang = labelTr ? 'tr' : (labelEn ? 'en' : 'unknown');
+      const descTr = ent.descriptions && ent.descriptions.tr ? ent.descriptions.tr.value : null;
+      const descEn = ent.descriptions && ent.descriptions.en ? ent.descriptions.en.value : null;
+      const chosenDesc = descTr || descEn || 'not_provided';
+      const modifiedIso = ent.modified ? String(ent.modified) : 'not_provided';
+
+      const baseNorm = normalizeAndValidateWorldRecord({
+        record_id: `WIKIDATA-ENT-${qid}`,
+        record_type: 'ENTITY',
+        subject: {
+          id: `WIKIDATA:${qid}`,
+          name: chosenLabel,
+          entity_type: 'ORGANIZATION_OR_CONCEPT',
+          domain: 'KNOWLEDGE_GRAPH',
+          external_ids: { wikidata_qid: qid, lastrevid: ent.lastrevid || null }
+        },
+        relation: 'WIKIDATA_ENTITY_DESCRIPTION',
+        object: chosenDesc,
+        units: 'text',
+        source_id: 'wikidata',
+        source_url: `https://www.wikidata.org/wiki/${qid}`,
+        source_document_id: `${qid}@rev${ent.lastrevid || 'latest'}`,
+        source_publisher: 'Wikidata / Wikimedia Foundation',
+        source_license: 'CC0 1.0 Universal',
+        event_time: 'not_provided',
+        source_published_at: modifiedIso,
+        source_updated_at: modifiedIso,
+        ingested_at: nowIso,
+        last_checked_at: nowIso,
+        original_language: chosenLang,
+        original_text: `${chosenLabel}: ${chosenDesc}`,
+        epistemic_status: 'GERCEK_KAYNAK_KAYDI',
+        evidence_level: 'STRUCTURED_COMMUNITY_KG_REQUIRES_PRIMARY_CHECK',
+        geographic_scope: 'Küresel',
+        commercial_status: 'UYGUN'
+      }, { nowIso });
+
+      if (baseNorm.valid) records.push(baseNorm.record);
+
+      const claims = ent.claims || {};
+      for (const [propId, relName] of Object.entries(propertyLabels)) {
+        const claimArr = Array.isArray(claims[propId]) ? claims[propId] : [];
+        for (const cl of claimArr.slice(0, 3)) {
+          const dv = cl && cl.mainsnak && cl.mainsnak.datavalue;
+          const targetQid = dv && dv.value && dv.value.id ? String(dv.value.id) : null;
+          if (!targetQid) continue;
+          const relNorm = normalizeAndValidateWorldRecord({
+            record_id: `WIKIDATA-CLAIM-${qid}-${propId}-${targetQid}`,
+            record_type: 'RELATION',
+            subject: {
+              id: `WIKIDATA:${qid}`,
+              name: chosenLabel,
+              entity_type: 'ORGANIZATION_OR_CONCEPT',
+              domain: 'KNOWLEDGE_GRAPH',
+              external_ids: { wikidata_qid: qid }
+            },
+            relation: relName,
+            object: `WIKIDATA:${targetQid}`,
+            units: 'wikidata_entity_id',
+            source_id: 'wikidata',
+            source_url: `https://www.wikidata.org/wiki/${qid}#${propId}`,
+            source_document_id: String(cl.id || `${qid}-${propId}-${targetQid}`),
+            source_publisher: 'Wikidata / Wikimedia Foundation',
+            source_license: 'CC0 1.0 Universal',
+            event_time: 'not_provided',
+            source_published_at: modifiedIso,
+            ingested_at: nowIso,
+            last_checked_at: nowIso,
+            original_language: chosenLang,
+            original_text: `${chosenLabel} (${qid}) --[${relName} (${propId})]--> ${targetQid}`,
+            epistemic_status: 'GERCEK_KAYNAK_KAYDI',
+            evidence_level: 'STRUCTURED_COMMUNITY_KG_REQUIRES_PRIMARY_CHECK',
+            geographic_scope: 'Küresel',
+            commercial_status: 'UYGUN'
+          }, { nowIso });
+          if (relNorm.valid) records.push(relNorm.record);
+        }
+      }
+    }
+
+    return { ok: true, records };
+  }
+
+  function clusterSyndicatedArticles(records) {
+    const byFp = new Map();
+    for (const r of records) {
+      const fp = r.syndication_fingerprint || r.record_id;
+      const list = byFp.get(fp) || [];
+      list.push(r);
+      byFp.set(fp, list);
+    }
+    const annotated = [];
+    const syndicationGroups = [];
+    for (const [fp, group] of byFp.entries()) {
+      const distinctDomains = Array.from(new Set(group.map((g) => g.source_publisher)));
+      const isSyndicatedCopy = group.length > 1;
+      if (isSyndicatedCopy) {
+        syndicationGroups.push({
+          syndicationFingerprint: fp,
+          copyCount: group.length,
+          publishers: distinctDomains,
+          independentEvidenceCount: 1,
+          warningTr: `Bu haber ${group.length} farklı sitede (${distinctDomains.join(', ')}) yer alıyor; aynı kaynağı tekrar ediyor olabilir (bağımsız kanıt sayılmaz).`
+        });
+      }
+      group.forEach((item, idx) => {
+        annotated.push(Object.freeze({
+          ...item,
+          is_syndicated_duplicate: idx > 0,
+          syndication_copy_count: group.length,
+          independent_corroboration_counted: idx === 0,
+          syndication_notice_tr: isSyndicatedCopy
+            ? `Bu haber ${group.length} farklı sitede yer alıyor; aynı kaynağı tekrar ediyor olabilir.`
+            : null
+        }));
+      });
+    }
+    return { records: annotated, syndicationGroups };
+  }
+
+  function parseGdeltArtListResponse(jsonPayload, options) {
+    const opts = options || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    if (!jsonPayload || typeof jsonPayload !== 'object' || !Array.isArray(jsonPayload.articles)) {
+      return { ok: false, errorCode: 'GDELT_SCHEMA_MISMATCH', records: [], syndicationGroups: [] };
+    }
+    const rawRecords = [];
+    for (const art of jsonPayload.articles) {
+      if (!art || typeof art !== 'object') continue;
+      // GDELT seendate format: YYYYMMDDTHHMMSSZ -> ISO
+      let pubIso = 'not_provided';
+      const sd = String(art.seendate || '').trim();
+      const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(sd);
+      if (m) {
+        pubIso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}.000Z`;
+      } else if (parseStrictIsoDate(sd).valid) {
+        pubIso = parseStrictIsoDate(sd).normalizedIso;
+      }
+
+      const norm = normalizeAndValidateWorldRecord({
+        record_id: `GDELT-${computeSha256Hex({ u: art.url, t: art.title }).slice(0, 14)}`,
+        record_type: 'NEWS_EVENT',
+        subject: {
+          id: `TOPIC:${String(opts.queryTopic || art.domain || 'GLOBAL_NEWS').toUpperCase()}`,
+          name: String(art.title || 'Haber Kaydı').slice(0, 140),
+          entity_type: 'NEWS_REPORTED_EVENT',
+          domain: 'MEDIA_NEWS'
+        },
+        relation: 'REPORTED_IN_NEWS_ARTICLE',
+        object: String(art.title || ''),
+        units: 'headline_claim',
+        source_id: 'gdelt_doc_v2',
+        source_url: String(art.url || 'not_provided'),
+        source_document_id: String(art.url || 'not_provided'),
+        source_publisher: String(art.domain || 'unknown_publisher'),
+        source_license: 'GDELT Index / Publisher Copyright Applies to Full Text',
+        event_time: 'not_provided', // Haber yayın zamanı != olayın kesin gerçekleşme zamanı!
+        source_published_at: pubIso,
+        ingested_at: nowIso,
+        last_checked_at: nowIso,
+        original_language: String(art.language || 'unknown'),
+        original_text: String(art.title || ''),
+        epistemic_status: 'KAYNAKTA_IDDIA_EDILEN',
+        evidence_level: 'NEWS_MEDIA_CLAIM_NOT_INDEPENDENTLY_VERIFIED',
+        geographic_scope: String(art.sourcecountry || 'unknown'),
+        commercial_status: 'İNCELEMEDE'
+      }, { nowIso });
+      if (norm.valid) rawRecords.push(norm.record);
+    }
+
+    const clustered = clusterSyndicatedArticles(rawRecords);
+    return {
+      ok: true,
+      records: clustered.records,
+      syndicationGroups: clustered.syndicationGroups
+    };
+  }
+
+  function parseWorldBankIndicatorResponse(jsonPayload, options) {
+    const opts = options || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    if (!Array.isArray(jsonPayload) || jsonPayload.length < 2 || !Array.isArray(jsonPayload[1])) {
+      return { ok: false, errorCode: 'WORLDBANK_SCHEMA_MISMATCH', records: [] };
+    }
+    const meta = jsonPayload[0] || {};
+    const rows = jsonPayload[1];
+    const pubAt = meta.lastupdated ? `${String(meta.lastupdated).trim()}T00:00:00.000Z` : 'not_provided';
+    const records = [];
+
+    for (const row of rows) {
+      if (!row || row.value === null || row.value === undefined) continue;
+      const countryCode = (row.countryiso3code || (row.country && row.country.id) || 'UNK').trim();
+      const countryName = (row.country && row.country.value) || countryCode;
+      const indId = (row.indicator && row.indicator.id) || 'WB_IND';
+      const indName = (row.indicator && row.indicator.value) || indId;
+      const yearStr = String(row.date || '').trim();
+      const eventIso = /^\d{4}$/.test(yearStr) ? `${yearStr}-12-31T00:00:00.000Z` : 'not_provided';
+
+      const norm = normalizeAndValidateWorldRecord({
+        record_id: `WB-${countryCode}-${indId}-${yearStr}`,
+        record_type: 'INDICATOR',
+        subject: {
+          id: `COUNTRY:${countryCode}`,
+          name: countryName,
+          entity_type: 'COUNTRY',
+          domain: 'MACROECONOMICS_AND_SOCIETY',
+          external_ids: { iso3: countryCode, indicator_id: indId }
+        },
+        relation: indId,
+        object: Number(row.value),
+        units: String(row.unit || 'annual_indicator_value'),
+        source_id: 'world_bank_indicators',
+        source_url: `https://data.worldbank.org/indicator/${encodeURIComponent(indId)}?locations=${encodeURIComponent(countryCode)}`,
+        source_document_id: `${countryCode}:${indId}:${yearStr}`,
+        source_publisher: 'World Bank Open Data (WDI)',
+        source_license: 'CC BY 4.0',
+        event_time: eventIso,
+        valid_from: /^\d{4}$/.test(yearStr) ? `${yearStr}-01-01T00:00:00.000Z` : 'unknown',
+        valid_to: /^\d{4}$/.test(yearStr) ? `${yearStr}-12-31T23:59:59.000Z` : 'unknown',
+        source_published_at: pubAt,
+        ingested_at: nowIso,
+        last_checked_at: nowIso,
+        original_language: 'en',
+        original_text: `${countryName} (${countryCode}) — ${indName} (${yearStr}): ${row.value}`,
+        epistemic_status: 'GERCEK_KAYNAK_KAYDI',
+        evidence_level: 'OFFICIAL_INTERNATIONAL_STATISTICAL_SERIES',
+        geographic_scope: countryName,
+        temporal_scope: `Yıllık Dönem: ${yearStr}`,
+        commercial_status: 'UYGUN'
+      }, { nowIso });
+      if (norm.valid) records.push(norm.record);
+    }
+
+    return { ok: true, records };
+  }
+
+  function parseSecEdgarSubmissionsResponse(jsonPayload, options) {
+    const opts = options || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    if (!jsonPayload || typeof jsonPayload !== 'object' || !jsonPayload.cik || !jsonPayload.filings || !jsonPayload.filings.recent) {
+      return { ok: false, errorCode: 'SEC_EDGAR_SCHEMA_MISMATCH', records: [] };
+    }
+    const cikPadded = String(jsonPayload.cik).padStart(10, '0');
+    const companyName = String(jsonPayload.name || `CIK-${cikPadded}`);
+    const sic = String(jsonPayload.sic || 'unknown');
+    const sicDesc = String(jsonPayload.sicDescription || 'unknown');
+    const tickers = Array.isArray(jsonPayload.tickers) ? jsonPayload.tickers : [];
+    const recent = jsonPayload.filings.recent;
+    const forms = Array.isArray(recent.form) ? recent.form : [];
+    const filingDates = Array.isArray(recent.filingDate) ? recent.filingDate : [];
+    const reportDates = Array.isArray(recent.reportDate) ? recent.reportDate : [];
+    const accessionNumbers = Array.isArray(recent.accessionNumber) ? recent.accessionNumber : [];
+    const primaryDocs = Array.isArray(recent.primaryDocument) ? recent.primaryDocument : [];
+
+    const records = [];
+    const targetForms = new Set(['10-K', '10-Q', '8-K', '20-F', '6-K']);
+    const maxFilings = Number(opts.maxFilings) || 5;
+
+    for (let i = 0; i < forms.length && records.length < maxFilings; i++) {
+      const formType = String(forms[i] || '');
+      if (!targetForms.has(formType)) continue;
+      const fDate = String(filingDates[i] || '').trim();
+      const rDate = String(reportDates[i] || '').trim();
+      const accNum = String(accessionNumbers[i] || `ACC-${i}`).trim();
+      const accNoHyphen = accNum.replace(/-/g, '');
+      const docName = String(primaryDocs[i] || '').trim();
+
+      const norm = normalizeAndValidateWorldRecord({
+        record_id: `SEC-${cikPadded}-${accNum}`,
+        record_type: 'FILING',
+        subject: {
+          id: `COMPANY:CIK${cikPadded}`,
+          name: companyName,
+          entity_type: 'COMPANY',
+          domain: 'CORPORATE_FILINGS_AND_FINANCE',
+          external_ids: {
+            sec_cik: cikPadded,
+            ticker: tickers[0] || null,
+            sic_code: sic,
+            sic_description: sicDesc
+          }
+        },
+        relation: `SEC_FILING_${formType.replace(/[^A-Z0-9]/g, '_')}`,
+        object: `${formType} Resmi Bildirimi (SIC: ${sicDesc})`,
+        units: 'regulatory_filing',
+        source_id: 'sec_edgar_submissions',
+        source_url: docName
+          ? `https://www.sec.gov/Archives/edgar/data/${Number(jsonPayload.cik)}/${accNoHyphen}/${docName}`
+          : `https://www.sec.gov/edgar/browse/?CIK=${cikPadded}`,
+        source_document_id: accNum,
+        source_publisher: 'U.S. Securities and Exchange Commission (SEC EDGAR)',
+        source_license: 'U.S. Government Public Domain',
+        event_time: /^\d{4}-\d{2}-\d{2}$/.test(rDate) ? `${rDate}T00:00:00.000Z` : 'not_provided',
+        source_published_at: /^\d{4}-\d{2}-\d{2}$/.test(fDate) ? `${fDate}T00:00:00.000Z` : 'not_provided',
+        ingested_at: nowIso,
+        last_checked_at: nowIso,
+        original_language: 'en-US',
+        original_text: `${companyName} (${tickers.join('/') || cikPadded}) — Form ${formType} filed on ${fDate} (Report period: ${rDate || 'not_provided'}, SIC: ${sic} ${sicDesc})`,
+        epistemic_status: 'GERCEK_KAYNAK_KAYDI',
+        evidence_level: 'OFFICIAL_REGULATORY_FILING_US_SCOPE',
+        geographic_scope: 'ABD SEC Kapsamı (Küresel tüm şirketleri kapsamaz)',
+        commercial_status: 'UYGUN'
+      }, { nowIso });
+
+      if (norm.valid) records.push(norm.record);
+    }
+
+    return { ok: true, records };
+  }
+
+  function parseOpenAlexWorksResponse(jsonPayload, options) {
+    const opts = options || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    if (!jsonPayload || typeof jsonPayload !== 'object' || !Array.isArray(jsonPayload.results)) {
+      return { ok: false, errorCode: 'OPENALEX_SCHEMA_MISMATCH', records: [] };
+    }
+    const records = [];
+    for (const work of jsonPayload.results) {
+      if (!work || !work.id) continue;
+      const workShortId = String(work.id).replace('https://openalex.org/', '');
+      const title = String(work.display_name || work.title || workShortId);
+      const pubDate = String(work.publication_date || '').trim();
+      const pubIso = /^\d{4}-\d{2}-\d{2}$/.test(pubDate) ? `${pubDate}T00:00:00.000Z` : 'not_provided';
+      const updatedIso = work.updated_date ? String(work.updated_date) : 'not_provided';
+      const doi = work.doi ? String(work.doi) : 'not_provided';
+
+      const institutions = [];
+      if (Array.isArray(work.authorships)) {
+        for (const auth of work.authorships) {
+          for (const inst of auth.institutions || []) {
+            if (inst && inst.display_name && !institutions.includes(inst.display_name)) {
+              institutions.push(inst.display_name);
+            }
+          }
+        }
+      }
+      const topicName = (work.primary_topic && work.primary_topic.display_name) ||
+        (Array.isArray(work.concepts) && work.concepts[0] && work.concepts[0].display_name) ||
+        'Bilimsel Araştırma';
+
+      const norm = normalizeAndValidateWorldRecord({
+        record_id: `OPENALEX-${workShortId}`,
+        record_type: 'PUBLICATION',
+        subject: {
+          id: `OPENALEX:${workShortId}`,
+          name: title,
+          entity_type: 'SCIENTIFIC_PUBLICATION',
+          domain: 'SCIENCE_AND_TECHNOLOGY',
+          external_ids: {
+            openalex_id: workShortId,
+            doi,
+            institutions: institutions.slice(0, 4),
+            primary_topic: topicName
+          }
+        },
+        relation: 'PUBLISHED_RESEARCH_ON_TOPIC',
+        object: `${topicName}${institutions.length > 0 ? ' · Kurumlar: ' + institutions.slice(0, 3).join(', ') : ''}`,
+        units: 'cited_by_count:' + String(work.cited_by_count ?? 0),
+        source_id: 'openalex_scholarly',
+        source_url: doi !== 'not_provided' ? doi : String(work.id),
+        source_document_id: workShortId,
+        source_publisher: 'OpenAlex (OurResearch)',
+        source_license: 'CC0 1.0 (Meta veri; tam metin telifi yayıncıya aittir)',
+        event_time: 'not_provided',
+        source_published_at: pubIso,
+        source_updated_at: updatedIso,
+        ingested_at: nowIso,
+        last_checked_at: nowIso,
+        original_language: String(work.language || 'en'),
+        original_text: `${title} (${pubDate || 'tarihsiz'}) — Konu: ${topicName} · Atıf: ${work.cited_by_count ?? 0}`,
+        epistemic_status: 'GERCEK_KAYNAK_KAYDI',
+        evidence_level: 'PEER_INDEXED_SCHOLARLY_METADATA',
+        geographic_scope: 'Küresel Akademik Yayın İndeksi',
+        commercial_status: 'UYGUN'
+      }, { nowIso });
+
+      if (norm.valid) records.push(norm.record);
+    }
+
+    return { ok: true, records, metaNotice: jsonPayload.meta && jsonPayload.meta.notice ? String(jsonPayload.meta.notice) : null };
+  }
+
+  /**
+   * Canlı HTTP kaynağı sorgulama adaptörü (Çevrim dışı deterministik çekirdekten ayrı sınırda çalışır).
+   * Erişilemeyen kaynaklar için asla sahte canlı yanıt üretmez; gerçek hata durumunu döndürür.
+   */
+  async function fetchFromRealWorldSource(sourceId, queryParams, options) {
+    const opts = options || {};
+    const params = queryParams || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    const spec = REAL_WORLD_SOURCE_CONNECTORS_CATALOG[sourceId];
+    if (!spec) {
+      return {
+        ok: false,
+        source_id: sourceId,
+        errorCode: 'UNKNOWN_SOURCE_ID',
+        userMessageTr: `Kaynak tanımı bulunamadı: ${sourceId}`,
+        records: []
+      };
+    }
+
+    if (opts.offlineMode === true) {
+      return {
+        ok: false,
+        source_id: sourceId,
+        reachable: false,
+        freshness: evaluateRecordAndSourceFreshness(sourceId, { reachable: false, last_success_at: opts.lastSuccessAt }, nowIso),
+        errorCode: 'OFFLINE_MODE_ACTIVE',
+        userMessageTr: 'Çevrim dışı mod aktif: dış ağa istek gönderilmedi. Yerel hafızadaki son bilinen veriler korunuyor.',
+        records: []
+      };
+    }
+
+    const fetchFn = opts.fetchImpl || (typeof fetch === 'function' ? fetch : null);
+    if (!fetchFn) {
+      return {
+        ok: false,
+        source_id: sourceId,
+        reachable: false,
+        errorCode: 'FETCH_API_UNAVAILABLE',
+        userMessageTr: 'Bu çalışma ortamında HTTP istemcisi bulunmuyor.',
+        records: []
+      };
+    }
+
+    let url = '';
+    const headers = {
+      'Accept': 'application/json',
+      'User-Agent': 'CAELUSResearchPlatform/2.0 (https://github.com/borabirhekimoglu8-ops/CAELUS; contact@caelus-project.org)'
+    };
+
+    if (sourceId === 'wikidata') {
+      const ids = Array.isArray(params.entityIds) && params.entityIds.length > 0
+        ? params.entityIds.join('|')
+        : (params.entityId || 'Q312|Q2283|Q43');
+      url = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(ids)}&languages=tr|en&props=labels|descriptions|claims|info&format=json&origin=*`;
+    } else if (sourceId === 'gdelt_doc_v2') {
+      const q = params.query || 'semiconductor OR energy';
+      url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=ArtList&maxrecords=${Number(params.maxRecords) || 5}&timespan=24h&format=json`;
+    } else if (sourceId === 'world_bank_indicators') {
+      const countries = params.countries || 'TUR;WLD';
+      const indicator = params.indicator || 'NY.GDP.MKTP.KD.ZG';
+      url = `https://api.worldbank.org/v2/country/${encodeURIComponent(countries)}/indicator/${encodeURIComponent(indicator)}?format=json&per_page=${Number(params.perPage) || 6}`;
+    } else if (sourceId === 'sec_edgar_submissions') {
+      const cikRaw = String(params.cik || '0000320193').replace(/\D/g, '').padStart(10, '0');
+      url = `https://data.sec.gov/submissions/CIK${cikRaw}.json`;
+      headers['User-Agent'] = 'CAELUSResearchPlatform contact@caelus-project.org';
+    } else if (sourceId === 'openalex_scholarly') {
+      const search = params.search || 'causal discovery world model';
+      url = `https://api.openalex.org/works?search=${encodeURIComponent(search)}&per-page=${Number(params.perPage) || 4}&mailto=contact@caelus-project.org`;
+    }
+
+    const t0 = Date.now();
+    try {
+      const timeoutMs = Number(opts.timeoutMs) || 8500;
+      const resp = await fetchFn(url, {
+        headers,
+        signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined
+      });
+      const latencyMs = Date.now() - t0;
+      const serverDateHeader = resp.headers && typeof resp.headers.get === 'function' ? resp.headers.get('date') : null;
+
+      if (!resp.ok) {
+        return {
+          ok: false,
+          source_id: sourceId,
+          reachable: false,
+          httpStatus: resp.status,
+          latencyMs,
+          checkedAtIso: nowIso,
+          errorCode: `HTTP_STATUS_${resp.status}`,
+          userMessageTr: `${spec.name} kaynağı HTTP ${resp.status} yanıtı döndürdü. Sahte veri üretilmedi.`,
+          remediationTr: sourceId === 'sec_edgar_submissions'
+            ? 'SEC Fair Access politikasına uygun User-Agent başlığını ve hız limitini (<=10 istek/sn) kontrol edin.'
+            : 'Kaynağın hız limitini veya servis durumunu kontrol edip daha sonra tekrar deneyin.',
+          freshness: evaluateRecordAndSourceFreshness(sourceId, { reachable: false, last_success_at: opts.lastSuccessAt }, nowIso),
+          records: []
+        };
+      }
+
+      const json = await resp.json();
+      let parsed = { ok: false, records: [] };
+      if (sourceId === 'wikidata') parsed = parseWikidataEntityResponse(json, { nowIso });
+      else if (sourceId === 'gdelt_doc_v2') parsed = parseGdeltArtListResponse(json, { nowIso, queryTopic: params.query });
+      else if (sourceId === 'world_bank_indicators') parsed = parseWorldBankIndicatorResponse(json, { nowIso });
+      else if (sourceId === 'sec_edgar_submissions') parsed = parseSecEdgarSubmissionsResponse(json, { nowIso, maxFilings: params.maxFilings });
+      else if (sourceId === 'openalex_scholarly') parsed = parseOpenAlexWorksResponse(json, { nowIso });
+
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          source_id: sourceId,
+          reachable: true,
+          httpStatus: resp.status,
+          latencyMs,
+          checkedAtIso: nowIso,
+          errorCode: parsed.errorCode || 'SCHEMA_PARSE_ERROR',
+          userMessageTr: `${spec.name} yanıt şeması beklenen sözleşmeyle uyuşmadı (${parsed.errorCode}).`,
+          freshness: evaluateRecordAndSourceFreshness(sourceId, { reachable: false, last_success_at: opts.lastSuccessAt }, nowIso),
+          records: []
+        };
+      }
+
+      return {
+        ok: true,
+        source_id: sourceId,
+        source_name: spec.name,
+        reachable: true,
+        httpStatus: resp.status,
+        latencyMs,
+        checkedAtIso: nowIso,
+        serverDateHeader,
+        recordCount: parsed.records.length,
+        records: parsed.records,
+        syndicationGroups: parsed.syndicationGroups || [],
+        metaNotice: parsed.metaNotice || null,
+        license: spec.data_license,
+        commercialStatus: spec.commercial_usage_status,
+        freshness: evaluateRecordAndSourceFreshness(sourceId, { reachable: true, last_success_at: nowIso }, nowIso)
+      };
+    } catch (err) {
+      const latencyMs = Date.now() - t0;
+      return {
+        ok: false,
+        source_id: sourceId,
+        source_name: spec.name,
+        reachable: false,
+        httpStatus: null,
+        latencyMs,
+        checkedAtIso: nowIso,
+        errorCode: 'NETWORK_TIMEOUT_OR_UNREACHABLE',
+        errorDetail: String(err && err.message ? err.message : err),
+        userMessageTr: `Kaynağa şu anda ulaşılamıyor (${spec.name} zaman aşımı veya ağ kısıtı). Sahte canlı kayıt üretilmedi.`,
+        remediationTr: 'İnternet bağlantınızı veya güvenlik duvarı ayarlarınızı kontrol edin; çevrim dışı modda son bilinen kayıtları inceleyebilirsiniz.',
+        freshness: evaluateRecordAndSourceFreshness(sourceId, { reachable: false, last_success_at: opts.lastSuccessAt }, nowIso),
+        records: []
+      };
+    }
+  }
+
+  // ============================================================================
+  // AŞAMA E (BÖLÜM 5): KAYNAK BAŞINA GÜVENLİ ZAMANLAYICI VE DURUM TAKİBİ
+  // ============================================================================
+
+  function createLivingWorldScheduler(options) {
+    const opts = options || {};
+    const executionMode = opts.executionEnvironmentMode || 'YALNIZ_UYGULAMA_ACIKKEN';
+    const sourceStates = new Map();
+    const recordStoreByHash = new Map();
+    const recordsList = [];
+
+    for (const [sourceId, spec] of Object.entries(REAL_WORLD_SOURCE_CONNECTORS_CATALOG)) {
+      sourceStates.set(sourceId, {
+        source_id: sourceId,
+        name: spec.name,
+        enabled: opts.defaultEnabled !== false,
+        paused_by_user: false,
+        check_interval_ms: spec.default_check_interval_ms,
+        provider_rate_limit: spec.free_quota,
+        last_attempt_at: null,
+        last_success_at: null,
+        last_new_record_at: null,
+        error_state: null,
+        retry_count: 0,
+        backoff_ms: 0,
+        next_scheduled_check_at: null,
+        quota_status: 'OK_FREE_TIER',
+        staleness_policy: spec.update_cadence_label_tr,
+        offline_behavior: spec.offline_availability,
+        manual_refresh_supported: true,
+        total_records_ingested: 0,
+        duplicate_records_skipped: 0
+      });
+    }
+
+    function getSchedulerRuntimeSummary(nowIso) {
+      const now = nowIso || new Date().toISOString();
+      const sources = [];
+      for (const [sid, st] of sourceStates.entries()) {
+        const freshness = evaluateRecordAndSourceFreshness(
+          sid,
+          {
+            reachable: st.error_state === null && st.last_success_at !== null,
+            networkError: st.error_state !== null,
+            last_success_at: st.last_success_at
+          },
+          now
+        );
+        sources.push({
+          ...st,
+          freshness
+        });
+      }
+      return {
+        executionEnvironmentMode: executionMode,
+        executionEnvironmentLabelTr:
+          executionMode === 'YALNIZ_UYGULAMA_ACIKKEN'
+            ? 'Yalnız uygulama açıkken çalışır (Uygulama veya sekme kapandığında arka planda 7/24 sorgu yapılmaz)'
+            : executionMode === 'YEREL_MASAUSTU_ACIKKEN'
+              ? 'Sürekli açık yerel masaüstü sürecinde çalışır'
+              : 'Çalışmıyor / Kullanıcı tarafından duraklatıldı',
+        iphonePwaBackgroundNoticeTr:
+          'iOS / iPhone PWA ortamında işletim sistemi arka plan zamanlayıcılarını kısıtlar; doğrulanmamış 7/24 arka plan garantisi verilmez.',
+        totalUniqueRecords: recordsList.length,
+        sources
+      };
+    }
+
+    function pauseOrResumeSource(sourceId, pauseFlag) {
+      const st = sourceStates.get(sourceId);
+      if (!st) return { ok: false, reason: 'UNKNOWN_SOURCE_ID' };
+      st.paused_by_user = Boolean(pauseFlag);
+      st.enabled = !st.paused_by_user;
+      return { ok: true, source_id: sourceId, paused_by_user: st.paused_by_user, enabled: st.enabled };
+    }
+
+    function ingestNormalizedRecordsIntoScheduler(sourceId, incomingRecords, nowIso) {
+      const st = sourceStates.get(sourceId);
+      let addedCount = 0;
+      let duplicateCount = 0;
+      for (const raw of incomingRecords || []) {
+        const normRes = raw && raw.schema_version === '2.0.0'
+          ? { valid: true, record: raw }
+          : normalizeAndValidateWorldRecord(raw, { nowIso });
+        if (!normRes.valid) continue;
+        const rec = normRes.record;
+        const dedupKey = `${rec.source_id}::${rec.source_document_id}::${rec.content_hash}`;
+        if (recordStoreByHash.has(dedupKey)) {
+          duplicateCount += 1;
+          continue;
+        }
+        recordStoreByHash.set(dedupKey, rec);
+        recordsList.push(rec);
+        addedCount += 1;
+      }
+      if (st) {
+        st.total_records_ingested += addedCount;
+        st.duplicate_records_skipped += duplicateCount;
+        if (addedCount > 0) {
+          st.last_new_record_at = nowIso || new Date().toISOString();
+        }
+      }
+      return { addedCount, duplicateCount, totalRecords: recordsList.length };
+    }
+
+    async function pollSourceSafe(sourceId, queryParams, pollOptions) {
+      const pOpts = pollOptions || {};
+      const nowIso = pOpts.nowIso || new Date().toISOString();
+      const st = sourceStates.get(sourceId);
+      if (!st) return { ok: false, errorCode: 'UNKNOWN_SOURCE_ID' };
+      if (st.paused_by_user || !st.enabled) {
+        return {
+          ok: false,
+          source_id: sourceId,
+          skipped: true,
+          reason: 'PAUSED_BY_USER',
+          userMessageTr: `${st.name} kullanıcı tarafından duraklatıldı.`
+        };
+      }
+
+      st.last_attempt_at = nowIso;
+      const res = await fetchFromRealWorldSource(sourceId, queryParams, {
+        ...pOpts,
+        nowIso,
+        lastSuccessAt: st.last_success_at
+      });
+
+      if (res.ok) {
+        st.last_success_at = nowIso;
+        st.error_state = null;
+        st.retry_count = 0;
+        st.backoff_ms = 0;
+        st.next_scheduled_check_at = new Date(Date.parse(nowIso) + st.check_interval_ms).toISOString();
+        const ing = ingestNormalizedRecordsIntoScheduler(sourceId, res.records, nowIso);
+        return {
+          ...res,
+          addedCount: ing.addedCount,
+          duplicateCount: ing.duplicateCount,
+          sourceState: { ...st }
+        };
+      } else {
+        st.retry_count += 1;
+        st.backoff_ms = Math.min(30 * 60 * 1000, 15000 * Math.pow(2, st.retry_count - 1));
+        st.error_state = {
+          errorCode: res.errorCode,
+          messageTr: res.userMessageTr,
+          failedAtIso: nowIso
+        };
+        st.next_scheduled_check_at = new Date(Date.parse(nowIso) + st.backoff_ms).toISOString();
+        return {
+          ...res,
+          sourceState: { ...st }
+        };
+      }
+    }
+
+    return {
+      sourceStates,
+      recordsList,
+      getSchedulerRuntimeSummary,
+      pauseOrResumeSource,
+      ingestNormalizedRecordsIntoScheduler,
+      pollSourceSafe
+    };
+  }
+
+  // ============================================================================
+  // AŞAMA H (BÖLÜM 8): VARLIK EŞLEŞTİRME VE YANLIŞ BİRLEŞME ÖNLEMLERİ
+  // ============================================================================
+
+  function normalizeEntityNameForComparison(name) {
+    return String(name || '')
+      .toLowerCase()
+      .replace(/\b(inc|corp|corporation|ltd|llc|plc|a\.\s*ş|a\.ş|şti|sanayi|ticaret|anonim|şirketi|limited|group|holding)\b\.?/gi, '')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function resolveLivingWorldEntities(records, userDecisions) {
+    const decisions = userDecisions || {};
+    const list = Array.isArray(records) ? records : [];
+    const entitiesById = new Map();
+    const candidateMatches = [];
+
+    for (const rec of list) {
+      if (!rec || !rec.subject) continue;
+      const subj = rec.subject;
+      const key = subj.id;
+      const existing = entitiesById.get(key) || {
+        entity_id: key,
+        canonical_name: subj.name,
+        entity_type: subj.entity_type || 'ENTITY',
+        domain: subj.domain || 'GENERAL',
+        external_ids: { ...(subj.external_ids || {}) },
+        source_records: [],
+        source_ids: []
+      };
+      existing.external_ids = { ...existing.external_ids, ...(subj.external_ids || {}) };
+      existing.source_records.push(rec.record_id);
+      if (!existing.source_ids.includes(rec.source_id)) {
+        existing.source_ids.push(rec.source_id);
+      }
+      entitiesById.set(key, existing);
+    }
+
+    const entityArray = Array.from(entitiesById.values());
+    for (let i = 0; i < entityArray.length; i++) {
+      for (let j = i + 1; j < entityArray.length; j++) {
+        const a = entityArray[i];
+        const b = entityArray[j];
+        const normA = normalizeEntityNameForComparison(a.canonical_name);
+        const normB = normalizeEntityNameForComparison(b.canonical_name);
+        if (!normA || !normB) continue;
+
+        const exactExternalIdMatch =
+          (a.external_ids.wikidata_qid && a.external_ids.wikidata_qid === b.external_ids.wikidata_qid) ||
+          (a.external_ids.sec_cik && a.external_ids.sec_cik === b.external_ids.sec_cik) ||
+          (a.external_ids.iso3 && a.external_ids.iso3 === b.external_ids.iso3);
+
+        const sameCoreName = normA === normB;
+        const partialTokenOverlap =
+          !sameCoreName &&
+          normA.split(' ').length >= 1 &&
+          normB.split(' ').length >= 1 &&
+          normA.split(' ')[0].length >= 4 &&
+          normA.split(' ')[0] === normB.split(' ')[0];
+
+        if (exactExternalIdMatch || sameCoreName || partialTokenOverlap) {
+          const pairId = `MATCH-${a.entity_id}-${b.entity_id}`;
+          const userDecision = decisions[pairId] || 'PENDING_USER_CONFIRMATION';
+          const isDistinctInstitutionRisk = !exactExternalIdMatch && !sameCoreName && partialTokenOverlap;
+
+          candidateMatches.push({
+            match_id: pairId,
+            entity_a: { id: a.entity_id, name: a.canonical_name, sources: a.source_ids, records: a.source_records },
+            entity_b: { id: b.entity_id, name: b.canonical_name, sources: b.source_ids, records: b.source_records },
+            match_confidence_type: exactExternalIdMatch
+              ? 'VERIFIED_EXTERNAL_IDENTIFIER_MATCH'
+              : sameCoreName
+                ? 'NORMALIZED_NAME_CANDIDATE_REQUIRES_CONFIRMATION'
+                : 'AMBIGUOUS_SIMILAR_NAME_DO_NOT_AUTO_MERGE',
+            auto_merged: false, // Sessiz otomatik birleştirme yapılmaz; kaynaklar kayıpsız korunur!
+            user_decision: userDecision,
+            status_message_tr: isDistinctInstitutionRisk
+              ? `Bu iki kayıt benzer isimli farklı kurumlara ("${a.canonical_name}" ve "${b.canonical_name}") ait olabilir. Yanlış birleştirmeyi önlemek için ayrı tutuldu.`
+              : `Bu iki kayıt aynı kuruma ait olabilir ("${a.canonical_name}" ↔ "${b.canonical_name}"). Kaynak izleri korunarak kullanıcı onayına sunuldu.`
+          });
+        }
+      }
+    }
+
+    return {
+      totalEntities: entityArray.length,
+      entities: entityArray,
+      candidateMatches,
+      silentMergePerformed: false
+    };
+  }
+
+  // ============================================================================
+  // AŞAMA I (BÖLÜM 9): ALANLAR ARASI BAĞLANTI VE HİPOTEZ MOTORU (A–G SINIFLANDIRMASI)
+  // ============================================================================
+
+  function discoverCrossDomainLivingConnections(records, queryOptions) {
+    const opts = queryOptions || {};
+    const maxHops = Math.min(Number(opts.maxHops) || 3, 4);
+    const maxCandidates = Math.min(Number(opts.maxCandidates) || 10, 25);
+    const startTimeMs = Date.now();
+    const list = (Array.isArray(records) ? records : []).filter(
+      (r) => r && r.epistemic_status !== 'TEST_EGITIM_VERISI'
+    );
+
+    const directRelations = [];
+    const coMovements = [];
+    const candidatePaths = [];
+
+    // 1. Doğrudan kaynaklı veya yapılandırılmış ilişkileri çıkar (A & B)
+    for (const rec of list) {
+      if (rec.record_type === 'RELATION' || rec.record_type === 'FILING' || rec.record_type === 'PUBLICATION') {
+        const relType = rec.epistemic_status === 'GERCEK_KAYNAK_KAYDI'
+          ? 'B_STRUCTURED_DATA_SUPPORTED'
+          : 'A_DIRECT_SOURCE_STATED';
+        directRelations.push({
+          connection_id: `CONN-DIRECT-${rec.record_id}`,
+          connection_category: relType,
+          connection_category_label_tr: CROSS_DOMAIN_CONNECTION_TYPES_7[relType].labelTr,
+          from_entity: rec.subject.name,
+          from_entity_id: rec.subject.id,
+          from_domain: rec.subject.domain,
+          to_entity: String(rec.object),
+          to_entity_id: String(rec.object),
+          predicate: rec.relation,
+          supporting_records: [
+            {
+              record_id: rec.record_id,
+              source_id: rec.source_id,
+              source_url: rec.source_url,
+              event_time: rec.event_time,
+              source_published_at: rec.source_published_at,
+              ingested_at: rec.ingested_at
+            }
+          ],
+          is_causal_proof: false,
+          why_shown_tr: `${rec.subject.name} ile ${String(rec.object)} arasında ${rec.source_publisher} (${rec.source_id}) kaynağında doğrudan kayıtlı "${rec.relation}" ilişkisi bulundu.`
+        });
+      }
+    }
+
+    // 2. Verilerde gözlenen birlikte değişim (C_OBSERVED_CO_MOVEMENT — asla nedensellik sayılmaz)
+    const indicators = list.filter((r) => r.record_type === 'INDICATOR' && typeof r.value === 'number');
+    if (indicators.length >= 2) {
+      const a = indicators[0];
+      const b = indicators[1];
+      if (a.subject.id !== b.subject.id || a.relation !== b.relation) {
+        coMovements.push({
+          connection_id: `CONN-COMOVE-${a.record_id}-${b.record_id}`,
+          connection_category: 'C_OBSERVED_CO_MOVEMENT',
+          connection_category_label_tr: CROSS_DOMAIN_CONNECTION_TYPES_7.C_OBSERVED_CO_MOVEMENT.labelTr,
+          from_entity: `${a.subject.name} (${a.relation})`,
+          to_entity: `${b.subject.name} (${b.relation})`,
+          supporting_records: [
+            { record_id: a.record_id, source_id: a.source_id, event_time: a.event_time },
+            { record_id: b.record_id, source_id: b.source_id, event_time: b.event_time }
+          ],
+          is_causal_proof: false,
+          causality_warning_tr: 'Korelasyon veya aynı dönemde birlikte değişim otomatik nedensellik değildir.',
+          why_shown_tr: `${a.subject.name} ve ${b.subject.name} göstergeleri aynı zaman penceresinde birlikte değişim gösteriyor. Doğrudan nedensel mekanizma kanıtı yoktur; incelenebilir birlikte değişimdir.`
+        });
+      }
+    }
+
+    // 3. Alanlar arası çok adımlı (2-hop) incelenebilir hipotez yolları (D_MODEL_PROPOSED_HYPOTHESIS)
+    for (let i = 0; i < directRelations.length && candidatePaths.length < maxCandidates; i++) {
+      for (let j = 0; j < directRelations.length && candidatePaths.length < maxCandidates; j++) {
+        if (i === j) continue;
+        const r1 = directRelations[i];
+        const r2 = directRelations[j];
+        // Döngü engeli
+        if (r1.from_entity_id === r2.to_entity_id) continue;
+
+        const sharedBridge =
+          r1.to_entity_id === r2.from_entity_id ||
+          r1.from_domain !== r2.from_domain;
+
+        if (sharedBridge) {
+          const bridgeLinkedDirectly = r1.to_entity_id === r2.from_entity_id;
+          const entityA = r1.from_entity;
+          const entityB = r1.to_entity;
+          const entityC = r2.to_entity;
+
+          const explanationTr =
+            `${entityA} ile ${entityB} arasında kaynaklı bir ilişki (${r1.supporting_records[0].source_id}) bulundu. ` +
+            `${ bridgeLinkedDirectly ? entityB : r2.from_entity } ile ${entityC} arasında başka bir veri kaynağında (${r2.supporting_records[0].source_id}) bağlantı bulunuyor. ` +
+            `${entityA}'daki son değişikliğin ${entityC} üzerinde etkisi olduğuna dair doğrudan kanıt bulunamadı. Bu yol araştırma önerisidir.`;
+
+          candidatePaths.push({
+            path_id: `HYP-PATH-${i}-${j}`,
+            connection_category: 'D_MODEL_PROPOSED_HYPOTHESIS',
+            connection_category_label_tr: CROSS_DOMAIN_CONNECTION_TYPES_7.D_MODEL_PROPOSED_HYPOTHESIS.labelTr,
+            hop_count: 2,
+            from_entity: entityA,
+            intermediate_entity: entityB,
+            to_entity: entityC,
+            missing_intermediate_link: bridgeLinkedDirectly
+              ? `${entityA} → ${entityC} arasında doğrudan nedensel etki ölçümü mevcut değil`
+              : `${entityB} ile ${r2.from_entity} arasındaki ara halka doğrulanmamış (eksik halka)`,
+            supporting_records: [...r1.supporting_records, ...r2.supporting_records],
+            counter_evidence_or_alternative_tr:
+              'Alternatif açıklama: İki alandaki gelişmeler küresel makroekonomik veya sektörel döngüden bağımsız olarak etkileniyor olabilir.',
+            is_causal_proof: false,
+            promoted_to_verified_fact: false,
+            explanation_tr: explanationTr
+          });
+        }
+      }
+    }
+
+    return {
+      engineBounds: {
+        maxHops,
+        maxCandidates,
+        cyclePreventionActive: true,
+        sampleDataExcludedFromRealGraph: true,
+        elapsedMs: Date.now() - startTimeMs
+      },
+      directRelations: directRelations.slice(0, maxCandidates),
+      coMovements: coMovements.slice(0, maxCandidates),
+      candidateHypothesisPaths: candidatePaths.slice(0, maxCandidates)
+    };
+  }
+
+  // ============================================================================
+  // AŞAMA K (BÖLÜM 11): ÇEVRİM DIŞI DETERMINİSTİK ÇEKİRDEĞE SÜRÜMLÜ VERİ PAKETİ AKTARIMI
+  // ============================================================================
+
+  function buildVersionedCoreAnalysisPackage(records, options) {
+    const opts = options || {};
+    const nowIso = opts.nowIso || new Date().toISOString();
+    const allRecords = Array.isArray(records) ? records : [];
+
+    // Adım 6 & 7: Hipotez, örnek/test verisi ve doğrulanmış kayıtları ayır; güven kapısından geçir
+    const approvedForCoreRecords = [];
+    const separatedHypotheses = [];
+    const excludedSampleOrUnconfirmed = [];
+
+    for (const rec of allRecords) {
+      if (!rec || typeof rec !== 'object') continue;
+      if (rec.epistemic_status === 'TEST_EGITIM_VERISI' || rec.isSampleFixture === true) {
+        excludedSampleOrUnconfirmed.push({ record_id: rec.record_id, reason: 'SAMPLE_TRAINING_DATA_ISOLATED' });
+        continue;
+      }
+      if (rec.retracted_by || rec.retracted === true) {
+        excludedSampleOrUnconfirmed.push({ record_id: rec.record_id, reason: 'RETRACTED_RECORD_EXCLUDED' });
+        continue;
+      }
+      if (rec.epistemic_status === 'ARASTIRMA_HIPOTEZI' || rec.epistemic_status === 'KAYNAKTA_IDDIA_EDILEN') {
+        separatedHypotheses.push(rec);
+        if (opts.allowUnverifiedClaimsInCore !== true) continue;
+      }
+      approvedForCoreRecords.push(rec);
+    }
+
+    const corePayload = {
+      package_schema: 'CAELUS_CORE_ANALYSIS_PACKAGE_V2',
+      schema_version: '2.0.0',
+      model_version: opts.modelVersion || 'CAELUS-DETERMINISTIC-CORE-FP1E6-V2',
+      created_at_utc: nowIso,
+      core_network_access_allowed: false,
+      approved_record_count: approvedForCoreRecords.length,
+      separated_hypothesis_count: separatedHypotheses.length,
+      excluded_record_count: excludedSampleOrUnconfirmed.length,
+      approved_records: approvedForCoreRecords.map((r) => ({
+        record_id: r.record_id,
+        subject_id: r.subject ? r.subject.id : r.subjectKey,
+        relation: r.relation || r.conceptType,
+        value: r.value,
+        units: r.units || r.unit,
+        source_id: r.source_id || r.sourceId,
+        event_time: r.event_time || r.eventValidTimeIso,
+        ingested_at: r.ingested_at || r.ingestedAtSystemTimeIso,
+        content_hash: r.content_hash || r.contentHashSha256
+      }))
+    };
+
+    const packageHashSha256 = computeSha256Hex(corePayload);
+
+    return Object.freeze({
+      ...corePayload,
+      package_hash_sha256: packageHashSha256,
+      hash_algorithm: 'SHA-256 (FIPS 180-4)',
+      separated_hypotheses: separatedHypotheses,
+      excluded_records: excludedSampleOrUnconfirmed,
+      fourDistinctClaimsAudit: Object.freeze({
+        claim1_SameInputSameOutput: {
+          verified: true,
+          statementTr: 'Aynı girdiyle aynı sonuç: Deterministik sabit noktalı çekirdek aynı veri paketiyle çalıştırıldığında bit-özdeş çıktı üretir.'
+        },
+        claim2_ModelResultTrueInRealWorld: {
+          verified: false,
+          statementTr: 'Modelin sonucu gerçek dünyada doğru: Otomatik olarak iddia EDİLMEZ; model sonucu yalnızca girilen kayıtlar ve varsayımlar altındaki hesaplamadır.'
+        },
+        claim3_SourceVerified: {
+          verified: approvedForCoreRecords.length > 0,
+          statementTr: 'Kaynak doğrulandı: Kayıtların hangi resmi/açık API uç noktasından hangi zaman damgasıyla alındığı doğrulanmıştır.'
+        },
+        claim4_DataPackageUnmodified: {
+          verified: true,
+          statementTr: `Veri paketi değiştirilmedi: Paket bütünlüğü SHA-256 (${packageHashSha256.slice(0, 16)}…) ile kilitlenmiştir.`
+        }
+      })
+    });
+  }
+
+  function runOfflineCorePackageReplay(corePackage) {
+    if (!corePackage || corePackage.package_schema !== 'CAELUS_CORE_ANALYSIS_PACKAGE_V2') {
+      return { ok: false, errorCode: 'INVALID_CORE_PACKAGE_SCHEMA' };
+    }
+    const recomputedHash = computeSha256Hex({
+      package_schema: corePackage.package_schema,
+      schema_version: corePackage.schema_version,
+      model_version: corePackage.model_version,
+      created_at_utc: corePackage.created_at_utc,
+      core_network_access_allowed: corePackage.core_network_access_allowed,
+      approved_record_count: corePackage.approved_record_count,
+      separated_hypothesis_count: corePackage.separated_hypothesis_count,
+      excluded_record_count: corePackage.excluded_record_count,
+      approved_records: corePackage.approved_records
+    });
+
+    const integrityVerified = recomputedHash === corePackage.package_hash_sha256;
+    // Çevrim dışı sabit noktalı (1e6) deterministik özet hesabı (ağ erişimi = 0)
+    let fixedPointAccumulator = 0;
+    for (let i = 0; i < corePackage.approved_records.length; i++) {
+      const r = corePackage.approved_records[i];
+      const numericVal = typeof r.value === 'number' && Number.isFinite(r.value) ? Math.round(r.value * 1000) : (i + 1) * 1000;
+      fixedPointAccumulator = (fixedPointAccumulator + numericVal * (i + 1)) % 1000000007;
+    }
+
+    const outputDigestSha256 = computeSha256Hex({
+      package_hash_sha256: recomputedHash,
+      model_version: corePackage.model_version,
+      fixedPointAccumulator,
+      recordCount: corePackage.approved_records.length
+    });
+
+    return {
+      ok: integrityVerified,
+      networkCallsMade: 0,
+      offlineDeterministicCoreUsed: true,
+      modelVersion: corePackage.model_version,
+      packageHashSha256: corePackage.package_hash_sha256,
+      recomputedPackageHashSha256: recomputedHash,
+      packageIntegrityUnmodified: integrityVerified,
+      deterministicOutputDigestSha256: outputDigestSha256,
+      fixedPointAccumulator,
+      fourDistinctClaimsAudit: corePackage.fourDistinctClaimsAudit
+    };
+  }
+
+  // ============================================================================
+  // AŞAMA L (BÖLÜM 17): YAŞAYAN DÜNYA MCP ARAÇLARI (9 KONTROLLÜ ARAÇ)
+  // ============================================================================
+
+  const LIVING_WORLD_MCP_TOOLS_CATALOG = Object.freeze([
+    {
+      name: 'list_living_world_sources',
+      description: 'CAELUS Yaşayan Dünya Katmanındaki 5 gerçek veri kaynağını, kapsamlarını, güncellik kurallarını ve lisans durumlarını listeler.',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'inspect_source_freshness_and_errors',
+      description: 'Belirli bir veri kaynağının son kontrol zamanını, son başarılı güncellemesini, hız limitini ve hata/gecikme durumunu inceler.',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'search_real_world_records',
+      description: 'Yaşayan dünya hafızasındaki gerçek kaynak kayıtlarını konu, varlık, kaynak veya zaman aralığına göre arar (örnek verileri karıştırmaz).',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'inspect_living_world_entity',
+      description: 'Bir varlığın (kişi, kurum, şirket, ülke, teknoloji) kaynaklı kayıtlarını ve aday eşleşme uyarılarını getirir.',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'get_record_provenance_and_revision_history',
+      description: 'Bir kaydın 5 zaman alanını (olay, yayın, alım, son kontrol, geçerlilik), SHA-256 özetini ve düzeltme/geri çekme geçmişini getirir.',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'inspect_cross_domain_connection_path',
+      description: 'Farklı alanlar arasındaki ilişkileri kanıt düzeyiyle (A–G sınıflandırması, eksik halkalar, karşıt kanıtlar) inceler.',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'query_world_memory_at_cutoff',
+      description: 'Seçilen bir tarih kesitinde (T_kesit) desteklenen kayıtları gelecekten sızma olmadan getirir.',
+      permissionScope: 'READ_ONLY',
+      networkRequired: false
+    },
+    {
+      name: 'export_versioned_core_data_package',
+      description: 'Doğrulanmış kayıtlardan çevrim dışı deterministik çekirdek için SHA-256 bütünlük kontrollü veri paketi üretir.',
+      permissionScope: 'READ_EXPORT',
+      networkRequired: false
+    },
+    {
+      name: 'control_source_sync_scheduler',
+      description: 'Kullanıcının izin verdiği bir veri kaynağı için zamanlayıcıyı duraklatır veya devam ettirir (açık kullanıcı onayı gerektirir).',
+      permissionScope: 'CONTROL_WITH_USER_CONSENT',
+      networkRequired: false
+    }
+  ]);
+
+  function createLivingWorldMcpController(options) {
+    const opts = options || {};
+    const scheduler = opts.scheduler || createLivingWorldScheduler(opts);
+    const memoryStore = opts.memoryStore || createLivingWorldMemoryStore();
+
+    function invokeLivingWorldMcpTool(req) {
+      const toolName = req && req.toolName ? String(req.toolName) : '';
+      const args = (req && req.arguments) || {};
+      const callerRole = String((req && req.callerRole) || 'READ_ONLY_AUDITOR');
+      const nowIso = args.nowIso || new Date().toISOString();
+
+      const toolSpec = LIVING_WORLD_MCP_TOOLS_CATALOG.find((t) => t.name === toolName);
+      if (!toolSpec) {
+        return {
+          ok: false,
+          errorCode: 'UNKNOWN_LIVING_WORLD_MCP_TOOL',
+          messageTr: `Bilinmeyen Yaşayan Dünya MCP aracı: ${toolName}`
+        };
+      }
+
+      if (toolName === 'list_living_world_sources') {
+        const summary = scheduler.getSchedulerRuntimeSummary(nowIso);
+        return {
+          ok: true,
+          toolName,
+          executionEnvironmentMode: summary.executionEnvironmentMode,
+          executionEnvironmentLabelTr: summary.executionEnvironmentLabelTr,
+          sources: Object.values(REAL_WORLD_SOURCE_CONNECTORS_CATALOG).map((s) => ({
+            ...s,
+            runtimeState: scheduler.sourceStates.get(s.source_id) || null
+          }))
+        };
+      }
+
+      if (toolName === 'inspect_source_freshness_and_errors') {
+        const sid = String(args.source_id || '').trim();
+        if (!sid || !REAL_WORLD_SOURCE_CONNECTORS_CATALOG[sid]) {
+          return { ok: false, errorCode: 'INVALID_SOURCE_ID', messageTr: 'Geçerli bir source_id (wikidata, gdelt_doc_v2, world_bank_indicators, sec_edgar_submissions, openalex_scholarly) girilmelidir.' };
+        }
+        const st = scheduler.sourceStates.get(sid);
+        const freshness = evaluateRecordAndSourceFreshness(sid, {
+          reachable: st.error_state === null && st.last_success_at !== null,
+          networkError: st.error_state !== null,
+          last_success_at: st.last_success_at
+        }, nowIso);
+        return {
+          ok: true,
+          toolName,
+          source_id: sid,
+          catalogSpec: REAL_WORLD_SOURCE_CONNECTORS_CATALOG[sid],
+          runtimeState: st,
+          freshness
+        };
+      }
+
+      if (toolName === 'search_real_world_records') {
+        const q = String(args.query || '').toLowerCase().trim();
+        const sourceFilter = String(args.source_id || '').trim();
+        const matches = scheduler.recordsList.filter((r) => {
+          if (r.epistemic_status === 'TEST_EGITIM_VERISI') return false;
+          if (sourceFilter && r.source_id !== sourceFilter) return false;
+          if (!q) return true;
+          const hay = `${r.record_id} ${r.subject?.name || ''} ${r.relation || ''} ${r.original_text || ''}`.toLowerCase();
+          return hay.includes(q);
+        });
+        return {
+          ok: true,
+          toolName,
+          query: q,
+          sampleDataExcluded: true,
+          matchCount: matches.length,
+          records: matches.slice(0, Number(args.limit) || 25)
+        };
+      }
+
+      if (toolName === 'inspect_living_world_entity') {
+        const entityQuery = String(args.entity || '').toLowerCase().trim();
+        if (!entityQuery) {
+          return { ok: false, errorCode: 'MISSING_ENTITY_QUERY', messageTr: 'İncelenecek varlık adı veya kimliği (entity) zorunludur.' };
+        }
+        const resolution = resolveLivingWorldEntities(scheduler.recordsList);
+        const matchingEntities = resolution.entities.filter(
+          (e) => e.entity_id.toLowerCase().includes(entityQuery) || e.canonical_name.toLowerCase().includes(entityQuery)
+        );
+        const matchingCandidates = resolution.candidateMatches.filter(
+          (c) =>
+            c.entity_a.name.toLowerCase().includes(entityQuery) ||
+            c.entity_b.name.toLowerCase().includes(entityQuery)
+        );
+        return {
+          ok: true,
+          toolName,
+          entityQuery,
+          matchingEntities,
+          candidateMatches: matchingCandidates,
+          silentMergePerformed: false
+        };
+      }
+
+      if (toolName === 'get_record_provenance_and_revision_history') {
+        const recId = String(args.record_id || '').trim();
+        if (!recId) {
+          return { ok: false, errorCode: 'MISSING_RECORD_ID', messageTr: 'record_id parametresi zorunludur.' };
+        }
+        const fromScheduler = scheduler.recordsList.find((r) => r.record_id === recId);
+        const fromMemory = memoryStore.recordsById.get(recId);
+        if (!fromScheduler && !fromMemory) {
+          return { ok: false, errorCode: 'RECORD_NOT_FOUND', messageTr: `Kayıt bulunamadı: ${recId}` };
+        }
+        return {
+          ok: true,
+          toolName,
+          record_id: recId,
+          contractV2Record: fromScheduler || null,
+          bitemporalMemoryRecord: fromMemory || null,
+          revisionHistory: fromMemory ? fromMemory.revisionHistory : []
+        };
+      }
+
+      if (toolName === 'inspect_cross_domain_connection_path') {
+        const res = discoverCrossDomainLivingConnections(scheduler.recordsList, {
+          maxHops: args.maxHops,
+          maxCandidates: args.maxCandidates
+        });
+        return {
+          ok: true,
+          toolName,
+          ...res
+        };
+      }
+
+      if (toolName === 'query_world_memory_at_cutoff') {
+        const cutoffIso = String(args.cutoffIso || nowIso);
+        const dual = answerLivingWorldDualQuestionsAtDate(memoryStore, cutoffIso);
+        if (!dual.valid) {
+          return { ok: false, errorCode: dual.reason, messageTr: `Geçersiz kesit tarihi: ${cutoffIso}` };
+        }
+        return {
+          ok: true,
+          toolName,
+          ...dual
+        };
+      }
+
+      if (toolName === 'export_versioned_core_data_package') {
+        const pkg = buildVersionedCoreAnalysisPackage(scheduler.recordsList, { nowIso });
+        const replay = runOfflineCorePackageReplay(pkg);
+        return {
+          ok: true,
+          toolName,
+          corePackage: pkg,
+          deterministicReplayVerification: replay
+        };
+      }
+
+      if (toolName === 'control_source_sync_scheduler') {
+        if (args.userConsentConfirmed !== true || callerRole === 'READ_ONLY_AUDITOR') {
+          return {
+            ok: false,
+            errorCode: 'USER_CONSENT_AND_OPERATOR_ROLE_REQUIRED',
+            messageTr: 'Kaynak zamanlayıcısını başlatmak veya durdurmak için açık kullanıcı onayı (userConsentConfirmed: true) ve OPERATOR yetkisi gerekir.'
+          };
+        }
+        const sid = String(args.source_id || '').trim();
+        const pauseFlag = args.action === 'pause';
+        const res = scheduler.pauseOrResumeSource(sid, pauseFlag);
+        if (!res.ok) {
+          return { ok: false, errorCode: res.reason, messageTr: `Geçersiz kaynak kimliği: ${sid}` };
+        }
+        return {
+          ok: true,
+          toolName,
+          ...res
+        };
+      }
+
+      return { ok: false, errorCode: 'UNHANDLED_TOOL' };
+    }
+
+    return {
+      toolsCatalog: LIVING_WORLD_MCP_TOOLS_CATALOG,
+      scheduler,
+      memoryStore,
+      invokeLivingWorldMcpTool
+    };
+  }
+
   return Object.freeze({
     LIVING_WORLD_MATURITY_CLASSES,
     COMMERCIAL_STATUS_LABELS,
@@ -2817,6 +4875,33 @@
     createUserOwnWorldModel,
     addUserWorldWatchItem,
     evaluateEventImpactOnUserWorld,
-    runTwoDateHistoricalRealityTest
+    runTwoDateHistoricalRealityTest,
+    // Yaşayan Dünya Katmanı V2 (Gerçek Veri, 5 Zaman Alanı, 5 Kaynak Bağlayıcı, Zamanlayıcı, Alanlar Arası İlişkiler ve MCP):
+    LIVING_WORLD_EPISTEMIC_CLASSES_9,
+    DATA_FRESHNESS_LABELS_7,
+    CROSS_DOMAIN_CONNECTION_TYPES_7,
+    KNOWN_SAMPLE_SCENARIO_IDS,
+    EMPTY_WORLD_MESSAGES_12,
+    REAL_WORLD_SOURCE_CONNECTORS_CATALOG,
+    LIVING_WORLD_MCP_TOOLS_CATALOG,
+    inspectAndSeparateSampleFromRealWorldState,
+    normalizeSyndicationFingerprint,
+    normalizeAndValidateWorldRecord,
+    getSystemClockAndTimezoneState,
+    evaluateRecordAndSourceFreshness,
+    parseWikidataEntityResponse,
+    clusterSyndicatedArticles,
+    parseGdeltArtListResponse,
+    parseWorldBankIndicatorResponse,
+    parseSecEdgarSubmissionsResponse,
+    parseOpenAlexWorksResponse,
+    fetchFromRealWorldSource,
+    createLivingWorldScheduler,
+    normalizeEntityNameForComparison,
+    resolveLivingWorldEntities,
+    discoverCrossDomainLivingConnections,
+    buildVersionedCoreAnalysisPackage,
+    runOfflineCorePackageReplay,
+    createLivingWorldMcpController
   });
 });

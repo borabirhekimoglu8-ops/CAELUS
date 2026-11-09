@@ -6119,7 +6119,6 @@ body.theme-light .linear-setting-row {
       .caelus-spatial-onboarding-hint,
       #btn-stage-time-lens > span:nth-child(2),
       #btn-stage-scene-controls,
-      #btn-stage-first-task,
       .dunyam-hero-top.is-whisper-collapsed,
       body:has(#dunyam-stage-callout-card:not(.is-collapsed)) .caelus-spatial-focus-pill {
         display: none !important;
@@ -6129,14 +6128,14 @@ body.theme-light .linear-setting-row {
         z-index: 1405 !important;
         gap: 4px !important;
         right: 8px !important;
-        max-width: calc(100vw - 148px) !important;
+        max-width: calc(100vw - 132px) !important;
         justify-content: flex-end !important;
       }
 
       .caelus-spatial-lens-pill {
-        min-height: 36px;
-        padding: 4px 9px;
-        font-size: 0.72rem;
+        min-height: 34px;
+        padding: 3px 7px;
+        font-size: 0.68rem;
       }
 
       .dunyam-hero-top {
@@ -6495,8 +6494,16 @@ body.theme-light .linear-setting-row {
               title="Arayüz Dili">
               <option value="tr-TR">TR · Türkçe</option>
               <option value="en-US">EN · English</option>
+              <option value="el-GR">EL · Ελληνικά</option>
+              <option value="de-DE">DE · Deutsch</option>
+              <option value="fr-FR">FR · Français</option>
+              <option value="es-ES">ES · Español</option>
+              <option value="it-IT">IT · Italiano</option>
+              <option value="pt-BR">PT · Português (BR)</option>
               <option value="ar-SA">AR · العربية (RTL)</option>
               <option value="he-IL">HE · עברית (RTL)</option>
+              <option value="ru-RU">RU · Русский</option>
+              <option value="zh-Hans">ZH · 简体中文</option>
             </select>
             <button class="btn btn-sm" id="btn-export-dossier" type="button" style="border-radius:999px; font-size:0.75rem; padding:4px 10px;"
               title="Senaryo ve karar raporunu aç">
@@ -6542,6 +6549,13 @@ body.theme-light .linear-setting-row {
         title="Kendi verini (.xlsx / .csv) ekle, doğrula, dünya modeline dönüştür, senaryoları karşılaştır ve kaynak izli rapor kaydet (Kısayol: Alt+V)">
         <span style="color:#38BDF8;" aria-hidden="true">📂</span>
         <span>Kendi Verim &amp; Görev</span>
+      </button>
+
+      <button type="button" class="caelus-spatial-lens-pill" id="btn-stage-living-advisor-studio"
+        aria-expanded="false" aria-controls="caelus-living-advisor-agent-drawer"
+        title="Yaşayan Dünya Katmanı (DÜNYA ŞİMDİ / İLGİLENDİĞİM KONU / OLASI BAĞLANTILAR), LLM Dışı Konuşan Danışman ve Kişisel Ajan Stüdyosunu aç">
+        <span style="color:#FBBF24;" aria-hidden="true">🌐</span>
+        <span>Yaşayan Dünya &amp; Ajanlar</span>
       </button>
 
       <button type="button" class="caelus-spatial-lens-pill" id="btn-stage-scene-controls"
@@ -6612,6 +6626,104 @@ body.theme-light .linear-setting-row {
 
       <div style="display:flex; gap:6px; flex-wrap:wrap; padding-top:6px; border-top:1px solid rgba(136,212,255,0.16);">
         <button type="button" class="btn btn-sm btn-accent" id="btn-provenance-open-baglantilar" style="flex:1; border-radius:999px; font-size:0.75rem;">Tüm Kaynaklar ve Lisans Envanterini Aç ↗</button>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+       YAŞAYAN DÜNYA KATMANI, LLM DIŞI KONUŞAN DANIŞMAN VE KİŞİSEL AJAN STÜDYOSU
+       (#caelus-living-advisor-agent-drawer)
+       ═══════════════════════════════════════════════════════════════════════ -->
+    <aside class="caelus-frt-drawer hidden" id="caelus-living-advisor-agent-drawer" role="dialog" aria-modal="false" aria-labelledby="laa-drawer-title">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(136,212,255,0.20); padding-bottom:8px;">
+        <div>
+          <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:#FBBF24;">YAŞAYAN DÜNYA KATMANI · LLM DIŞI KONUŞAN DANIŞMAN · KİŞİSEL AJAN STÜDYOSU</div>
+          <strong id="laa-drawer-title" style="font-size:0.98rem; color:#F8FAFC;">Gerçek Kaynaklar &amp; 5 Zaman Damgası · Kanıtlı Diyalog &amp; Cevap Pasaportu · Kodsuz İzole Ajanlar</strong>
+        </div>
+        <button type="button" class="dunyam-callout-close-btn" id="btn-close-living-advisor-studio" aria-label="Yaşayan Dünya ve Ajanlar penceresini kapat">✕</button>
+      </div>
+
+      <!-- 3 Ana Mod Sekmesi -->
+      <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px;" role="tablist" aria-label="Yaşayan Dünya, Konuşan Danışman ve Kişisel Ajan Sekmeleri">
+        <button type="button" class="caelus-frt-step-pill active" data-laa-tab="living-world" id="btn-laa-tab-living-world" role="tab" aria-selected="true">1. Yaşayan Dünya (DÜNYA ŞİMDİ / İLGİLENDİĞİM KONU / OLASI BAĞLANTILAR)</button>
+        <button type="button" class="caelus-frt-step-pill" data-laa-tab="advisor" id="btn-laa-tab-advisor" role="tab" aria-selected="false">2. Konuşan Danışman &amp; Cevap Pasaportu (LLM Dışı)</button>
+        <button type="button" class="caelus-frt-step-pill" data-laa-tab="agent-studio" id="btn-laa-tab-agent-studio" role="tab" aria-selected="false">3. Kişisel Ajan Stüdyosu (CAELUS_AGENT_CONTRACT_V1)</button>
+      </div>
+
+      <!-- SEKME 1: YAŞAYAN DÜNYA KATMANI -->
+      <div class="caelus-frt-card" id="laa-panel-living-world">
+        <div id="laa-empty-world-honesty-banner" style="background:rgba(15,28,52,0.88); border:1px dashed rgba(136,212,255,0.42); border-radius:10px; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div>
+            <div style="font-size:0.70rem; font-weight:700; color:#E6C387; text-transform:uppercase;">VARSAYILAN DÜRÜST DÜNYA DURUMU (ÖRNEK SENARYO ≠ GERÇEK DÜNYA)</div>
+            <div id="laa-empty-world-message" style="font-size:0.81rem; color:#F8FAFC; white-space:pre-line; margin-top:2px;">Henüz dünya verisi yok.
+Gerçek veri kaynaklarını bağlayabilir veya kendi dosyanı yükleyebilirsin.</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <span class="kpi-badge warn" id="laa-sample-separation-badge">Örnek Senaryolar Ayrıştırıldı (ÖRNEK SENARYO)</span>
+            <span class="kpi-badge accent" id="laa-scheduler-mode-badge">Zamanlayıcı: YALNIZ_UYGULAMA_ACIKKEN</span>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          <button type="button" class="caelus-pill-filter-btn active" data-lw-subview="DUNYA_SIMDI">DÜNYA ŞİMDİ (5 Gerçek Kaynak &amp; Tazelik)</button>
+          <button type="button" class="caelus-pill-filter-btn" data-lw-subview="ILGILENDIGIM_KONU">İLGİLENDİĞİM KONU (Kayıtlar &amp; 5 Zaman Damgası)</button>
+          <button type="button" class="caelus-pill-filter-btn" data-lw-subview="OLASI_BAGLANTILAR">OLASI BAĞLANTILAR (A–G Kategorileri &amp; Tekilleştirme)</button>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-laa-sync-real-sources" style="margin-left:auto;">🔄 Bağlı Gerçek Kaynakları Şimdi Kontrol Et</button>
+          <button type="button" class="btn btn-sm" id="btn-laa-export-core-pkg">📦 Çevrim Dışı Çekirdek Paketi Dışa Aktar</button>
+        </div>
+
+        <div id="laa-living-world-content" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem;"></div>
+      </div>
+
+      <!-- SEKME 2: KONUŞAN DANIŞMAN VE CEVAP PASAPORTU (LLM DIŞI) -->
+      <div class="caelus-frt-card hidden" id="laa-panel-advisor">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div>
+            <strong style="font-size:0.84rem; color:#88D4FF;">LLM Dışı 8 Katmanlı Konuşan Dünya Muhakeme Danışmanı</strong>
+            <div style="font-size:0.73rem; color:var(--text-2);" id="laa-voice-status-line">Birincil deneyim yazılı konuşmadır. Yerel/tarayıcı ses katmanı isteğe bağlıdır; kullanılamadığında otomatik olarak yazılı konuşmaya düşer.</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <span class="kpi-badge ok">LLM Bağımlılığı: YOK (Deterministik NLU + Plan + Pasaport)</span>
+            <button type="button" class="btn btn-sm" id="btn-laa-reset-dialogue-state">↺ Diyalog Bağlamını Sıfırla</button>
+          </div>
+        </div>
+
+        <!-- Zorunlu 3 Turlu Dikey Kesit Hızlı Tetikleyicileri -->
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          <span style="font-size:0.72rem; color:#E6C387; font-weight:700;">3 Turlu Dikey Kesit:</span>
+          <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="TSMC hakkında son dönemde ne değişti?">1. "TSMC hakkında son dönemde ne değişti?"</button>
+          <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Bu değişiklik hangi kurumlarla ilişkili?">2. "Bu değişiklik hangi kurumlarla ilişkili?"</button>
+          <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Peki bu benim ilgilendiğim alanı etkiler mi?">3. "Peki bu benim ilgilendiğim alanı etkiler mi?"</button>
+          <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Hayır, Apple Inc. demek istedim">Düzeltme: "Hayır, Apple Inc. demek istedim"</button>
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="inp-laa-advisor-question" class="dt-editor-input" placeholder="Kurum, değişiklik, ilişki, varsayım veya seçenek sorunuzu yazın..." style="flex:1; padding:7px 10px; font-size:0.81rem;">
+          <button type="button" class="btn btn-sm btn-primary" id="btn-laa-advisor-ask">Sor &amp; Kanıtla</button>
+        </div>
+
+        <div id="laa-advisor-turn-output" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem;"></div>
+      </div>
+
+      <!-- SEKME 3: KİŞİSEL AJAN OLUŞTURMA VE ÇALIŞTIRMA PLATFORMU -->
+      <div class="caelus-frt-card hidden" id="laa-panel-agent-studio">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div>
+            <strong style="font-size:0.84rem; color:#88D4FF;">Kodsuz Kişisel Ajan Oluşturma ve Çalıştırma Platformu (CAELUS_AGENT_CONTRACT_V1)</strong>
+            <div style="font-size:0.73rem; color:var(--text-2);">Ajanlar yalnızca sizin açıkça verdiğiniz kaynak, dosya ve araç yetkileriyle çalışır; ajanlar arası hafıza izoledir.</div>
+          </div>
+          <span class="kpi-badge accent">Çalışma Modu: MANUAL / APP_OPEN (Dürüst Sınır)</span>
+        </div>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:rgba(8,16,32,0.75); padding:8px 10px; border-radius:10px; border:1px solid rgba(136,212,255,0.18);">
+          <input type="text" id="inp-laa-agent-goal" class="dt-editor-input" placeholder="Örn: TSMC ve Apple tedarik bildirimlerini takip et (veya test için: Bütün sosyal medyayı izle)" style="flex:1; min-width:220px; padding:6px 10px; font-size:0.79rem;">
+          <button type="button" class="btn btn-sm btn-primary" id="btn-laa-parse-goal-create-agent">+ Doğal Dilden Ajan Taslağı Oluştur</button>
+          <button type="button" class="btn btn-sm" id="btn-laa-test-unsupported-goal" title="Desteklenmeyen kaynak talebini dürüstçe reddetme testi">Test: "Bütün sosyal medyayı izle"</button>
+        </div>
+
+        <div id="laa-agent-draft-feedback" class="hidden" style="font-size:0.77rem; padding:8px 10px; border-radius:8px; background:rgba(244,63,94,0.14); border:1px solid rgba(244,63,94,0.45); color:#FFE4E6;"></div>
+
+        <div id="laa-agent-studio-list" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem;"></div>
+        <div id="laa-agent-run-output" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem;"></div>
       </div>
     </aside>
 
@@ -7554,8 +7666,16 @@ body.theme-light .linear-setting-row {
                 <div class="linear-setting-controls" style="flex-wrap:wrap; gap:6px;">
                   <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="tr-TR">TR · Türkçe (%100)</button>
                   <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="en-US">EN · English (%100)</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="el-GR">EL · Ελληνικά</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="de-DE">DE · Deutsch</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="fr-FR">FR · Français</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="es-ES">ES · Español</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="it-IT">IT · Italiano</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="pt-BR">PT · Português</button>
                   <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="ar-SA">AR · العربية (RTL)</button>
                   <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="he-IL">HE · עברית (RTL)</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="ru-RU">RU · Русский</button>
+                  <button type="button" class="chip-btn quiet-lang-btn" data-lang-code="zh-Hans">ZH · 简体中文</button>
                   <span style="width:1px; height:20px; background:rgba(136,212,255,0.2); margin:0 4px;"></span>
                   <button class="chip-btn pref-font-btn active" type="button" data-font-scale="1">%100</button>
                   <button class="chip-btn pref-font-btn" type="button" data-font-scale="1.08">%108</button>
@@ -7568,8 +7688,16 @@ body.theme-light .linear-setting-row {
                   <select id="sel-settings-world-lang-catalog" class="select-enterprise" aria-label="BCP 47 Dünya Dilleri Kataloğu" style="padding:5px 8px; font-size:0.78rem; border-radius:8px; max-width:250px;">
                     <option value="tr-TR">tr-TR · Türkçe (Anahtar: %100 · İnsan İncelemesi: %100)</option>
                     <option value="en-US">en-US · English (Anahtar: %100 · İnsan İncelemesi: %100)</option>
+                    <option value="el-GR">el-GR · Ελληνικά (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="de-DE">de-DE · Deutsch (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="fr-FR">fr-FR · Français (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="es-ES">es-ES · Español (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="it-IT">it-IT · Italiano (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="pt-BR">pt-BR · Português (Brasil) (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="ar-SA">ar-SA · العربية RTL (Anahtar: %100 · İnsan İncelemesi: %85)</option>
                     <option value="he-IL">he-IL · עברית RTL (Anahtar: %100 · İnsan İncelemesi: %100)</option>
-                    <option value="ar-SA">ar-SA · العربية RTL (Anahtar: %99 · İnsan İncelemesi: %85)</option>
+                    <option value="ru-RU">ru-RU · Русский (Anahtar: %100 · İnsan İncelemesi: %0)</option>
+                    <option value="zh-Hans">zh-Hans · 简体中文 (Anahtar: %100 · İnsan İncelemesi: %0)</option>
                   </select>
                 </div>
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:0.76rem; color:var(--text-2); background:rgba(8,15,30,0.65); padding:6px 10px; border-radius:8px; border:1px solid rgba(136,212,255,0.14);">
@@ -7605,9 +7733,9 @@ body.theme-light .linear-setting-row {
                 </div>
               </div>
               <div class="linear-setting-controls" style="flex-wrap:wrap; gap:8px;">
-                <span class="kpi-badge" id="settings-llm-status-badge">Yerel yapay zekâ kontrol ediliyor...</span>
+                <span class="kpi-badge" id="settings-llm-status-badge">Yerel yapay zekâ kapalı (Varsayılan LLM Dışı Mod)</span>
                 <label style="display:inline-flex; align-items:center; gap:5px; font-size:0.78rem; color:var(--text-1); cursor:pointer;">
-                  <input type="checkbox" id="chk-settings-llm-enabled" checked>
+                  <input type="checkbox" id="chk-settings-llm-enabled">
                   <span>Yerel LLM Aktif</span>
                 </label>
                 <input type="text" id="inp-settings-llm-url" class="dt-editor-input mono" value="http://127.0.0.1:11434" style="width:175px; padding:4px 8px; font-size:0.76rem;" title="Yerel Ollama API Adresi (Yalnızca 127.0.0.1 / localhost)">
@@ -12592,10 +12720,10 @@ body.theme-light .linear-setting-row {
       <div
         style="padding:8px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; background:rgba(7,14,24,0.5);">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-          <span class="dunyam-pill accent" id="cmd-palette-llm-status-pill">Yerel yapay zekâ kontrol ediliyor...</span>
+          <span class="dunyam-pill accent" id="cmd-palette-llm-status-pill">LLM Dışı Kayıt ve Kanıt Modu Aktif</span>
           <label style="display:inline-flex; align-items:center; gap:5px; font-size:0.74rem; color:var(--text-2); cursor:pointer;">
-            <input type="checkbox" id="chk-cmd-use-local-llm" checked>
-            <span>Ollama Yerel Dil Modeli</span>
+            <input type="checkbox" id="chk-cmd-use-local-llm">
+            <span>Ollama Yerel Dil Modeli (İsteğe Bağlı)</span>
           </label>
           <select id="cmd-palette-llm-model-select" class="select-enterprise" style="padding:2px 8px; font-size:0.74rem; border-radius:999px;">
             <option value="qwen2.5:1.5b">qwen2.5:1.5b (Apache-2.0 · Hızlı)</option>
@@ -12682,6 +12810,8 @@ body.theme-light .linear-setting-row {
   <script src="discovery_value_engine.js"></script>
   <!-- CAELUS İLK GERÇEK GÖREV MOTORU (DOSYA OKUMA, SÜTUN EŞLEME, SÖZLEŞME DOĞRULAMA, TEKİLLEŞTİRME, SENARYO VE 7 SAYFALI XLSX/PDF RAPOR) -->
   <script src="first_real_task_engine.js"></script>
+  <!-- CAELUS KONUŞAN DÜNYA MUHAKEME SİSTEMİ (LLM DIŞI 8 KATMANLI DANIŞMAN & CEVAP PASAPORTU) VE KİŞİSEL AJAN STÜDYOSU -->
+  <script src="personal_agent_and_advisor.js"></script>
   <!-- CAELUS GÖRSEL EVRİM VE MEKÂNSAL ARAYÜZ MOTORU (BAŞLIKSIZ SAHNE, 8 TASARIM REFERANSI MATRİSİ VE VERİ PORTRESİ) -->
   <script src="spatial_experience.js"></script>
   <!-- ANA UYGULAMA VE CANLI C++/RUST KÖPRÜSÜ -->

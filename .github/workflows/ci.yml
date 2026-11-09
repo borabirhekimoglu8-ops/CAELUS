@@ -64,12 +64,15 @@ jobs:
           node --check ui/living_world_model.js
           node --check ui/discovery_value_engine.js
           node --check ui/first_real_task_engine.js
+          node --check ui/personal_agent_and_advisor.js
           node --check ui/spatial_experience.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
           node --test tests/discovery_value_engine.test.mjs
           node --test tests/first_real_task.test.mjs
+          node --test tests/personal_agent_and_advisor.test.mjs
+          node tools/caelus_mcp_server.mjs --self-test
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
@@ -125,12 +128,15 @@ jobs:
           node --check ui/living_world_model.js
           node --check ui/discovery_value_engine.js
           node --check ui/first_real_task_engine.js
+          node --check ui/personal_agent_and_advisor.js
           node --check ui/spatial_experience.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
           node --test tests/discovery_value_engine.test.mjs
           node --test tests/first_real_task.test.mjs
+          node --test tests/personal_agent_and_advisor.test.mjs
+          node tools/caelus_mcp_server.mjs --self-test
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 

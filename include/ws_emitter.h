@@ -800,10 +800,15 @@ private:
             }
         }
 
-        // Safe static asset serving for /vendor/... and /assets/... (CesiumJS workers/tiles/widgets, vis-timeline, licenses, learned_world_model.js)
+        // Safe static asset serving for /vendor/..., /assets/..., and UI engine modules
         if ((path.rfind("/vendor/", 0) == 0 || path.rfind("/ui/vendor/", 0) == 0 ||
              path.rfind("/assets/", 0) == 0 || path.rfind("/ui/assets/", 0) == 0 ||
-             path == "/learned_world_model.js" || path == "/ui/learned_world_model.js") &&
+             path == "/learned_world_model.js" || path == "/ui/learned_world_model.js" ||
+             path == "/living_world_model.js" || path == "/ui/living_world_model.js" ||
+             path == "/discovery_value_engine.js" || path == "/ui/discovery_value_engine.js" ||
+             path == "/first_real_task_engine.js" || path == "/ui/first_real_task_engine.js" ||
+             path == "/personal_agent_and_advisor.js" || path == "/ui/personal_agent_and_advisor.js" ||
+             path == "/spatial_experience.js" || path == "/ui/spatial_experience.js") &&
             path.find("..") == std::string::npos &&
             path.find('\\') == std::string::npos &&
             path.find(':') == std::string::npos) {
