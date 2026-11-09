@@ -50,37 +50,37 @@
   // ============================================================================
 
   /**
-   * 10 Zorunlu Cevap Pasaportu Sınıfı (Bölüm 7)
+   * 10 Zorunlu Cevap Pasaportu Sınıfı (Bölüm 7 — Geriye Dönük Şema Uyumluluğu)
    */
   var ANSWER_PASSPORT_CLASSES_10 = Object.freeze({
     SOURCE_CLAIM: {
       code: 'SOURCE_CLAIM',
-      labelTr: 'Kaynaklı Olgu İddiası',
-      labelEn: 'Sourced Fact Claim',
+      labelTr: 'Kaynaktan Alınmış İddia',
+      labelEn: 'Sourced Claim',
       badgeColor: '#38bdf8'
     },
     VERIFIED_CALCULATION: {
       code: 'VERIFIED_CALCULATION',
-      labelTr: 'Doğrulanmış Hesap Sonucu',
+      labelTr: 'Açık Hesap Sonucu',
       labelEn: 'Verified Calculation',
       badgeColor: '#22c55e'
     },
     RULE_DERIVATION: {
       code: 'RULE_DERIVATION',
-      labelTr: 'Kural Tabanlı Çıkarım',
+      labelTr: 'Kuralla Türetilmiş Sonuç',
       labelEn: 'Rule-Based Derivation',
       badgeColor: '#818cf8'
     },
     USER_INPUT: {
       code: 'USER_INPUT',
-      labelTr: 'Kullanıcı Girdisi',
-      labelEn: 'User Input',
+      labelTr: 'Kullanıcının Kendi İfadesi',
+      labelEn: 'User Statement',
       badgeColor: '#e2e8f0'
     },
     USER_PREFERENCE: {
       code: 'USER_PREFERENCE',
-      labelTr: 'Kullanıcı Tercihi',
-      labelEn: 'User Preference',
+      labelTr: 'Kullanıcı Tercihi / Varsayımı',
+      labelEn: 'User Preference / Assumption',
       badgeColor: '#c084fc'
     },
     MODEL_ASSUMPTION: {
@@ -103,17 +103,50 @@
     },
     CONTRADICTION: {
       code: 'CONTRADICTION',
-      labelTr: 'Çelişen Kaynak Bilgisi',
-      labelEn: 'Conflicting Source Claim',
+      labelTr: 'Çelişen Kayıtlar',
+      labelEn: 'Conflicting Records',
       badgeColor: '#f43f5e'
     },
     UNKNOWN: {
       code: 'UNKNOWN',
-      labelTr: 'Bilinmeyen / Veri Yok',
-      labelEn: 'Unknown / Insufficient Data',
+      labelTr: 'Eksik Bilgi / Bilinmeyen',
+      labelEn: 'Missing Information / Unknown',
       badgeColor: '#94a3b8'
     }
   });
+
+  /**
+   * Bölüm 2.5 & 5.1: Genişletilmiş 12 Epistemik Durum (Gerçek Veri, Dosya Bilgisi, Doğrulama Gerektiren İddia, Bağımsız Doğrulanmış Olgu ve Örnek Veri Ayrımı)
+   */
+  var EPISTEMIC_STATES_12 = Object.freeze(Object.assign({}, ANSWER_PASSPORT_CLASSES_10, {
+    USER_FILE_FACT: {
+      code: 'USER_FILE_FACT',
+      labelTr: 'Kullanıcının Dosyasındaki Bilgi',
+      labelEn: 'User File Fact',
+      badgeColor: '#10b981'
+    },
+    UNVERIFIED_CLAIM: {
+      code: 'UNVERIFIED_CLAIM',
+      labelTr: 'Doğrulama Gerektiren İddia',
+      labelEn: 'Claim Requiring Verification',
+      badgeColor: '#fbbf24'
+    },
+    INDEPENDENTLY_CORROBORATED_FACT: {
+      code: 'INDEPENDENTLY_CORROBORATED_FACT',
+      labelTr: 'Bağımsız Olarak Doğrulanmış Olgu',
+      labelEn: 'Independently Corroborated Fact',
+      badgeColor: '#14b8a6'
+    },
+    SAMPLE_TRAINING_DATA: {
+      code: 'SAMPLE_TRAINING_DATA',
+      labelTr: 'Örnek veri (Eğitim / Test)',
+      labelEn: 'Sample / Training Data',
+      badgeColor: '#f97316'
+    }
+  }));
+
+  var EMPTY_WORLD_DATA_MESSAGE_TR =
+    'Henüz gerçek dünya verisi alınmadı. Bir kaynak seçebilir veya dosya ekleyebilirsin.';
 
   /**
    * 12 Desteklenen Konuşma Eylemi (Bölüm 5)
@@ -232,10 +265,11 @@
     {
       id: 'piper_tts',
       category: 'TTS',
-      name: 'Piper Neural TTS (ONNX)',
-      license: 'MIT',
-      commercialUseAllowed: true,
-      turkishSupport: 'Destekleniyor (tr_TR-dfki / fahrettin / fgl ses modelleri)',
+      name: 'Piper Neural TTS (Eski rhasspy/piper MIT vs Yeni OHF-Voice/piper1-gpl GPL-3.0)',
+      license: 'MIT (rhasspy/piper arşiv) / GPL-3.0 (piper1-gpl güncel) + Ses Modeli Lisansları Ayrıdır',
+      commercialUseAllowed: false,
+      commercialWarning: 'ÖNEMLİ LİSANS AYRIMI: Eski arşivlenmiş rhasspy/piper deposu MIT lisanslıydı; ancak güncel geliştirmenin taşındığı OHF-Voice/piper1-gpl deposu GPL-3.0 lisansına geçmiştir ve bazı ses modelleri (HuggingFace veri setleri) CC-BY-NC-SA gibi ticari olmayan kısıtlar taşıyabilir. Ticari ürüne doğrudan gömülmez; ayrı süreç veya açık ticari lisanslı ses modeli doğrulaması gerekir.',
+      turkishSupport: 'Destekleniyor (tr_TR-dfki / fahrettin / fgl ses modelleri — model lisansı ayrıca denetlenmeli)',
       offlineCapable: true,
       approxBundleSizeMb: 28,
       statusInWorkspace: 'OPTIONAL_NATIVE_ADAPTER_NOT_BUNDLED'
@@ -696,22 +730,276 @@
   }
 
   // ----------------------------------------------------------------------------
-  // Varsayılan Konuşan Dünya Kayıtları (Zorunlu 3 Turlu Dikey Kesit ve Çoklu Kaynak Testi)
+  // Deterministik İçerik Özeti (SHA-256 / FNV-1a Yedekli) ve Günlük Maskeleme
   // ----------------------------------------------------------------------------
-  function buildDefaultAdvisorWorldRecords() {
-    return [
+  function computeDeterministicHashHex(input) {
+    var lwm = getLivingWorldModel();
+    if (lwm && typeof lwm.computeSha256Hex === 'function') {
+      try {
+        return lwm.computeSha256Hex(input);
+      } catch (_) {}
+    }
+    var str = typeof input === 'string' ? input : JSON.stringify(input || '');
+    if (typeof require === 'function') {
+      try {
+        var nodeCrypto = require('crypto');
+        return nodeCrypto.createHash('sha256').update(str, 'utf8').digest('hex');
+      } catch (_) {}
+    }
+    // Tarayıcı senkron yedeği: 256-bit deterministik karma (8x32-bit FNV-1a şeridi)
+    var lanes = [
+      0x811c9dc5, 0x811c9dc5 ^ 0x1337c0de, 0x811c9dc5 ^ 0x9e3779b9, 0x811c9dc5 ^ 0x7f4a7c15,
+      0x811c9dc5 ^ 0x6a09e667, 0x811c9dc5 ^ 0xbb67ae85, 0x811c9dc5 ^ 0x3c6ef372, 0x811c9dc5 ^ 0xa54ff53a
+    ];
+    for (var i = 0; i < str.length; i++) {
+      var code = str.charCodeAt(i);
+      var laneIdx = i & 7;
+      lanes[laneIdx] ^= code;
+      lanes[laneIdx] = Math.imul(lanes[laneIdx], 0x01000193) >>> 0;
+    }
+    return lanes.map(function (v) { return ('00000000' + (v >>> 0).toString(16)).slice(-8); }).join('');
+  }
+
+  function sanitizeAuditLogMessage(rawText) {
+    var s = String(rawText || '');
+    s = s.replace(/((?:api[_-]?key|token|secret|password|authorization|bearer|cookie)\s*[:=]\s*)([^\s,;'"&]+)/gi, '$1[REDACTED_SECRET]');
+    s = s.replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, '[REDACTED_API_KEY]');
+    return s;
+  }
+
+  // ----------------------------------------------------------------------------
+  // Bölüm 2.4 & 2.5: Gerçek Kaynak Kaydı Şeması, Kaynak İddiası vs Bağımsız Doğrulanmış Olgu Ayrımı
+  // ----------------------------------------------------------------------------
+  function normalizeAdvisorWorldRecord(rawRec, options) {
+    var opts = options || {};
+    var r = Object.assign({}, rawRec || {});
+    var nowIso = opts.nowIso || new Date().toISOString();
+
+    var isSample = Boolean(
+      r.isSampleFixture === true ||
+      r.data_origin === 'SAMPLE_TRAINING_DATA' ||
+      r.epistemic_status === 'SAMPLE_TRAINING_DATA' ||
+      r.epistemic_status === 'TEST_EGITIM_VERISI'
+    );
+
+    var sourceId = String(r.source_id || '').trim();
+    var sourceUrl = String(r.source_url || '').trim();
+    var hasValidSourceLink = Boolean(
+      sourceId &&
+      sourceUrl &&
+      sourceUrl !== 'not_provided' &&
+      sourceUrl !== 'unknown' &&
+      /^https?:\/\//i.test(sourceUrl)
+    );
+
+    var corroboratingSources = Array.isArray(r.corroborating_sources) ? r.corroborating_sources.slice() : [];
+    var isIndependentlyCorroborated = !isSample && hasValidSourceLink && (
+      r.verification_status === 'INDEPENDENTLY_CORROBORATED_FACT' ||
+      r.epistemic_status === 'INDEPENDENTLY_CORROBORATED_FACT' ||
+      r.epistemic_status === 'DOGRULANMIS_OLGU' ||
+      corroboratingSources.length >= 2
+    );
+
+    // KURAL 2.5 & 2.8: Kaynaksız iddia doğrulanmış olguya yükseltilemez;
+    // Tek kaynaklı kayıt varsayılan olarak "Kaynaktan alınmış iddia" (SOURCE_CLAIM) statüsündedir.
+    var epistemicStatus;
+    var verificationStatus;
+    if (isSample) {
+      epistemicStatus = 'SAMPLE_TRAINING_DATA';
+      verificationStatus = 'SAMPLE_TRAINING_NOT_REAL_WORLD_VERIFIED';
+    } else if (r.epistemic_status === 'USER_PREFERENCE' || r.record_type === 'USER_PREFERENCE') {
+      epistemicStatus = 'USER_PREFERENCE';
+      verificationStatus = 'USER_PREFERENCE_NOT_WORLD_FACT';
+    } else if (!hasValidSourceLink) {
+      epistemicStatus = 'UNVERIFIED_CLAIM';
+      verificationStatus = 'MISSING_SOURCE_OR_URL_CANNOT_PROMOTE_TO_FACT';
+    } else if (isIndependentlyCorroborated) {
+      epistemicStatus = 'INDEPENDENTLY_CORROBORATED_FACT';
+      verificationStatus = 'CORROBORATED_BY_INDEPENDENT_PRIMARY_SOURCES';
+    } else {
+      epistemicStatus = 'SOURCE_CLAIM';
+      verificationStatus = 'SINGLE_SOURCE_CLAIM_NOT_INDEPENDENTLY_CORROBORATED';
+    }
+
+    var ingestedAt = r.ingested_at && r.ingested_at !== 'not_provided' ? String(r.ingested_at) : nowIso;
+    var publishedAt = r.source_published_at ? String(r.source_published_at) : 'not_provided';
+    var eventTime = r.event_time ? String(r.event_time) : 'not_provided';
+
+    var contentHash = r.content_hash || computeDeterministicHashHex({
+      record_id: r.record_id || '',
+      source_id: sourceId,
+      source_url: sourceUrl,
+      title: r.title || '',
+      summary: r.summary || '',
+      event_time: eventTime,
+      source_published_at: publishedAt
+    });
+
+    var freshnessStatus = r.freshness_status || (
+      r.error_state || r.reachable === false
+        ? (r.ingested_at ? 'SON_BILINEN_VERI_KAYNAK_ERISILEMIYOR' : 'BAGLANTI_YOK')
+        : (publishedAt !== 'not_provided' || ingestedAt ? 'GUNCEL' : 'SURESI_BILINMIYOR')
+    );
+
+    return Object.assign({}, r, {
+      record_id: String(r.record_id || ('rec-' + contentHash.slice(0, 12))),
+      record_type: r.record_type || 'SOURCE_RECORD',
+      source_provider: r.source_provider || r.source_name || sourceId || 'unknown_provider',
+      source_id: sourceId || 'unverified_source',
+      source_name: r.source_name || r.source_provider || sourceId || 'Belirtilmemiş Kaynak',
+      source_url: sourceUrl || 'not_provided',
+      ingested_at: ingestedAt,
+      source_published_at: publishedAt,
+      event_time: eventTime,
+      last_checked_at: r.last_checked_at || ingestedAt,
+      data_format: r.data_format || 'application/json',
+      title: String(r.title || (r.subject && r.subject.name) || 'Kaynak Kaydı'),
+      summary: String(r.summary || r.original_text || ''),
+      content_hash: contentHash,
+      source_license: r.source_license || 'not_provided',
+      usage_terms: r.usage_terms || r.source_license || 'Kaynak kullanım koşullarına tabidir',
+      commercial_status: r.commercial_status || 'INCELEMEDE',
+      freshness_status: freshnessStatus,
+      epistemic_status: epistemicStatus,
+      verification_status: verificationStatus,
+      isSampleFixture: isSample,
+      sample_badge_tr: isSample ? 'Örnek veri' : null,
+      error_state: r.error_state || null,
+      is_stale_cached_record: Boolean(r.is_stale_cached_record === true || r.reachable === false),
+      entities: Array.isArray(r.entities) ? r.entities : (
+        r.subject && r.subject.name
+          ? [{ id: r.subject.id || r.subject.name, name: r.subject.name, type: r.subject.entity_type || 'ENTITY', sector: r.subject.domain || 'Genel' }]
+          : []
+      ),
+      domains: Array.isArray(r.domains) ? r.domains : (r.subject && r.subject.domain ? [String(r.subject.domain).toLowerCase()] : ['general']),
+      claims: Array.isArray(r.claims) ? r.claims : [
+        {
+          claim_id: 'clm-' + contentHash.slice(0, 10),
+          statement: String(r.summary || r.original_text || r.title || ''),
+          epistemic_status: epistemicStatus
+        }
+      ]
+    });
+  }
+
+  function convertLivingWorldRecordToAdvisorRecord(lwmRec) {
+    if (!lwmRec || typeof lwmRec !== 'object') return null;
+    if (lwmRec.title && lwmRec.summary && Array.isArray(lwmRec.entities)) {
+      return normalizeAdvisorWorldRecord(lwmRec);
+    }
+    var subj = lwmRec.subject || {};
+    var subjName = subj.name || String(lwmRec.record_id || 'Varlık');
+    var ents = [
+      {
+        id: subj.id || subjName,
+        name: subjName,
+        type: subj.entity_type || 'ENTITY',
+        sector: subj.domain || 'Genel',
+        external_ids: subj.external_ids || {}
+      }
+    ];
+    if (typeof lwmRec.object === 'string' && /^WIKIDATA:Q\d+$/i.test(lwmRec.object)) {
+      ents.push({
+        id: lwmRec.object,
+        name: lwmRec.object.replace(/^WIKIDATA:/i, ''),
+        type: 'LINKED_ENTITY',
+        sector: 'Bilgi Grafı İlişkisi'
+      });
+    }
+    if (subj.external_ids && Array.isArray(subj.external_ids.institutions)) {
+      subj.external_ids.institutions.forEach(function (instName) {
+        if (instName) {
+          ents.push({ id: instName, name: instName, type: 'INSTITUTION', sector: 'Araştırma Kurumu' });
+        }
+      });
+    }
+    var sourceIdNormalized = lwmRec.source_id === 'sec_edgar_submissions'
+      ? 'sec_edgar'
+      : lwmRec.source_id === 'openalex_scholarly'
+        ? 'openalex'
+        : lwmRec.source_id === 'world_bank_indicators'
+          ? 'world_bank'
+          : lwmRec.source_id === 'gdelt_doc_v2'
+            ? 'gdelt_doc'
+            : (lwmRec.source_id || 'wikidata');
+
+    return normalizeAdvisorWorldRecord({
+      record_id: lwmRec.record_id,
+      record_type: lwmRec.record_type || 'SOURCE_RECORD',
+      source_provider: lwmRec.source_publisher || lwmRec.source_id,
+      source_id: sourceIdNormalized,
+      source_id_raw: lwmRec.source_id,
+      source_name: lwmRec.source_publisher || lwmRec.source_id,
+      source_url: lwmRec.source_url,
+      source_license: lwmRec.source_license,
+      commercial_status: lwmRec.commercial_status,
+      event_time: lwmRec.event_time || 'not_provided',
+      source_published_at: lwmRec.source_published_at || 'not_provided',
+      ingested_at: lwmRec.ingested_at,
+      last_checked_at: lwmRec.last_checked_at || lwmRec.ingested_at,
+      data_format: 'application/json',
+      content_hash: lwmRec.content_hash,
+      title: subjName + (lwmRec.relation ? ' — ' + lwmRec.relation : ''),
+      summary: lwmRec.original_text || (subjName + ': ' + String(lwmRec.object !== undefined ? lwmRec.object : '')),
+      numeric_value: typeof lwmRec.value === 'number' ? lwmRec.value : (typeof lwmRec.object === 'number' ? lwmRec.object : null),
+      units: lwmRec.units || null,
+      relation: lwmRec.relation || null,
+      subject: subj,
+      object: lwmRec.object,
+      entities: ents,
+      domains: subj.domain ? [String(subj.domain).toLowerCase()] : ['general'],
+      epistemic_status: 'SOURCE_CLAIM',
+      is_syndicated_duplicate: Boolean(lwmRec.is_syndicated_duplicate),
+      syndication_copy_count: lwmRec.syndication_copy_count || 1
+    });
+  }
+
+  function convertAdvisorRecordToLivingWorldV2(advRec) {
+    if (!advRec || typeof advRec !== 'object') return null;
+    if (advRec.subject && advRec.subject.id && advRec.subject.name) return advRec;
+    var firstEnt = (Array.isArray(advRec.entities) && advRec.entities[0]) || { id: advRec.record_id, name: advRec.title || 'Varlık' };
+    var entId = typeof firstEnt === 'string' ? firstEnt : (firstEnt.id || firstEnt.name || advRec.record_id);
+    var entName = typeof firstEnt === 'string' ? firstEnt : (firstEnt.name || firstEnt.id || advRec.title);
+    var extIds = {};
+    if (/^Q\d+$/i.test(String(entId))) extIds.wikidata_qid = String(entId);
+    if (/^CIK\d+$/i.test(String(entId))) extIds.sec_cik = String(entId).replace(/^CIK/i, '');
+    return Object.assign({}, advRec, {
+      subject: {
+        id: String(entId),
+        name: String(entName),
+        entity_type: (firstEnt && firstEnt.type) || 'ENTITY',
+        domain: (Array.isArray(advRec.domains) && advRec.domains[0]) || 'GENERAL',
+        external_ids: extIds
+      },
+      relation: advRec.relation || advRec.record_type || 'REPORTED_UPDATE',
+      object: advRec.summary || advRec.title || '',
+      source_publisher: advRec.source_name || advRec.source_provider || advRec.source_id
+    });
+  }
+
+  // ----------------------------------------------------------------------------
+  // Eğitim / Örnek Veri Kayıtları (Yalnızca Açık Eğitim Modunda veya Kontrollü Testlerde Kullanılır)
+  // Üretim / normal kullanım modunda otomatik yüklenmez!
+  // ----------------------------------------------------------------------------
+  function buildDefaultAdvisorWorldRecords(options) {
+    var opts = options || {};
+    var markAsSample = opts.markAsSampleFixture === true;
+    var rawList = [
       {
         record_id: 'rec-wikidata-tsmc-2026',
         record_type: 'ENTITY_STATE_UPDATE',
+        source_provider: 'Wikidata / Wikimedia Foundation',
         source_id: 'wikidata',
         source_name: 'Wikidata Sparql & Entity API',
         source_url: 'https://www.wikidata.org/wiki/Q713418',
         source_license: 'CC0-1.0',
+        usage_terms: 'CC0 1.0 Public Domain Dedication; topluluk verisi birincil kaynak doğrulaması gerektirir.',
         commercial_status: 'ALLOWED_COMMERCIAL',
         event_time: '2026-03-28T09:00:00Z',
         source_published_at: '2026-03-28T11:30:00Z',
         ingested_at: '2026-03-30T08:00:00Z',
         last_checked_at: '2026-03-30T08:00:00Z',
+        data_format: 'application/json',
         language: 'tr',
         title: 'TSMC Avrupa Yarı İletken Üretim Yatırımı ve Tedarik Zinciri Güncellemesi',
         summary: 'TSMC (Q713418), Avrupa otomotiv ve endüstriyel çip kapasitesi için Dresden tesisi ortaklık yapısını ve 2026 tedarik takvimini güncelledi.',
@@ -726,25 +1014,32 @@
           {
             claim_id: 'clm-tsmc-1',
             statement: 'TSMC, Avrupa üretim hattında endüstriyel ve otomotiv sınıfı 28nm/16nm/12nm kapasite planını resmi olarak güncelledi.',
-            epistemic_status: 'OBSERVED_FACT'
+            epistemic_status: markAsSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM'
           }
         ],
-        epistemic_status: 'OBSERVED_FACT',
-        confidence_note: 'Resmi kurumsal ve açık bilgi grafı kaydı (Wikidata Q713418).'
+        epistemic_status: markAsSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM',
+        isSampleFixture: markAsSample,
+        sample_badge_tr: markAsSample ? 'Örnek veri' : null,
+        confidence_note: markAsSample
+          ? 'Örnek veri (Eğitim / Test Senaryosu — Canlı doğrulanmış gerçek dünya hafızası değildir).'
+          : 'Kaynaklı kayıt (Wikidata Q713418).'
       },
       {
         record_id: 'rec-sec-apple-10k-2026',
         record_id_canonical: 'rec-sec-apple-10k-2026',
         record_type: 'CORPORATE_FILING',
+        source_provider: 'U.S. Securities and Exchange Commission',
         source_id: 'sec_edgar',
         source_name: 'U.S. SEC EDGAR Submissions API',
         source_url: 'https://data.sec.gov/submissions/CIK0000320193.json',
         source_license: 'US-Public-Domain',
+        usage_terms: 'U.S. Government Public Domain; SEC Fair Access <=10 req/s.',
         commercial_status: 'ALLOWED_COMMERCIAL',
         event_time: '2026-03-25T16:00:00Z',
         source_published_at: '2026-03-25T20:15:00Z',
         ingested_at: '2026-03-30T08:05:00Z',
         last_checked_at: '2026-03-30T08:05:00Z',
+        data_format: 'application/json',
         language: 'tr',
         title: 'Apple Inc. SEC EDGAR Bildirimi: Yarı İletken Tedarik ve Donanım Üretim Planı',
         summary: 'Apple Inc. (CIK 0000320193) resmi SEC bildiriminde ileri düğüm işlemci tedarikinde TSMC ile kapasite tahsisini ve Avrupa/Asya lojistik yedekliliğini raporladı.',
@@ -758,24 +1053,31 @@
           {
             claim_id: 'clm-apple-sec-1',
             statement: 'Apple Inc., tekil dökümhane (foundry) tedarik yoğunlaşması nedeniyle TSMC kapasite tahsislerini dönemsel risk faktörü ve ana üretim bağımlılığı olarak bildirdi.',
-            epistemic_status: 'OBSERVED_FACT'
+            epistemic_status: markAsSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM'
           }
         ],
-        epistemic_status: 'OBSERVED_FACT',
-        confidence_note: 'ABD SEC EDGAR resmi kurumsal bildirim verisi.'
+        epistemic_status: markAsSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM',
+        isSampleFixture: markAsSample,
+        sample_badge_tr: markAsSample ? 'Örnek veri' : null,
+        confidence_note: markAsSample
+          ? 'Örnek veri (Eğitim / Test Senaryosu).'
+          : 'ABD SEC EDGAR resmi kurumsal bildirim verisi.'
       },
       {
         record_id: 'rec-openalex-semi-supply-2026',
         record_type: 'SCIENTIFIC_PUBLICATION',
+        source_provider: 'OpenAlex (OurResearch)',
         source_id: 'openalex',
         source_name: 'OpenAlex Scholarly Works API',
         source_url: 'https://api.openalex.org/works',
         source_license: 'CC0-1.0',
+        usage_terms: 'CC0 1.0 meta veri; makale tam metin telifleri ilgili yayıncılara aittir.',
         commercial_status: 'ALLOWED_COMMERCIAL',
         event_time: '2026-03-20T00:00:00Z',
         source_published_at: '2026-03-21T10:00:00Z',
         ingested_at: '2026-03-30T08:10:00Z',
         last_checked_at: '2026-03-30T08:10:00Z',
+        data_format: 'application/json',
         language: 'tr',
         title: 'Yarı İletken Tedarik Zinciri Darboğazlarının Bulut ve Endüstriyel Donanım Maliyetlerine Etkisi',
         summary: 'OpenAlex açık erişim araştırması, TSMC ve ASML ekosistemindeki kapasite kaymalarının elektronik, otomotiv ve veri merkezi donanım teslim sürelerini 6-14 hafta etkileyebildiğini inceliyor.',
@@ -789,24 +1091,1165 @@
           {
             claim_id: 'clm-openalex-1',
             statement: 'Akademik çalışmaya göre dökümhane kapasite değişimleri alt kademe elektronik ve bulut donanım tedarikinde teslim süresi dalgalanması oluşturmaktadır.',
-            epistemic_status: 'REPORTED_CLAIM'
+            epistemic_status: markAsSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM'
           }
         ],
-        epistemic_status: 'REPORTED_CLAIM',
-        confidence_note: 'OpenAlex hakemli/açık erişim bilimsel yayın kaydı.'
+        epistemic_status: markAsSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM',
+        isSampleFixture: markAsSample,
+        sample_badge_tr: markAsSample ? 'Örnek veri' : null,
+        confidence_note: markAsSample
+          ? 'Örnek veri (Eğitim / Test Senaryosu).'
+          : 'OpenAlex hakemli/açık erişim bilimsel yayın kaydı.'
       }
     ];
+    return rawList.map(function (item) {
+      return normalizeAdvisorWorldRecord(item);
+    });
+  }
+
+  // ============================================================================
+  // BÖLÜM 3: DÜNYA VERİLERİ İÇİN AYRI VE DENETLENEBİLİR KAPI (`CaelusWorldDataGate`)
+  // ============================================================================
+
+  var LOGICAL_DATA_ZONES_5 = Object.freeze({
+    A_USER_PRIVATE_SPACE: {
+      zoneId: 'A_USER_PRIVATE_SPACE',
+      labelTr: 'A. Kullanıcı Özel Alanı',
+      descriptionTr: 'Kişisel dosyalar, sohbet geçmişi ve yerel notlar. Dış kaynak bağlayıcıları bu alanı varsayılan olarak okuyamaz ve dışarı gönderemez.',
+      externalConnectorsCanRead: false
+    },
+    B_EXTERNAL_SOURCE_RECORDS: {
+      zoneId: 'B_EXTERNAL_SOURCE_RECORDS',
+      labelTr: 'B. Dış Kaynaklardan Alınan Kayıtlar',
+      descriptionTr: 'Kullanıcının izin verdiği açık kaynaklardan alınan zaman damgalı, hash özeti doğrulanmış kaynak kayıtları.',
+      externalConnectorsCanRead: true
+    },
+    C_USER_ASSUMPTIONS_AND_PREFERENCES: {
+      zoneId: 'C_USER_ASSUMPTIONS_AND_PREFERENCES',
+      labelTr: 'C. Kullanıcı Varsayımları ve Tercihleri',
+      descriptionTr: 'Kullanıcının açıkça girdiği ilgi alanları, bütçe tavanı ve senaryo varsayımları. Dünya olgusu yerine geçmez.',
+      externalConnectorsCanRead: false
+    },
+    D_DERIVED_RESULTS_AND_ANALYSES: {
+      zoneId: 'D_DERIVED_RESULTS_AND_ANALYSES',
+      labelTr: 'D. Türetilmiş Sonuçlar ve Analizler',
+      descriptionTr: 'Deterministik hesaplamalar, kural çıkarımları ve karşılaştırma raporları.',
+      externalConnectorsCanRead: false
+    },
+    E_LABELED_TEST_TRAINING_DATA: {
+      zoneId: 'E_LABELED_TEST_TRAINING_DATA',
+      labelTr: 'E. Açıkça Etiketlenmiş Test / Eğitim Verisi',
+      descriptionTr: 'Yalnızca kullanıcı eğitim alanını açtığında veya testlerde kullanılan "Örnek veri" etiketli kayıtlar. Gerçek dünya hafızasına karışmaz.',
+      externalConnectorsCanRead: false
+    }
+  });
+
+  var WORLD_GATE_MODES_3 = Object.freeze({
+    OFFLINE: {
+      code: 'OFFLINE',
+      labelTr: 'Çevrim Dışı',
+      descriptionTr: 'Yalnızca daha önce yerelde bulunan veriler ve kullanıcı dosyaları kullanılır. Yeni internet verisi alınmaz (0 dış ağ isteği).'
+    },
+    PERMITTED_CONNECTION: {
+      code: 'PERMITTED_CONNECTION',
+      labelTr: 'İzinli Bağlantı',
+      descriptionTr: 'Yalnızca kullanıcının açıkça seçtiği ve izin verdiği kaynaklara sınırlı HTTPS sorgusu gönderilir; özel dosyalar paylaşılmaz.'
+    },
+    SEPARATE_DEVICE_IMPORT: {
+      code: 'SEPARATE_DEVICE_IMPORT',
+      labelTr: 'Ayrı Cihazdan Aktarım',
+      descriptionTr: 'Başka bir cihazda hazırlanmış veri paketinin şema ve SHA-256 içerik özeti doğrulamasıyla çevrim dışı içeri aktarılması.'
+    }
+  });
+
+  var ALLOWED_EXTERNAL_SOURCE_HOSTS = Object.freeze({
+    'www.wikidata.org': 'wikidata',
+    'api.worldbank.org': 'world_bank_indicators',
+    'data.sec.gov': 'sec_edgar_submissions',
+    'api.openalex.org': 'openalex_scholarly',
+    'api.gdeltproject.org': 'gdelt_doc_v2'
+  });
+
+  function validateExternalSourceRequestSafety(targetUrl, options) {
+    var opts = options || {};
+    var rawUrl = String(targetUrl || '').trim();
+    if (!rawUrl) {
+      return { allowed: false, reasonCode: 'EMPTY_URL', reasonTr: 'Hedef bağlantı boş.' };
+    }
+    var parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch (_) {
+      return { allowed: false, reasonCode: 'INVALID_URL_SYNTAX', reasonTr: 'Geçersiz URL sözdizimi.' };
+    }
+
+    if (parsed.protocol !== 'https:') {
+      return {
+        allowed: false,
+        reasonCode: 'NON_HTTPS_PROTOCOL_BLOCKED',
+        reasonTr: 'Güvenlik politikası gereği yalnızca HTTPS protokolüne izin verilir (' + parsed.protocol + ' engellendi).'
+      };
+    }
+
+    var host = String(parsed.hostname || '').toLowerCase();
+    // SSRF / Yerel ağ / Loopback / Metadata IP engeli
+    if (
+      host === 'localhost' ||
+      host === '0.0.0.0' ||
+      host === '[::1]' ||
+      host === '::1' ||
+      /^127\./.test(host) ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal')
+    ) {
+      return {
+        allowed: false,
+        reasonCode: 'SSRF_LOCAL_OR_PRIVATE_NETWORK_BLOCKED',
+        reasonTr: 'Yerel ağ, loopback veya iç servis adreslerine (' + host + ') erişim güvenlik kapısı tarafından engellendi.'
+      };
+    }
+
+    if (!ALLOWED_EXTERNAL_SOURCE_HOSTS[host]) {
+      return {
+        allowed: false,
+        reasonCode: 'UNAPPROVED_EXTERNAL_HOST_BLOCKED',
+        reasonTr: 'Hedef alan adı (' + host + ') onaylı açık veri kaynakları listesinde yer almıyor.'
+      };
+    }
+
+    if (rawUrl.length > (opts.maxUrlLength || 1024)) {
+      return {
+        allowed: false,
+        reasonCode: 'QUERY_URL_TOO_LONG',
+        reasonTr: 'Dış sorgu URL uzunluğu sınırı aşıldı (veri sızıntısı önlemi).'
+      };
+    }
+
+    return {
+      allowed: true,
+      reasonCode: 'SAFE_APPROVED_HTTPS_ENDPOINT',
+      host: host,
+      mappedSourceId: ALLOWED_EXTERNAL_SOURCE_HOSTS[host],
+      maxTimeoutMs: opts.maxTimeoutMs || 8500,
+      maxResponseBytes: opts.maxResponseBytes || (2 * 1024 * 1024)
+    };
+  }
+
+  function previewOutboundSourceQuery(sourceId, queryParams, privateContext) {
+    var params = queryParams || {};
+    var priv = privateContext || {};
+    var normalizedSid = sourceId === 'world_bank' ? 'world_bank_indicators'
+      : sourceId === 'sec_edgar' ? 'sec_edgar_submissions'
+      : sourceId === 'openalex' ? 'openalex_scholarly'
+      : sourceId === 'gdelt_doc' ? 'gdelt_doc_v2'
+      : sourceId;
+
+    var outboundSummary = {};
+    var endpointHost = '';
+    if (normalizedSid === 'wikidata') {
+      endpointHost = 'www.wikidata.org';
+      outboundSummary = {
+        action: params.searchQuery ? 'wbsearchentities + wbgetentities' : 'wbgetentities',
+        queryOrEntityId: params.searchQuery || params.entityId || (Array.isArray(params.entityIds) ? params.entityIds.join('|') : 'Q43'),
+        language: params.language || 'tr|en'
+      };
+    } else if (normalizedSid === 'world_bank_indicators') {
+      endpointHost = 'api.worldbank.org';
+      outboundSummary = {
+        countries: params.countries || 'TUR',
+        indicator: params.indicator || 'NY.GDP.MKTP.KD.ZG',
+        perPage: Number(params.perPage) || 6
+      };
+    } else if (normalizedSid === 'sec_edgar_submissions') {
+      endpointHost = 'data.sec.gov';
+      outboundSummary = {
+        cik: String(params.cik || '0000320193').replace(/\D/g, '').padStart(10, '0')
+      };
+    } else if (normalizedSid === 'openalex_scholarly') {
+      endpointHost = 'api.openalex.org';
+      outboundSummary = {
+        search: String(params.search || '').slice(0, 120),
+        perPage: Number(params.perPage) || 4
+      };
+    } else if (normalizedSid === 'gdelt_doc_v2') {
+      endpointHost = 'api.gdeltproject.org';
+      outboundSummary = {
+        query: String(params.query || '').slice(0, 120),
+        maxRecords: Number(params.maxRecords) || 5
+      };
+    } else {
+      return {
+        allowed: false,
+        blockedReasonCode: 'UNSUPPORTED_SOURCE_ID',
+        userPreviewTr: 'Desteklenmeyen kaynak kimliği: ' + sourceId
+      };
+    }
+
+    var serializedQuery = JSON.stringify(outboundSummary);
+    // Özel dosya içeriği veya gizli anahtar sızıntısı kontrolü
+    if (/api[_-]?key|secret|password|bearer\s+|private_file_content/i.test(serializedQuery)) {
+      return {
+        allowed: false,
+        blockedReasonCode: 'SENSITIVE_TOKEN_IN_OUTBOUND_QUERY',
+        userPreviewTr: 'Sorgu içinde gizli anahtar/parola kalıbı tespit edildiğinden dış gönderim engellendi.'
+      };
+    }
+
+    var privateFiles = Array.isArray(priv.privateFiles) ? priv.privateFiles : [];
+    for (var i = 0; i < privateFiles.length; i++) {
+      var pf = privateFiles[i] || {};
+      var rawContent = String(pf.originalContent || pf.content || '').trim();
+      if (rawContent.length >= 16 && serializedQuery.indexOf(rawContent.slice(0, 32)) !== -1) {
+        return {
+          allowed: false,
+          blockedReasonCode: 'PRIVATE_FILE_CONTENT_LEAK_BLOCKED',
+          userPreviewTr: 'Kullanıcı özel dosya içeriğinin dış kaynağa gönderilmesi engellendi.'
+        };
+      }
+    }
+
+    return {
+      allowed: true,
+      sourceId: normalizedSid,
+      endpointHost: endpointHost,
+      sharedFields: outboundSummary,
+      privateFilesShared: false,
+      chatHistoryShared: false,
+      userPreviewTr:
+        '"' + endpointHost + '" kaynağına yalnızca şu sorgu parametreleri gönderilecek: ' +
+        JSON.stringify(outboundSummary) + '. Özel dosyalarınız ve sohbet geçmişiniz paylaşılmaz.'
+    };
+  }
+
+  function createWorldDataGate(options) {
+    var opts = options || {};
+    var lwm = getLivingWorldModel();
+    var currentMode = opts.initialMode && WORLD_GATE_MODES_3[opts.initialMode]
+      ? opts.initialMode
+      : 'OFFLINE'; // Varsayılan: kullanıcı açıkça izinli bağlantıya geçene kadar çevrim dışı / yerel
+
+    var sourcePermissions = {
+      wikidata: {
+        sourceId: 'wikidata',
+        displayName: 'Wikidata (Yapılandırılmış Varlık Grafı — CC0)',
+        enabled: opts.enableWikidataByDefault === true,
+        paused: false,
+        license: 'CC0 1.0 Universal',
+        usageTermsTr: 'Topluluk tarafından düzenlenen açık bilgi grafı; her iddia birincil kaynakla doğrulanmalıdır.',
+        lastSuccessAt: null,
+        lastAttemptAt: null,
+        lastError: null,
+        recordsCount: 0
+      },
+      world_bank_indicators: {
+        sourceId: 'world_bank_indicators',
+        displayName: 'World Bank Indicators API v2 (CC BY 4.0)',
+        enabled: opts.enableWorldBankByDefault === true,
+        paused: false,
+        license: 'CC BY 4.0',
+        usageTermsTr: 'Resmi uluslararası yıllık/çeyreklik istatistik serisi; dönem gecikmesi (lag) bulunur.',
+        lastSuccessAt: null,
+        lastAttemptAt: null,
+        lastError: null,
+        recordsCount: 0
+      },
+      sec_edgar_submissions: {
+        sourceId: 'sec_edgar_submissions',
+        displayName: 'U.S. SEC EDGAR Kurumsal Bildirimleri (Public Domain)',
+        enabled: opts.enableSecEdgarByDefault === true,
+        paused: false,
+        license: 'U.S. Government Public Domain',
+        usageTermsTr: 'Yalnızca ABD SEC kapsamındaki şirket bildirimlerini içerir; User-Agent ve <=10 istek/sn hız sınırına tabidir.',
+        lastSuccessAt: null,
+        lastAttemptAt: null,
+        lastError: null,
+        recordsCount: 0
+      },
+      openalex_scholarly: {
+        sourceId: 'openalex_scholarly',
+        displayName: 'OpenAlex Akademik Yayın İndeksi (CC0 Meta Veri)',
+        enabled: opts.enableOpenAlexByDefault === true,
+        paused: false,
+        license: 'CC0 1.0 (Meta veri)',
+        usageTermsTr: 'Yayın meta verisi CC0’dır; makalelerin tam metin telifleri ilgili yayıncılara aittir.',
+        lastSuccessAt: null,
+        lastAttemptAt: null,
+        lastError: null,
+        recordsCount: 0
+      },
+      gdelt_doc_v2: {
+        sourceId: 'gdelt_doc_v2',
+        displayName: 'GDELT DOC 2.0 Haber İndeksi (İncelemede / Yalnızca Başlık İddiası)',
+        enabled: false,
+        paused: false,
+        license: 'GDELT Açık Meta Veri (Tam metinler yayıncı telifine tabidir)',
+        usageTermsTr: 'Haber başlığı/bağlantısı tek başına doğrulanmış olgu değildir ("Kaynaktan alınmış haber iddiası"). Tam haber metinleri yeniden dağıtılmaz.',
+        lastSuccessAt: null,
+        lastAttemptAt: null,
+        lastError: null,
+        recordsCount: 0
+      }
+    };
+
+    var zones = {
+      A_USER_PRIVATE_SPACE: { files: [], chatNotes: [] },
+      B_EXTERNAL_SOURCE_RECORDS: [],
+      C_USER_ASSUMPTIONS_AND_PREFERENCES: {},
+      D_DERIVED_RESULTS_AND_ANALYSES: [],
+      E_LABELED_TEST_TRAINING_DATA: []
+    };
+
+    var networkAuditLog = [];
+
+    function normalizeSourceKey(sid) {
+      if (sid === 'world_bank') return 'world_bank_indicators';
+      if (sid === 'sec_edgar') return 'sec_edgar_submissions';
+      if (sid === 'openalex') return 'openalex_scholarly';
+      if (sid === 'gdelt_doc') return 'gdelt_doc_v2';
+      return sid;
+    }
+
+    function setMode(newMode) {
+      if (!WORLD_GATE_MODES_3[newMode]) {
+        throw new Error('Geçersiz çalışma kipi: ' + newMode);
+      }
+      currentMode = newMode;
+      return WORLD_GATE_MODES_3[currentMode];
+    }
+
+    function getMode() {
+      return WORLD_GATE_MODES_3[currentMode];
+    }
+
+    function setSourcePermission(sourceId, enabled) {
+      var key = normalizeSourceKey(sourceId);
+      if (!sourcePermissions[key]) throw new Error('Bilinmeyen kaynak: ' + sourceId);
+      sourcePermissions[key].enabled = Boolean(enabled);
+      if (enabled) sourcePermissions[key].paused = false;
+      return Object.assign({}, sourcePermissions[key]);
+    }
+
+    function pauseSource(sourceId, paused) {
+      var key = normalizeSourceKey(sourceId);
+      if (!sourcePermissions[key]) throw new Error('Bilinmeyen kaynak: ' + sourceId);
+      sourcePermissions[key].paused = Boolean(paused);
+      return Object.assign({}, sourcePermissions[key]);
+    }
+
+    function removeSourceRecords(sourceId) {
+      var key = normalizeSourceKey(sourceId);
+      var shortKey = key === 'world_bank_indicators' ? 'world_bank'
+        : key === 'sec_edgar_submissions' ? 'sec_edgar'
+        : key === 'openalex_scholarly' ? 'openalex'
+        : key === 'gdelt_doc_v2' ? 'gdelt_doc'
+        : key;
+      var before = zones.B_EXTERNAL_SOURCE_RECORDS.length;
+      zones.B_EXTERNAL_SOURCE_RECORDS = zones.B_EXTERNAL_SOURCE_RECORDS.filter(function (r) {
+        return r.source_id !== key && r.source_id !== shortKey && r.source_id_raw !== key;
+      });
+      if (sourcePermissions[key]) {
+        sourcePermissions[key].recordsCount = 0;
+        sourcePermissions[key].enabled = false;
+      }
+      return {
+        removedCount: before - zones.B_EXTERNAL_SOURCE_RECORDS.length,
+        remainingCount: zones.B_EXTERNAL_SOURCE_RECORDS.length
+      };
+    }
+
+    function getSourcePermissionsAndStatus() {
+      return Object.keys(sourcePermissions).map(function (k) {
+        return Object.assign({}, sourcePermissions[k]);
+      });
+    }
+
+    async function queryExternalSource(sourceId, queryParams, fetchOptions) {
+      var fOpts = fetchOptions || {};
+      var nowIso = fOpts.nowIso || new Date().toISOString();
+      var key = normalizeSourceKey(sourceId);
+      var perm = sourcePermissions[key];
+
+      if (!perm) {
+        return {
+          ok: false,
+          errorCode: 'UNKNOWN_SOURCE',
+          userMessageTr: 'Bilinmeyen veri kaynağı: ' + sourceId,
+          networkRequestSent: false,
+          records: []
+        };
+      }
+
+      // 1. Kip kontrolü: Çevrim dışı modda dış ağa kesinlikle çıkılmaz!
+      if (currentMode === 'OFFLINE' || fOpts.offlineMode === true) {
+        networkAuditLog.push({
+          timestamp: nowIso,
+          sourceId: key,
+          mode: currentMode,
+          networkRequestSent: false,
+          outcome: 'BLOCKED_OFFLINE_MODE',
+          detailTr: 'Çevrim dışı kip aktif olduğundan dış ağ isteği gönderilmedi.'
+        });
+        var cachedForOffline = zones.B_EXTERNAL_SOURCE_RECORDS.filter(function (r) {
+          return r.source_id_raw === key || r.source_id === sourceId || r.source_id === key;
+        });
+        return {
+          ok: false,
+          errorCode: 'OFFLINE_MODE_NO_NETWORK',
+          userMessageTr: 'Çevrim dışı mod aktif: yeni internet verisi alınmadı. Yereldeki kayıtlar korunuyor.',
+          networkRequestSent: false,
+          cachedRecordsCount: cachedForOffline.length,
+          lastSuccessAt: perm.lastSuccessAt,
+          records: []
+        };
+      }
+
+      // 2. Kaynak izni ve duraklatma kontrolü
+      if (!perm.enabled || perm.paused) {
+        networkAuditLog.push({
+          timestamp: nowIso,
+          sourceId: key,
+          mode: currentMode,
+          networkRequestSent: false,
+          outcome: 'BLOCKED_SOURCE_PERMISSION_DISABLED',
+          detailTr: 'Kaynak izni kapalı veya kullanıcı tarafından duraklatılmış.'
+        });
+        return {
+          ok: false,
+          errorCode: 'SOURCE_PERMISSION_NOT_GRANTED',
+          userMessageTr: '"' + perm.displayName + '" kaynağı için bağlantı izni açık değil veya duraklatılmış.',
+          networkRequestSent: false,
+          records: []
+        };
+      }
+
+      // 3. Dışarı gönderilecek sorgu önizlemesi ve özel veri sızıntısı engeli
+      var preview = previewOutboundSourceQuery(key, queryParams, {
+        privateFiles: zones.A_USER_PRIVATE_SPACE.files
+      });
+      if (!preview.allowed) {
+        networkAuditLog.push({
+          timestamp: nowIso,
+          sourceId: key,
+          mode: currentMode,
+          networkRequestSent: false,
+          outcome: preview.blockedReasonCode,
+          detailTr: sanitizeAuditLogMessage(preview.userPreviewTr)
+        });
+        return {
+          ok: false,
+          errorCode: preview.blockedReasonCode,
+          userMessageTr: preview.userPreviewTr,
+          networkRequestSent: false,
+          records: []
+        };
+      }
+
+      // 4. Özel URL güvenlik doğrulaması (eğer özel endpoint testi yapılıyorsa)
+      if (fOpts.overrideUrlForSecurityTest) {
+        var urlSafety = validateExternalSourceRequestSafety(fOpts.overrideUrlForSecurityTest);
+        if (!urlSafety.allowed) {
+          networkAuditLog.push({
+            timestamp: nowIso,
+            sourceId: key,
+            mode: currentMode,
+            networkRequestSent: false,
+            outcome: urlSafety.reasonCode,
+            detailTr: sanitizeAuditLogMessage(urlSafety.reasonTr)
+          });
+          return {
+            ok: false,
+            errorCode: urlSafety.reasonCode,
+            userMessageTr: urlSafety.reasonTr,
+            networkRequestSent: false,
+            records: []
+          };
+        }
+      }
+
+      perm.lastAttemptAt = nowIso;
+      if (!lwm || typeof lwm.fetchFromRealWorldSource !== 'function') {
+        return {
+          ok: false,
+          errorCode: 'LIVING_WORLD_CONNECTOR_UNAVAILABLE',
+          userMessageTr: 'Kaynak bağlayıcı modülü yüklü değil.',
+          networkRequestSent: false,
+          records: []
+        };
+      }
+
+      var rawResult = await lwm.fetchFromRealWorldSource(key, queryParams, {
+        fetchImpl: fOpts.fetchImpl,
+        timeoutMs: fOpts.timeoutMs || 8500,
+        nowIso: nowIso,
+        lastSuccessAt: perm.lastSuccessAt
+      });
+
+      if (rawResult.ok && Array.isArray(rawResult.records)) {
+        var converted = rawResult.records
+          .map(convertLivingWorldRecordToAdvisorRecord)
+          .filter(Boolean);
+
+        // Yanıt boyutu sınırı kontrolü (maxResponseBytes)
+        var maxBytes = fOpts.maxResponseBytes || (2 * 1024 * 1024);
+        var serializedSize = JSON.stringify(converted).length;
+        if (serializedSize > maxBytes) {
+          perm.lastError = {
+            code: 'RESPONSE_PAYLOAD_TOO_LARGE',
+            messageTr: 'Kaynak yanıt boyutu güvenlik sınırını (' + maxBytes + ' bayt) aştı.',
+            at: nowIso
+          };
+          return {
+            ok: false,
+            errorCode: 'RESPONSE_PAYLOAD_TOO_LARGE',
+            userMessageTr: perm.lastError.messageTr,
+            networkRequestSent: true,
+            records: []
+          };
+        }
+
+        converted.forEach(function (rec) {
+          var existsIdx = zones.B_EXTERNAL_SOURCE_RECORDS.findIndex(function (ex) {
+            return ex.record_id === rec.record_id && ex.content_hash === rec.content_hash;
+          });
+          if (existsIdx === -1) {
+            zones.B_EXTERNAL_SOURCE_RECORDS.unshift(rec);
+          }
+        });
+
+        perm.lastSuccessAt = nowIso;
+        perm.lastError = null;
+        perm.recordsCount = zones.B_EXTERNAL_SOURCE_RECORDS.filter(function (r) {
+          return r.source_id_raw === key || r.source_id === key;
+        }).length;
+
+        networkAuditLog.push({
+          timestamp: nowIso,
+          sourceId: key,
+          mode: currentMode,
+          networkRequestSent: true,
+          outboundPreview: preview.sharedFields,
+          privateDataSent: false,
+          outcome: 'SUCCESS',
+          recordsReceived: converted.length
+        });
+
+        return {
+          ok: true,
+          sourceId: key,
+          sourceName: perm.displayName,
+          checkedAtIso: nowIso,
+          lastSuccessAt: perm.lastSuccessAt,
+          outboundPreview: preview,
+          records: converted,
+          rawConnectorResult: rawResult
+        };
+      } else {
+        // BÖLÜM 2.7: Kaynak erişilemiyorsa son başarılı kaydın zamanını koru, eski olabileceğini göster, yeni veri uydurma!
+        perm.lastError = {
+          code: rawResult.errorCode || 'SOURCE_UNREACHABLE',
+          messageTr: sanitizeAuditLogMessage(rawResult.userMessageTr || 'Kaynağa ulaşılamadı.'),
+          at: nowIso
+        };
+        var previousRecords = zones.B_EXTERNAL_SOURCE_RECORDS
+          .filter(function (r) {
+            return r.source_id_raw === key || r.source_id === sourceId || r.source_id === key;
+          })
+          .map(function (oldRec) {
+            return Object.assign({}, oldRec, {
+              is_stale_cached_record: true,
+              freshness_status: 'SON_BILINEN_VERI_KAYNAK_ERISILEMIYOR',
+              staleWarningTr:
+                'Kaynağa şu anda ulaşılamıyor (' + perm.lastError.code + '). Bu kayıt ' +
+                oldRec.ingested_at + ' tarihinde alınmış son başarılı veridir ve güncel olmayabilir.'
+            });
+          });
+
+        networkAuditLog.push({
+          timestamp: nowIso,
+          sourceId: key,
+          mode: currentMode,
+          networkRequestSent: true,
+          outboundPreview: preview.sharedFields,
+          privateDataSent: false,
+          outcome: 'ERROR_' + perm.lastError.code,
+          detailTr: perm.lastError.messageTr
+        });
+
+        return {
+          ok: false,
+          sourceId: key,
+          sourceName: perm.displayName,
+          errorCode: perm.lastError.code,
+          userMessageTr:
+            perm.lastError.messageTr +
+            (perm.lastSuccessAt
+              ? ' Son başarılı kayıt (' + perm.lastSuccessAt + ') korunuyor; eski olabilir.'
+              : ' Henüz bu kaynaktan alınmış eski bir kayıt da bulunmuyor.'),
+          lastSuccessAt: perm.lastSuccessAt,
+          staleCachedRecords: previousRecords,
+          fabricatedNewData: false,
+          records: []
+        };
+      }
+    }
+
+    function importSeparateDevicePackage(pkg, importOptions) {
+      var iOpts = importOptions || {};
+      var nowIso = iOpts.nowIso || new Date().toISOString();
+      if (!pkg || typeof pkg !== 'object' || !Array.isArray(pkg.records)) {
+        return {
+          ok: false,
+          errorCode: 'INVALID_PACKAGE_SCHEMA',
+          userMessageTr: 'Paket şeması geçersiz: records dizisi bulunamadı.'
+        };
+      }
+      var imported = [];
+      var rejected = [];
+      for (var i = 0; i < pkg.records.length; i++) {
+        var raw = pkg.records[i];
+        var norm = normalizeAdvisorWorldRecord(raw, { nowIso: nowIso });
+        if (norm.isSampleFixture) {
+          zones.E_LABELED_TEST_TRAINING_DATA.push(norm);
+          rejected.push({ record_id: norm.record_id, reason: 'SAMPLE_DATA_ROUTED_TO_TRAINING_ZONE' });
+          continue;
+        }
+        if (norm.epistemic_status === 'UNVERIFIED_CLAIM') {
+          rejected.push({ record_id: norm.record_id, reason: 'MISSING_SOURCE_OR_URL' });
+          continue;
+        }
+        if (raw.expected_content_hash && raw.expected_content_hash !== norm.content_hash) {
+          rejected.push({ record_id: norm.record_id, reason: 'CONTENT_HASH_MISMATCH' });
+          continue;
+        }
+        zones.B_EXTERNAL_SOURCE_RECORDS.push(norm);
+        imported.push(norm);
+      }
+      return {
+        ok: true,
+        mode: 'SEPARATE_DEVICE_IMPORT',
+        importedCount: imported.length,
+        rejectedCount: rejected.length,
+        rejected: rejected,
+        records: imported
+      };
+    }
+
+    function inspectLogicalZones() {
+      return {
+        mode: WORLD_GATE_MODES_3[currentMode],
+        catalog: LOGICAL_DATA_ZONES_5,
+        A_USER_PRIVATE_SPACE_FILES_COUNT: zones.A_USER_PRIVATE_SPACE.files.length,
+        B_EXTERNAL_SOURCE_RECORDS_COUNT: zones.B_EXTERNAL_SOURCE_RECORDS.length,
+        B_EXTERNAL_SOURCE_RECORDS: zones.B_EXTERNAL_SOURCE_RECORDS.slice(),
+        C_USER_ASSUMPTIONS_AND_PREFERENCES: JSON.parse(JSON.stringify(zones.C_USER_ASSUMPTIONS_AND_PREFERENCES)),
+        D_DERIVED_RESULTS_COUNT: zones.D_DERIVED_RESULTS_AND_ANALYSES.length,
+        E_LABELED_TEST_TRAINING_DATA_COUNT: zones.E_LABELED_TEST_TRAINING_DATA.length,
+        sources: getSourcePermissionsAndStatus()
+      };
+    }
+
+    return {
+      getMode: getMode,
+      setMode: setMode,
+      getSourcePermissionsAndStatus: getSourcePermissionsAndStatus,
+      setSourcePermission: setSourcePermission,
+      pauseSource: pauseSource,
+      removeSourceRecords: removeSourceRecords,
+      previewOutboundSourceQuery: function (sid, qp) {
+        return previewOutboundSourceQuery(sid, qp, { privateFiles: zones.A_USER_PRIVATE_SPACE.files });
+      },
+      queryExternalSource: queryExternalSource,
+      importSeparateDevicePackage: importSeparateDevicePackage,
+      inspectLogicalZones: inspectLogicalZones,
+      getNetworkAuditLog: function () { return networkAuditLog.slice(); },
+      registerPrivateFileMetadataOnly: function (fileMeta) {
+        zones.A_USER_PRIVATE_SPACE.files.push(fileMeta);
+      }
+    };
+  }
+
+  // ============================================================================
+  // BÖLÜM 7: ARAÇ VE TEKNOLOJİ DEĞERLENDİRME MOTORLARI (CEDAR, SOUFFLÉ/DATALOG, PROVSQL, Z3)
+  // ============================================================================
+
+  /**
+   * 1. Cedar Tarzı Politika Değerlendiricisi (`evaluateCedarStylePolicy`)
+   * - `permit(principal, action, resource) when { ... }`
+   * - `forbid(principal, action, resource) when { ... }`
+   * - Kural: En az bir `permit` eşleşmeli VE hiçbir `forbid` eşleşmemelidir (`forbid overrides permit`). Varsayılan: `DENY`.
+   */
+  function evaluateCedarStylePolicy(policies, request) {
+    var req = request || {};
+    var polList = Array.isArray(policies) ? policies : [];
+    var matchedPermits = [];
+    var matchedForbids = [];
+
+    for (var i = 0; i < polList.length; i++) {
+      var p = polList[i];
+      if (!p || (p.effect !== 'permit' && p.effect !== 'forbid')) continue;
+      var principalOk = !p.principal || p.principal === '*' || p.principal === req.principal;
+      var actionOk = !p.action || p.action === '*' || p.action === req.action ||
+        (Array.isArray(p.actions) && p.actions.indexOf(req.action) !== -1);
+      var resourceOk = !p.resource || p.resource === '*' || p.resource === req.resource ||
+        (Array.isArray(p.resources) && p.resources.indexOf(req.resource) !== -1);
+      var whenOk = true;
+      if (typeof p.when === 'function') {
+        try {
+          whenOk = Boolean(p.when(req.context || {}, req));
+        } catch (_) {
+          whenOk = false;
+        }
+      }
+      if (principalOk && actionOk && resourceOk && whenOk) {
+        if (p.effect === 'forbid') {
+          matchedForbids.push(p.id || ('forbid_' + i));
+        } else {
+          matchedPermits.push(p.id || ('permit_' + i));
+        }
+      }
+    }
+
+    var decision = (matchedPermits.length > 0 && matchedForbids.length === 0) ? 'ALLOW' : 'DENY';
+    return {
+      decision: decision,
+      allowed: decision === 'ALLOW',
+      matchedPermits: matchedPermits,
+      matchedForbids: matchedForbids,
+      reasonCode: matchedForbids.length > 0
+        ? 'EXPLICIT_FORBID_OVERRIDES_PERMIT'
+        : (matchedPermits.length > 0 ? 'EXPLICIT_PERMIT_MATCHED' : 'DEFAULT_DENY_NO_PERMIT')
+    };
   }
 
   /**
-   * Konuşan Dünya Muhakeme Sistemi Denetleyicisi Oluşturucu
+   * 2. Soufflé / Stratified Datalog Küçük Prototip Motoru (`runStratifiedDatalogLineageEngine`)
+   * Kaynaklı dünya kayıtlarından taban olguları (EDB) çıkarır, yarı-naif sabit nokta (fixpoint)
+   * çıkarımıyla türetilmiş ilişkileri (IDB) ve her çıkarımın tam soykütük ağacını (`lineage`) üretir.
+   */
+  function runStratifiedDatalogLineageEngine(worldRecords) {
+    var recs = Array.isArray(worldRecords) ? worldRecords : [];
+    var edbCoMention = [];
+    var idbDerivedLinks = [];
+    var seenPairs = new Set();
+
+    // EDB: co_mentioned_in_record(EntityA, EntityB, RecordId, SourceId)
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i];
+      if (!r || r.isSampleFixture || r.epistemic_status === 'SAMPLE_TRAINING_DATA') continue;
+      var ents = Array.isArray(r.entities) ? r.entities : [];
+      for (var a = 0; a < ents.length; a++) {
+        for (var b = 0; b < ents.length; b++) {
+          if (a === b) continue;
+          var nameA = typeof ents[a] === 'string' ? ents[a] : ents[a].name;
+          var nameB = typeof ents[b] === 'string' ? ents[b] : ents[b].name;
+          if (!nameA || !nameB || nameA === nameB) continue;
+          edbCoMention.push({
+            predicate: 'edb_shared_record',
+            args: [nameA, nameB],
+            recordId: r.record_id,
+            sourceId: r.source_id
+          });
+        }
+      }
+    }
+
+    // Kural 1 (Stratum 1): direct_link(X, Y) :- edb_shared_record(X, Y)
+    for (var e = 0; e < edbCoMention.length; e++) {
+      var fact = edbCoMention[e];
+      var key1 = 'direct::' + fact.args[0] + '::' + fact.args[1];
+      if (!seenPairs.has(key1)) {
+        seenPairs.add(key1);
+        idbDerivedLinks.push({
+          predicate: 'idb_direct_entity_link',
+          from: fact.args[0],
+          to: fact.args[1],
+          hopCount: 1,
+          ruleId: 'R1_DIRECT_SHARED_RECORD',
+          lineageRecords: [fact.recordId],
+          lineageSources: [fact.sourceId],
+          isCausalProof: false
+        });
+      }
+    }
+
+    // Kural 2 (Stratum 2 — Yarı-naif 2-adımlı geçişli aday yol):
+    // candidate_2hop_path(X, Z, Y) :- direct_link(X, Y), direct_link(Y, Z), X != Z
+    var directSnapshot = idbDerivedLinks.slice();
+    for (var d1 = 0; d1 < directSnapshot.length; d1++) {
+      for (var d2 = 0; d2 < directSnapshot.length; d2++) {
+        var l1 = directSnapshot[d1];
+        var l2 = directSnapshot[d2];
+        if (l1.to === l2.from && l1.from !== l2.to) {
+          var key2 = '2hop::' + l1.from + '::' + l1.to + '::' + l2.to;
+          if (!seenPairs.has(key2)) {
+            seenPairs.add(key2);
+            idbDerivedLinks.push({
+              predicate: 'idb_candidate_2hop_bridge',
+              from: l1.from,
+              via: l1.to,
+              to: l2.to,
+              hopCount: 2,
+              ruleId: 'R2_TRANSITIVE_BRIDGE_HYPOTHESIS',
+              lineageRecords: Array.from(new Set(l1.lineageRecords.concat(l2.lineageRecords))),
+              lineageSources: Array.from(new Set(l1.lineageSources.concat(l2.lineageSources))),
+              isCausalProof: false
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      engine: 'CAELUS_STRATIFIED_DATALOG_PROTOTYPE_V1',
+      edbFactCount: edbCoMention.length,
+      idbDerivedCount: idbDerivedLinks.length,
+      derivedFacts: idbDerivedLinks
+    };
+  }
+
+  /**
+   * 3. ProvSQL Prensiplerine Uygun Semiring Provenance Polinomu ($\mathbb{N}[X]$)
+   * Bir応答 içindeki kaynak/dosya kanıtlarını ($\otimes$ birleşim, $\oplus$ alternatif destek) izler.
+   */
+  function computeProvenanceSemiringPolynomial(passportSegments) {
+    var segs = Array.isArray(passportSegments) ? passportSegments : [];
+    var sourceTokens = [];
+    var ruleTokens = [];
+    var assumptionTokens = [];
+
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i] || {};
+      if (s.recordId) {
+        sourceTokens.push(String(s.recordId));
+      } else if (s.sourceFile && s.sourceRowNumber) {
+        sourceTokens.push(String(s.sourceFile) + '#L' + String(s.sourceRowNumber));
+      }
+      if (s.classCode === 'RULE_DERIVATION' || s.classCode === 'VERIFIED_CALCULATION') {
+        ruleTokens.push(s.calculationId || s.ruleId || s.classCode);
+      }
+      if (s.classCode === 'USER_PREFERENCE' || s.classCode === 'MODEL_ASSUMPTION') {
+        assumptionTokens.push(s.classCode);
+      }
+    }
+
+    var uniqueSources = Array.from(new Set(sourceTokens));
+    var uniqueRules = Array.from(new Set(ruleTokens));
+    var uniqueAssumptions = Array.from(new Set(assumptionTokens));
+
+    var terms = [];
+    if (uniqueSources.length === 0 && uniqueRules.length === 0) {
+      return {
+        semiring: 'N[X]_PROVENANCE_POLYNOMIAL',
+        expression: '0 (ABSTAIN_OR_NO_EVIDENCE)',
+        sourceTokens: [],
+        ruleTokens: [],
+        assumptionTokens: uniqueAssumptions
+      };
+    }
+
+    if (uniqueSources.length > 0) {
+      for (var u = 0; u < uniqueSources.length; u++) {
+        var factors = [uniqueSources[u]];
+        if (uniqueRules.length > 0) factors.push(uniqueRules[0]);
+        if (uniqueAssumptions.length > 0) factors.push(uniqueAssumptions[0]);
+        terms.push('(' + factors.join(' ⊗ ') + ')');
+      }
+    } else {
+      terms.push('(' + uniqueRules.concat(uniqueAssumptions).join(' ⊗ ') + ')');
+    }
+
+    return {
+      semiring: 'N[X]_PROVENANCE_POLYNOMIAL',
+      expression: terms.join(' ⊕ '),
+      sourceTokens: uniqueSources,
+      ruleTokens: uniqueRules,
+      assumptionTokens: uniqueAssumptions
+    };
+  }
+
+  /**
+   * 4. Z3 / Deterministik Kısıt Tutarlılığı ve UNSAT Çekirdeği Denetleyicisi (`verifyConstraintConsistencyBounds`)
+   */
+  function verifyConstraintConsistencyBounds(constraints, candidateOptions) {
+    var c = constraints || {};
+    var opts = Array.isArray(candidateOptions) ? candidateOptions : [];
+    var unsatCore = [];
+
+    if (typeof c.maxBudget === 'number' && typeof c.minBudget === 'number' && c.maxBudget < c.minBudget) {
+      unsatCore.push('maxBudget (' + c.maxBudget + ') < minBudget (' + c.minBudget + ')');
+    }
+    if (typeof c.maxDurationDays === 'number' && c.maxDurationDays <= 0) {
+      unsatCore.push('maxDurationDays (' + c.maxDurationDays + ') <= 0');
+    }
+    if (typeof c.maxRiskScore === 'number' && c.maxRiskScore < 0) {
+      unsatCore.push('maxRiskScore (' + c.maxRiskScore + ') < 0');
+    }
+
+    var feasibleOptions = [];
+    var rejectedByConstraint = [];
+
+    for (var i = 0; i < opts.length; i++) {
+      var o = opts[i] || {};
+      var violations = [];
+      if (typeof c.maxBudget === 'number' && typeof o.cost === 'number' && o.cost > c.maxBudget) {
+        violations.push('cost (' + o.cost + ') > maxBudget (' + c.maxBudget + ')');
+      }
+      if (typeof c.maxDurationDays === 'number' && typeof o.durationDays === 'number' && o.durationDays > c.maxDurationDays) {
+        violations.push('durationDays (' + o.durationDays + ') > maxDurationDays (' + c.maxDurationDays + ')');
+      }
+      if (typeof c.maxRiskScore === 'number' && typeof o.riskScore === 'number' && o.riskScore > c.maxRiskScore) {
+        violations.push('riskScore (' + o.riskScore + ') > maxRiskScore (' + c.maxRiskScore + ')');
+      }
+      if (violations.length === 0) {
+        feasibleOptions.push(o.name || ('Option_' + (i + 1)));
+      } else {
+        rejectedByConstraint.push({ option: o.name || ('Option_' + (i + 1)), violations: violations });
+      }
+    }
+
+    if (opts.length > 0 && feasibleOptions.length === 0 && unsatCore.length === 0) {
+      unsatCore.push('NO_OPTION_SATISFIES_JOINT_BOUNDS');
+    }
+
+    var status = unsatCore.length === 0 ? 'SAT' : 'UNSAT';
+    return {
+      status: status,
+      satisfiable: status === 'SAT',
+      feasibleOptions: feasibleOptions,
+      rejectedByConstraint: rejectedByConstraint,
+      unsatCore: unsatCore
+    };
+  }
+
+  /**
+   * Bölüm 7: 7 Dış Araç ve Teknoloji Değerlendirme Tablosu (`EXTERNAL_TECHNOLOGY_EVALUATION_CATALOG_7`)
+   */
+  var EXTERNAL_TECHNOLOGY_EVALUATION_CATALOG_7 = Object.freeze([
+    {
+      id: 'wasmtime_wasi',
+      name: 'Wasmtime ve WASI (Bytecode Alliance)',
+      license: 'Apache-2.0 WITH LLVM-exception',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Mevcut CAELUS bileşeni yeterli bulundu / Yalnızca masaüstü karşılaştırma referansı olarak tutuldu',
+      rationaleTr: 'CAELUS zaten kendi deterministik WASM çekirdeğine (dist/caelus.wasm + WebWorker sınırı) ve yetenek bazlı izin kapısına sahiptir. Wasmtime masaüstü/sunucu süreçlerinde güçlüdür ancak tarayıcıda yerel WebAssembly motoru kullanılır ve iOS/iPadOS üzerinde işletim sistemi JIT kısıtlamaları (W^X) nedeniyle Wasmtime JIT kullanılamaz.'
+    },
+    {
+      id: 'cedar_policy',
+      name: 'Cedar Policy Language & Evaluator (AWS)',
+      license: 'Apache-2.0',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Küçük prototip olarak denendi ve izin motoruna entegre edildi',
+      rationaleTr: 'Cedar’ın permit/forbid ayrımı, forbid-overrides-permit kuralı ve varsayılan ret (default deny) modeli evaluateCedarStylePolicy() fonksiyonuyla CAELUS ajan ve kaynak izin denetleyicisine doğrudan uygulandı.'
+    },
+    {
+      id: 'souffle_datalog',
+      name: 'Soufflé Datalog',
+      license: 'UPL-1.0 (Universal Permissive License)',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Küçük prototip olarak denendi / Native C++ derleyicisi karşılaştırma referansı olarak tutuldu',
+      rationaleTr: 'Soufflé’nin katmanlı (stratified) yarı-naif Datalog çıkarımı ve türetim soykütüğü (provenance lineage) prensipleri runStratifiedDatalogLineageEngine() ile hafif JS prototipi olarak gömüldü; ağır C++ derleyici bağımlılığı mobil/tarayıcı paketine eklenmedi.'
+    },
+    {
+      id: 'z3_prover',
+      name: 'Z3 Theorem Prover (Microsoft Research)',
+      license: 'MIT',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Mevcut CAELUS bileşeni yeterli bulundu + hafif kısıt tutarlılık denetleyicisi eklendi',
+      rationaleTr: 'CAELUS çekirdeğinde zaten Rust proptest ve sabit nokta (Q32.32) değişmezlik kanıtları (docs/FIZIBILITE_ISPAT_VE_GOMULU.md) mevcuttur. Ayrıca kullanıcı bütçe/süre/risk kısıtlarının çelişkisini yakalayan verifyConstraintConsistencyBounds() eklendi; 30+ MB Z3 WASM ikilisi zorunlu çalışma zamanına yüklenmedi.'
+    },
+    {
+      id: 'duckdb_local',
+      name: 'DuckDB',
+      license: 'MIT',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Mevcut CAELUS bileşeni yeterli bulundu (10.000 satır altı yerel akış motoru 0.28 ms)',
+      rationaleTr: 'tools/verify_first_real_task_lab.py kıyaslamasında <10.000 satırlık kullanıcı CSV/XLSX dosyalarında CAELUS hafif akış motoru 0.28 ms’de sıfır bağımlılıkla çalışmaktadır; DuckDB (25k satırda 39.2 ms) yalnızca yüksek hacimli masaüstü analitiği için isteğe bağlı referans olarak belgelendi.'
+    },
+    {
+      id: 'provsql',
+      name: 'ProvSQL (Semiring Provenance)',
+      license: 'MIT',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Küçük prototip olarak denendi (PostgreSQL bağımlılığı olmadan semiring soykütük modeli uygulandı)',
+      rationaleTr: 'ProvSQL PostgreSQL eklentisi gerektirdiğinden veritabanı sunucusu eklenmedi; bunun yerine ProvSQL’in N[X] semiring soykütük polinomu (⊗ birleşim, ⊕ alternatif kanıt) computeProvenanceSemiringPolynomial() ile Cevap Pasaportuna entegre edildi.'
+    },
+    {
+      id: 'model_context_protocol_mcp',
+      name: 'MCP (Model Context Protocol)',
+      license: 'MIT',
+      commercialStatus: 'UYGUN',
+      architecturalDecision: 'Doğrudan entegre edildi (tools/caelus_mcp_server.mjs — en az yetki ve salt okunur denetim sınırıyla)',
+      rationaleTr: 'CAELUS MCP sunucusu JSON-RPC 2.0 üzerinden deterministik araçları sunar; ancak MCP tek başına güvenlik sınırı sayılmaz, özel kullanıcı dosyaları açık izin listesi olmadan dış araçlara açılmaz.'
+    }
+  ]);
+
+  /**
+   * Bölüm 5.7: Dil Yetkinliği ve Doğal Dil Çözümleme Derinliği Matrisi (`ADVISOR_LANGUAGE_CAPABILITY_MATRIX`)
+   */
+  var ADVISOR_LANGUAGE_CAPABILITY_MATRIX = Object.freeze({
+    'tr-TR': {
+      uiTranslationReady: true,
+      advisorNluLevel: 'FULL_MORPHOLOGICAL_AND_DIALOGUE_NLU',
+      descriptionTr: 'Tam Türkçe çekim eki soyma, zamir/eksilti çözümleme, kullanıcı düzeltmesi ("X değil Y"), olumsuzluk ve 12 konuşma eylemi desteklenir.'
+    },
+    'en-US': {
+      uiTranslationReady: true,
+      advisorNluLevel: 'STRUCTURED_KEYWORD_AND_ENTITY_NLU',
+      descriptionTr: 'İngilizce arayüz çevirisi ve varlık/sayı/seçenek sorguları desteklenir; Türkçe morfolojik ek çözümleyici Türkçe odaklıdır.'
+    },
+    other10Locales: {
+      locales: ['el', 'de', 'fr', 'es', 'it', 'pt', 'ar', 'he', 'ru', 'zh-Hans'],
+      uiTranslationReady: true,
+      advisorNluLevel: 'UI_LOCALIZED_ENTITY_LOOKUP_ONLY',
+      descriptionTr: '12 dilde arayüz ve boş durum metinleri çevrilmiştir; ancak derin doğal dil/ek çözümlemesi şu anda Türkçe (birincil) ve İngilizce (temel) odaklıdır.'
+    }
+  });
+
+  /**
+   * Desteklenmeyen Serbest Soru Tespiti (Bölüm 5.6 — Dürüst Sınır Açıklaması)
+   */
+  function detectUnsupportedQuestionBoundary(text) {
+    var raw = String(text || '').trim();
+    var lower = raw.toLocaleLowerCase('tr-TR');
+    if (/bana\s+(bir\s+)?([şs]iir|hik[aâ]ye|roman|masal|f[ıi]kra|kod\s+oyunu)\s+yaz/i.test(lower)) {
+      return {
+        isUnsupported: true,
+        category: 'CREATIVE_WRITING_OUT_OF_SCOPE',
+        reasonTr: 'Bu danışman genel amaçlı bir sohbet/metin üretim modeli (LLM) değildir; kurgusal metin, şiir veya hikâye üretmez. Yalnızca bağlı kaynak kayıtları, yerel dosyalarınız ve deterministik seçenek karşılaştırmaları hakkında kanıtlı yanıt verir.'
+      };
+    }
+    if (/kesin\s+(al|sat)\s+emri\s+ver|hangi\s+hisseyi\s+kesin\s+alay[ıi]m|t[ıi]bbi\s+te[şs]his\s+koy|ila[çc]\s+re[çc]ete\s+et|mahkeme\s+karar[ıi]\s+ver/i.test(lower)) {
+      return {
+        isUnsupported: true,
+        category: 'AUTONOMOUS_AUTHORITY_PROHIBITED',
+        reasonTr: 'CAELUS finansal, tıbbi, hukuki veya operasyonel kararların otomatik ve kesin otoritesi değildir; yalnızca kaynaklı verileri, varsayımları ve eksik bilgileri şeffaf biçimde özetler.'
+      };
+    }
+    return { isUnsupported: false, category: null, reasonTr: null };
+  }
+
+  /**
+   * Kullanıcı CSV / Metin Tablosu Ayrıştırıcı (Satır Numaralı Kanıt ve Eksik Değer Tespiti — Bölüm 5.2 & 6.2)
+   */
+  function parseUserTableContentWithRowProvenance(fileName, rawContent, options) {
+    var opts = options || {};
+    var text = String(rawContent || '');
+    var contentHash = computeDeterministicHashHex(text);
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; });
+    if (lines.length === 0) {
+      return {
+        fileName: fileName,
+        contentHash: contentHash,
+        columns: [],
+        totalDataRows: 0,
+        validRows: [],
+        missingOrInvalidRows: [],
+        summaryTr: 'Dosya boş.'
+      };
+    }
+    var delimiter = lines[0].indexOf(';') !== -1 && lines[0].indexOf(',') === -1 ? ';' : ',';
+    var headers = lines[0].split(delimiter).map(function (h) { return h.trim(); });
+    var validRows = [];
+    var missingOrInvalidRows = [];
+
+    for (var ln = 1; ln < lines.length; ln++) {
+      var cols = lines[ln].split(delimiter).map(function (c) { return c.trim(); });
+      var sourceRowNumber = ln + 1;
+      var rowObj = { sourceRowNumber: sourceRowNumber, valuesByColumn: {} };
+      var rowIssues = [];
+
+      for (var cIdx = 0; cIdx < headers.length; cIdx++) {
+        var colName = headers[cIdx] || ('col_' + (cIdx + 1));
+        var cellVal = cols[cIdx] !== undefined ? cols[cIdx] : '';
+        rowObj.valuesByColumn[colName] = cellVal;
+        if (cellVal === '') {
+          rowIssues.push('"' + colName + '" sütunu boş');
+        } else if (/maliyet|cost|fiyat|price|sure|duration|gun|days|risk|puan|oran|miktar|amount/i.test(colName)) {
+          var num = Number(cellVal.replace(',', '.'));
+          if (Number.isNaN(num)) {
+            rowIssues.push('"' + colName + '" sayısal değil ("' + cellVal + '")');
+          } else if (num < 0 && /maliyet|cost|fiyat|sure|duration|gun|days/i.test(colName)) {
+            rowIssues.push('"' + colName + '" negatif değer (' + num + ')');
+          } else {
+            rowObj.valuesByColumn[colName] = num;
+          }
+        }
+      }
+
+      if (!cols[0]) {
+        rowIssues.push('Birincil tanımlayıcı/ad sütunu boş');
+      }
+
+      if (rowIssues.length > 0) {
+        missingOrInvalidRows.push({
+          sourceFile: fileName,
+          sourceRowNumber: sourceRowNumber,
+          rawLine: lines[ln],
+          issues: rowIssues,
+          reasonTr: 'Satır ' + sourceRowNumber + ': ' + rowIssues.join('; ')
+        });
+      } else {
+        validRows.push(rowObj);
+      }
+    }
+
+    return {
+      fileName: fileName,
+      mimeType: opts.mimeType || 'text/csv',
+      contentHash: contentHash,
+      ingestedAt: opts.nowIso || new Date().toISOString(),
+      columns: headers,
+      totalDataRows: lines.length - 1,
+      validRows: validRows,
+      missingOrInvalidRows: missingOrInvalidRows,
+      originalContent: text
+    };
+  }
+
+  /**
+   * Konuşan Dünya Muhakeme Sistemi Denetleyicisi Oluşturucu (`createConversationalAdvisorSession`)
    */
   function createConversationalAdvisorSession(options) {
     var opts = options || {};
     var lwm = getLivingWorldModel();
-    var frt = getFirstRealTaskEngine();
+    var trainingSampleModeActive = opts.enableTrainingSampleMode === true;
 
-    // 5 Ayrıştırılmış Hafıza Katmanı
+    // BÖLÜM 2.1 & 2.2: Üretim/normal kullanım modunda sabit örnek dünya kayıtları ve
+    // sahte kullanıcı tercihleri gerçek veri yerine otomatik yüklenmez!
+    var initialRealWorldRecords = [];
+    var initialTrainingSampleRecords = [];
+
+    if (Array.isArray(opts.worldRecords) && opts.worldRecords.length > 0) {
+      for (var wIdx = 0; wIdx < opts.worldRecords.length; wIdx++) {
+        var normW = normalizeAdvisorWorldRecord(opts.worldRecords[wIdx]);
+        if (normW.isSampleFixture && opts.allowSampleDataInRealMemory !== true) {
+          initialTrainingSampleRecords.push(normW);
+        } else if (normW.epistemic_status !== 'USER_PREFERENCE') {
+          initialRealWorldRecords.push(normW);
+        }
+      }
+    } else if (trainingSampleModeActive) {
+      initialTrainingSampleRecords = buildDefaultAdvisorWorldRecords({ markAsSampleFixture: true });
+    }
+
+    var initialParsedFiles = [];
+    if (Array.isArray(opts.userFiles)) {
+      opts.userFiles.forEach(function (uf) {
+        if (uf && uf.fileName) {
+          initialParsedFiles.push(
+            uf.columns && Array.isArray(uf.validRows)
+              ? uf
+              : parseUserTableContentWithRowProvenance(uf.fileName, uf.originalContent || uf.content || '', { mimeType: uf.mimeType })
+          );
+        }
+      });
+    }
+
+    // 5 Ayrıştırılmış Hafıza Katmanı + Açıkça Etiketlenmiş Eğitim Verisi Bölmesi
     var memoryStore = {
       A_EPHEMERAL_DIALOGUE_STATE: {
         activeEntity: null,
@@ -823,25 +2266,51 @@
       B_USER_CONTROLLED_PREFERENCES: {
         interestAreas: Array.isArray(opts.initialInterestAreas)
           ? opts.initialInterestAreas.slice()
-          : ['Teknoloji ve Tedarik Zinciri', 'Yarı İletken ve Elektronik Donanım'],
+          : (trainingSampleModeActive ? ['Teknoloji ve Tedarik Zinciri', 'Yarı İletken ve Elektronik Donanım'] : []),
         followedEntities: Array.isArray(opts.initialFollowedEntities)
           ? opts.initialFollowedEntities.slice()
-          : ['TSMC', 'Apple Inc.'],
+          : (trainingSampleModeActive ? ['TSMC', 'Apple Inc.'] : []),
         preferredLanguage: opts.language || 'tr-TR',
         budgetCeiling: typeof opts.budgetCeiling === 'number' ? opts.budgetCeiling : 100000,
         riskTolerance: opts.riskTolerance || 'DENGELI'
       },
-      C_SOURCED_WORLD_MEMORY: Array.isArray(opts.worldRecords) && opts.worldRecords.length > 0
-        ? opts.worldRecords.slice()
-        : buildDefaultAdvisorWorldRecords(),
-      D_USER_PRIVATE_FILES: Array.isArray(opts.userFiles) ? opts.userFiles.slice() : [],
-      E_PAST_ANALYSES_AND_REPORTS: []
+      C_SOURCED_WORLD_MEMORY: initialRealWorldRecords,
+      D_USER_PRIVATE_FILES: initialParsedFiles,
+      E_PAST_ANALYSES_AND_REPORTS: [],
+      F_TRAINING_SAMPLE_MEMORY: initialTrainingSampleRecords
     };
+
+    function setTrainingSampleMode(enabled) {
+      trainingSampleModeActive = Boolean(enabled);
+      if (trainingSampleModeActive && memoryStore.F_TRAINING_SAMPLE_MEMORY.length === 0) {
+        memoryStore.F_TRAINING_SAMPLE_MEMORY = buildDefaultAdvisorWorldRecords({ markAsSampleFixture: true });
+      }
+      if (!trainingSampleModeActive) {
+        memoryStore.F_TRAINING_SAMPLE_MEMORY = [];
+      }
+      return {
+        trainingSampleModeActive: trainingSampleModeActive,
+        sampleRecordsCount: memoryStore.F_TRAINING_SAMPLE_MEMORY.length,
+        realWorldRecordsCount: memoryStore.C_SOURCED_WORLD_MEMORY.length,
+        badgeTr: trainingSampleModeActive ? 'Örnek veri (Eğitim alanı açık — Gerçek dünya hafızasına karışmaz)' : null
+      };
+    }
+
+    function getActiveSearchableRecords() {
+      if (memoryStore.C_SOURCED_WORLD_MEMORY.length > 0) {
+        return memoryStore.C_SOURCED_WORLD_MEMORY;
+      }
+      if (trainingSampleModeActive) {
+        return memoryStore.F_TRAINING_SAMPLE_MEMORY;
+      }
+      return [];
+    }
 
     function findMatchingRecordsForEntity(entityName) {
       if (!entityName) return [];
+      var pool = getActiveSearchableRecords();
       var target = String(entityName).toLocaleLowerCase('tr-TR');
-      return memoryStore.C_SOURCED_WORLD_MEMORY.filter(function (rec) {
+      return pool.filter(function (rec) {
         if (!rec) return false;
         var titleMatch = String(rec.title || '').toLocaleLowerCase('tr-TR').indexOf(target) !== -1;
         var summaryMatch = String(rec.summary || '').toLocaleLowerCase('tr-TR').indexOf(target) !== -1;
@@ -854,14 +2323,68 @@
       });
     }
 
+    function detectContradictionsInMatchingRecords(records, entityName) {
+      var list = Array.isArray(records) ? records : [];
+      var foundContradictions = [];
+      for (var i = 0; i < list.length; i++) {
+        for (var j = i + 1; j < list.length; j++) {
+          var a = list[i];
+          var b = list[j];
+          if (!a || !b || a.record_id === b.record_id) continue;
+          var sameOrUnspecifiedEventTime =
+            !a.event_time ||
+            !b.event_time ||
+            a.event_time === 'not_provided' ||
+            b.event_time === 'not_provided' ||
+            String(a.event_time).slice(0, 10) === String(b.event_time).slice(0, 10);
+          var explicitConflict =
+            a.contradicts_record_id === b.record_id ||
+            b.contradicts_record_id === a.record_id ||
+            (typeof a.numeric_value === 'number' &&
+             typeof b.numeric_value === 'number' &&
+             a.relation && b.relation && a.relation === b.relation &&
+             sameOrUnspecifiedEventTime &&
+             a.numeric_value !== b.numeric_value);
+
+          if (explicitConflict) {
+            foundContradictions.push({
+              entity: entityName || a.title,
+              recordA: {
+                recordId: a.record_id,
+                sourceName: a.source_name,
+                eventTime: a.event_time,
+                publishedAt: a.source_published_at,
+                summary: a.summary,
+                numericValue: a.numeric_value
+              },
+              recordB: {
+                recordId: b.record_id,
+                sourceName: b.source_name,
+                eventTime: b.event_time,
+                publishedAt: b.source_published_at,
+                summary: b.summary,
+                numericValue: b.numeric_value
+              },
+              explanationTr:
+                'Çelişen Kayıt Tespiti: "' + a.source_name + '" (' + String(a.source_published_at || a.ingested_at).slice(0, 10) +
+                ') ile "' + b.source_name + '" (' + String(b.source_published_at || b.ingested_at).slice(0, 10) +
+                ') farklı değer/iddia bildiriyor. Tek bir doğruymuş gibi birleştirilmedi.'
+            });
+          }
+        }
+      }
+      return foundContradictions;
+    }
+
     function discoverRelatedEntitiesAndPaths(entityName, matchingRecords) {
       var targetLower = String(entityName || '').toLocaleLowerCase('tr-TR');
       var relations = [];
       var seenNames = new Set();
 
-      // 1. Doğrudan aynı kaynaklı kayıtta ortak geçen kurumlar
+      // 1. Doğrudan aynı kaynaklı kayıtta ortak geçen kurumlar (Birlikte geçme != Nedensellik)
       for (var i = 0; i < matchingRecords.length; i++) {
         var rec = matchingRecords[i];
+        var isSample = Boolean(rec.isSampleFixture || rec.epistemic_status === 'SAMPLE_TRAINING_DATA');
         var ents = Array.isArray(rec.entities) ? rec.entities : [];
         for (var j = 0; j < ents.length; j++) {
           var ent = ents[j];
@@ -874,22 +2397,25 @@
             relatedEntity: name,
             entitySector: ent.sector || 'Kurumsal Varlık',
             relationCategory: 'DOGRUDAN_KAYNAKLI_ILISKI',
-            relationLabelTr: 'Doğrudan Kaynaklı İlişki / Ortak Kayıt',
+            relationLabelTr: isSample ? 'Örnek Veri İlişkisi / Ortak Kayıt' : 'Kaynaktan Alınmış İlişki / Ortak Kayıt',
             evidenceRecordId: rec.record_id,
             evidenceSourceName: rec.source_name,
             evidenceTitle: rec.title,
             eventTime: rec.event_time,
-            epistemicClass: 'SOURCE_CLAIM',
+            epistemicClass: isSample ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM',
+            isCausalProof: false,
             explanationTr:
-              entityName + ' ile ' + name + ' aynı doğrulanmış kaynak kaydında (' + rec.source_name + ' — "' + rec.title + '") birlikte yer alıyor.'
+              entityName + ' ile ' + name + ' aynı kaynak kaydında (' + rec.source_name + ' — "' + rec.title + '") birlikte yer alıyor (Aynı belgede geçme tek başına nedensellik kanıtı değildir).'
           });
         }
       }
 
       // 2. Yaşayan Dünya Katmanı (CaelusLivingWorldModel) üzerinden alanlar arası bağlantı keşfi
-      if (lwm && typeof lwm.discoverCrossDomainLivingConnections === 'function') {
+      var activePool = getActiveSearchableRecords();
+      if (lwm && typeof lwm.discoverCrossDomainLivingConnections === 'function' && activePool.length > 0) {
         try {
-          var cross = lwm.discoverCrossDomainLivingConnections(memoryStore.C_SOURCED_WORLD_MEMORY, {
+          var v2Records = activePool.map(convertAdvisorRecordToLivingWorldV2).filter(Boolean);
+          var cross = lwm.discoverCrossDomainLivingConnections(v2Records, {
             focusEntity: entityName
           });
           var crossLinks = (cross && Array.isArray(cross.connections)) ? cross.connections : [];
@@ -905,6 +2431,7 @@
               evidenceTitle: link.explanationTr || link.summary || '',
               eventTime: link.detectedAt || null,
               epistemicClass: link.isHypothesis ? 'HYPOTHESIS' : 'RULE_DERIVATION',
+              isCausalProof: false,
               explanationTr: link.explanationTr || 'Ortak varlık ve zaman penceresi üzerinden tespit edilen bağlantı.'
             });
           }
@@ -914,7 +2441,10 @@
       return relations;
     }
 
-    function selectAdvisoryPolicyAction(nlu, matchingRecords) {
+    function selectAdvisoryPolicyAction(nlu, matchingRecords, unsupportedBoundary) {
+      if (unsupportedBoundary && unsupportedBoundary.isUnsupported) {
+        return ADVISORY_POLICY_ACTIONS_12.ABSTAIN_INSUFFICIENT_DATA;
+      }
       switch (nlu.speechAct) {
         case SUPPORTED_SPEECH_ACTS_12.GREETING_AND_GUIDE:
           return ADVISORY_POLICY_ACTIONS_12.RESOLVE_CONTEXT;
@@ -957,13 +2487,15 @@
       var nowIso = new Date().toISOString();
       var state = memoryStore.A_EPHEMERAL_DIALOGUE_STATE;
       var prefs = memoryStore.B_USER_CONTROLLED_PREFERENCES;
+      var activePool = getActiveSearchableRecords();
 
-      // Katman 1: Giriş ve Ses Durumu
+      // Katman 1: Giriş, Ses Durumu ve Güvenlik Taraması
       var voiceState = getVoiceStackCatalogAndStatus({ micEnabled: tOpts.micEnabled === true });
       var injectionCheck = scanUntrustedSourceForInjection(userUtterance);
+      var unsupportedBoundary = detectUnsupportedQuestionBoundary(userUtterance);
 
       // Katman 2: NLU Analizi
-      var nlu = analyzeUtteranceNlu(userUtterance, state, memoryStore.C_SOURCED_WORLD_MEMORY);
+      var nlu = analyzeUtteranceNlu(userUtterance, state, activePool);
 
       if (nlu.correction.isCorrection) {
         state.userCorrections.push({
@@ -976,10 +2508,12 @@
       var focusEntity = nlu.resolvedEntity || state.activeEntity || null;
       var matchingRecords = focusEntity
         ? findMatchingRecordsForEntity(focusEntity)
-        : (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.WORLD_STATUS_QUERY ? memoryStore.C_SOURCED_WORLD_MEMORY.slice(0, 5) : []);
+        : (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.WORLD_STATUS_QUERY || nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.CONTRADICTION_QUERY
+            ? activePool.slice(0, 6)
+            : []);
 
       // Katman 4: Danışmanlık Politikası
-      var policyAction = selectAdvisoryPolicyAction(nlu, matchingRecords);
+      var policyAction = selectAdvisoryPolicyAction(nlu, matchingRecords, unsupportedBoundary);
 
       // Katman 6 & 7: Araçlar, Muhakeme ve Yapılandırılmış Cevap Planı
       var passportSegments = [];
@@ -999,35 +2533,168 @@
         });
       }
 
+      if (trainingSampleModeActive && memoryStore.C_SOURCED_WORLD_MEMORY.length === 0) {
+        passportSegments.push({
+          classCode: 'SAMPLE_TRAINING_DATA',
+          epistemicState: 'SAMPLE_TRAINING_DATA',
+          labelTr: EPISTEMIC_STATES_12.SAMPLE_TRAINING_DATA.labelTr,
+          text: 'Örnek veri: Eğitim alanı açık. Bu yanıttaki örnek kayıtlar gerçek dünya hafızasına aktarılmaz ve canlı kaynak doğrulaması yerine geçmez.'
+        });
+      }
+
       if (nlu.correction.isCorrection && nlu.correction.correctedTarget) {
         passportSegments.push({
           classCode: 'USER_INPUT',
+          epistemicState: 'USER_INPUT',
           labelTr: ANSWER_PASSPORT_CLASSES_10.USER_INPUT.labelTr,
           text: 'Kullanıcı düzeltmesi uygulandı: Odak varlık "' + nlu.correction.correctedTarget + '" olarak güncellendi.'
         });
       }
 
-      // Senaryo 1: Belirli Kurum/Kişi/Konu Hakkında Son Değişiklik (Zorunlu Dikey Kesit Tur 1)
-      if (
+      // Senaryo 0: Kapsam Dışı Serbest Soru veya Yetki Sınırı (Bölüm 5.6)
+      if (unsupportedBoundary.isUnsupported) {
+        unknowns.push(unsupportedBoundary.reasonTr);
+        passportSegments.push({
+          classCode: 'UNKNOWN',
+          epistemicState: 'UNKNOWN',
+          labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
+          text: unsupportedBoundary.reasonTr
+        });
+        responseParagraphs.push(unsupportedBoundary.reasonTr);
+        suggestedNextAction = 'Bağlı açık kaynaklardan (Wikidata, World Bank, SEC EDGAR, OpenAlex) bir varlık/gösterge sorgulayabilir veya kendi CSV/XLSX dosyanızı yükleyerek analiz edebilirsiniz.';
+      }
+      // Senaryo 1: Kullanıcı Özel Dosyası Sorgusu (`USER_FILE_QUERY` — Bölüm 5.1 & 6.2)
+      else if (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.USER_FILE_QUERY) {
+        if (memoryStore.D_USER_PRIVATE_FILES.length === 0) {
+          unknowns.push('Henüz yüklenmiş bir yerel kullanıcı dosyası bulunmuyor.');
+          passportSegments.push({
+            classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
+            labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
+            text: EMPTY_WORLD_DATA_MESSAGE_TR
+          });
+          responseParagraphs.push(EMPTY_WORLD_DATA_MESSAGE_TR);
+          suggestedNextAction = 'Yerel bir CSV veya XLSX dosyası seçerek sütunlarını, eksik değerlerini ve satır numaralı karşılaştırmasını inceleyebilirsiniz.';
+        } else {
+          var activeFile = memoryStore.D_USER_PRIVATE_FILES[0];
+          var fCalcId = 'calc-file-' + Date.now();
+          calculationIds.push(fCalcId);
+
+          for (var vrIdx = 0; vrIdx < activeFile.validRows.length; vrIdx++) {
+            var vRow = activeFile.validRows[vrIdx];
+            passportSegments.push({
+              classCode: 'SOURCE_CLAIM',
+              epistemicState: 'USER_FILE_FACT',
+              labelTr: EPISTEMIC_STATES_12.USER_FILE_FACT.labelTr,
+              sourceFile: activeFile.fileName,
+              sourceRowNumber: vRow.sourceRowNumber,
+              text: activeFile.fileName + ' (Satır ' + vRow.sourceRowNumber + '): ' + JSON.stringify(vRow.valuesByColumn)
+            });
+          }
+
+          passportSegments.push({
+            classCode: 'VERIFIED_CALCULATION',
+            epistemicState: 'VERIFIED_CALCULATION',
+            labelTr: ANSWER_PASSPORT_CLASSES_10.VERIFIED_CALCULATION.labelTr,
+            calculationId: fCalcId,
+            sourceFile: activeFile.fileName,
+            text:
+              '"' + activeFile.fileName + '" dosyasında ' + activeFile.columns.length + ' sütun (' + activeFile.columns.join(', ') +
+              '), ' + activeFile.validRows.length + ' geçerli satır ve ' + activeFile.missingOrInvalidRows.length + ' eksik/hatalı satır tespit edildi.'
+          });
+
+          for (var errIdx = 0; errIdx < activeFile.missingOrInvalidRows.length; errIdx++) {
+            var errRow = activeFile.missingOrInvalidRows[errIdx];
+            unknowns.push(errRow.reasonTr);
+            passportSegments.push({
+              classCode: 'UNKNOWN',
+              epistemicState: 'UNKNOWN',
+              labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
+              sourceFile: activeFile.fileName,
+              sourceRowNumber: errRow.sourceRowNumber,
+              text: errRow.reasonTr
+            });
+          }
+
+          responseParagraphs.push(
+            'Yüklediğiniz "' + activeFile.fileName + '" (SHA-256: ' + String(activeFile.contentHash).slice(0, 12) + '…) dosyasının deterministik inceleme sonucu:'
+          );
+          responseParagraphs.push(
+            '• Sütunlar (' + activeFile.columns.length + '): ' + activeFile.columns.join(', ') +
+            '\n• Geçerli Satır Sayısı: ' + activeFile.validRows.length + ' (Satır numaraları: ' +
+            activeFile.validRows.map(function (r) { return 'Satır ' + r.sourceRowNumber; }).join(', ') + ')'
+          );
+          if (activeFile.missingOrInvalidRows.length > 0) {
+            responseParagraphs.push(
+              '• Eksik veya Geçersiz Değer Bulunan Satırlar (' + activeFile.missingOrInvalidRows.length + '): ' +
+              activeFile.missingOrInvalidRows.map(function (e) { return e.reasonTr; }).join(' | ')
+            );
+          }
+          suggestedNextAction = 'Dosyadaki geçerli satırları bütçe ve süre kriterlerinize göre karşılaştırabilir veya eksik satırları kendi dosyanızda düzeltebilirsiniz.';
+        }
+      }
+      // Senaryo 1B: Çelişen Kayıt Sorgusu (`CONTRADICTION_QUERY` — Bölüm 5.1 & 5.3)
+      else if (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.CONTRADICTION_QUERY) {
+        var detectedConflicts = detectContradictionsInMatchingRecords(
+          matchingRecords.length > 0 ? matchingRecords : activePool,
+          focusEntity
+        );
+        if (detectedConflicts.length === 0) {
+          unknowns.push('Mevcut kayıtlar arasında açıkça çelişen iki farklı kaynak kaydı tespit edilmedi.');
+          passportSegments.push({
+            classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
+            labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
+            text: unknowns[0]
+          });
+          responseParagraphs.push(
+            activePool.length === 0
+              ? EMPTY_WORLD_DATA_MESSAGE_TR
+              : 'İncelenen kayıtlar arasında şu anda doğrudan çelişen sayısal değer veya zıt kaynak iddiası bulunmuyor.'
+          );
+          suggestedNextAction = 'Farklı bir veri kaynağından yeni sorgu çekerek kaynaklar arası karşılaştırma yapabilirsiniz.';
+        } else {
+          for (var cIdx = 0; cIdx < detectedConflicts.length; cIdx++) {
+            var conf = detectedConflicts[cIdx];
+            contradictions.push(conf.explanationTr);
+            passportSegments.push({
+              classCode: 'CONTRADICTION',
+              epistemicState: 'CONTRADICTION',
+              labelTr: ANSWER_PASSPORT_CLASSES_10.CONTRADICTION.labelTr,
+              recordId: conf.recordA.recordId + ' vs ' + conf.recordB.recordId,
+              text: conf.explanationTr
+            });
+            responseParagraphs.push('• ' + conf.explanationTr);
+          }
+          suggestedNextAction = 'Çelişen kaynakların yayın tarihlerini ve veri toplama yöntemlerini (ör. resmi bildirim vs haber iddiası) kaynak bağlantılarından inceleyebilirsiniz.';
+        }
+      }
+      // Senaryo 2: Belirli Kurum/Kişi/Konu Hakkında Son Değişiklik (Zorunlu Dikey Kesit Tur 1)
+      else if (
         nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.ENTITY_RECENT_CHANGE ||
         nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.WORLD_STATUS_QUERY ||
         nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.TEMPORAL_DIFF_QUERY
       ) {
         if (matchingRecords.length === 0) {
+          var isCompletelyEmpty = activePool.length === 0 && memoryStore.D_USER_PRIVATE_FILES.length === 0;
+          var emptyMsg = isCompletelyEmpty
+            ? EMPTY_WORLD_DATA_MESSAGE_TR
+            : (focusEntity ? '"' + focusEntity + '" hakkında ' : 'Bu konuda ') +
+              'şu anda bağlı dünya hafızasında doğrulanmış bir kayıt bulunmuyor. Olgu uydurmamak adına tahmin yürütmüyorum.';
+
           unknowns.push(
-            (focusEntity ? '"' + focusEntity + '" için ' : '') +
-            'yerel dünya hafızasında doğrulanmış güncel kayıt bulunamadı.'
+            isCompletelyEmpty
+              ? EMPTY_WORLD_DATA_MESSAGE_TR
+              : (focusEntity ? '"' + focusEntity + '" için ' : '') + 'yerel dünya hafızasında doğrulanmış güncel kayıt bulunamadı.'
           );
           passportSegments.push({
             classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
             labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
             text: unknowns[0]
           });
-          responseParagraphs.push(
-            (focusEntity ? '"' + focusEntity + '" hakkında ' : 'Bu konuda ') +
-            'şu anda bağlı dünya hafızasında doğrulanmış bir kayıt bulunmuyor. Olgu uydurmamak adına tahmin yürütmüyorum.'
-          );
-          suggestedNextAction = 'Gerçek kaynak bağlayıcısından (Wikidata, SEC EDGAR, OpenAlex veya World Bank) yeni sorgu çalıştırabilir veya kendi veri dosyanızı yükleyebilirsiniz.';
+          responseParagraphs.push(emptyMsg);
+          suggestedNextAction = 'Gerçek kaynak bağlayıcısından (Wikidata, World Bank, SEC EDGAR veya OpenAlex) yeni sorgu çalıştırabilir veya kendi veri dosyanızı yükleyebilirsiniz.';
         } else {
           var primaryRec = matchingRecords[0];
           state.activeEntity = focusEntity || (primaryRec.entities && primaryRec.entities[0] && primaryRec.entities[0].name) || primaryRec.title;
@@ -1040,6 +2707,19 @@
             return acc;
           }, []);
 
+          // Aynı varlık için çelişen kayıt var mı kontrol et
+          var entityConflicts = detectContradictionsInMatchingRecords(matchingRecords, state.activeEntity);
+          for (var ec = 0; ec < entityConflicts.length; ec++) {
+            contradictions.push(entityConflicts[ec].explanationTr);
+            passportSegments.push({
+              classCode: 'CONTRADICTION',
+              epistemicState: 'CONTRADICTION',
+              labelTr: ANSWER_PASSPORT_CLASSES_10.CONTRADICTION.labelTr,
+              recordId: entityConflicts[ec].recordA.recordId + ' vs ' + entityConflicts[ec].recordB.recordId,
+              text: entityConflicts[ec].explanationTr
+            });
+          }
+
           for (var i = 0; i < matchingRecords.length; i++) {
             var rec = matchingRecords[i];
             if (Array.isArray(rec.claims)) {
@@ -1047,45 +2727,68 @@
                 if (c && c.claim_id) claimIds.push(c.claim_id);
               });
             }
+            var segEpistemic = rec.isSampleFixture
+              ? 'SAMPLE_TRAINING_DATA'
+              : (rec.epistemic_status === 'UNVERIFIED_CLAIM'
+                  ? 'UNVERIFIED_CLAIM'
+                  : (rec.epistemic_status === 'INDEPENDENTLY_CORROBORATED_FACT' ? 'INDEPENDENTLY_CORROBORATED_FACT' : 'SOURCE_CLAIM'));
             passportSegments.push({
               classCode: 'SOURCE_CLAIM',
-              labelTr: ANSWER_PASSPORT_CLASSES_10.SOURCE_CLAIM.labelTr,
+              epistemicState: segEpistemic,
+              labelTr: EPISTEMIC_STATES_12[segEpistemic] ? EPISTEMIC_STATES_12[segEpistemic].labelTr : ANSWER_PASSPORT_CLASSES_10.SOURCE_CLAIM.labelTr,
               sourceName: rec.source_name,
               sourceUrl: rec.source_url,
               eventTime: rec.event_time,
               publishedAt: rec.source_published_at,
               ingestedAt: rec.ingested_at,
+              contentHash: rec.content_hash,
               recordId: rec.record_id,
-              text: '[' + rec.source_name + ' | Olay: ' + String(rec.event_time).slice(0, 10) + '] ' + rec.title + ' — ' + rec.summary
+              isStaleCached: Boolean(rec.is_stale_cached_record),
+              text:
+                (rec.isSampleFixture ? '[Örnek veri — ' : '[') + rec.source_name +
+                ' | Olay: ' + String(rec.event_time).slice(0, 10) +
+                ' | Alım: ' + String(rec.ingested_at).slice(0, 10) + '] ' + rec.title + ' — ' + rec.summary
             });
           }
 
-          responseParagraphs.push(
-            state.activeEntity + ' hakkında kaynaklı dünya hafızasında ' + matchingRecords.length + ' doğrulanmış gelişme kayıtlıdır:'
-          );
+          var headerPrefix = (trainingSampleModeActive && memoryStore.C_SOURCED_WORLD_MEMORY.length === 0)
+            ? '[Örnek veri] ' + state.activeEntity + ' hakkında eğitim alanında ' + matchingRecords.length + ' örnek kayıt bulunuyor:'
+            : state.activeEntity + ' hakkında kaynaklı dünya hafızasında ' + matchingRecords.length + ' kayıtlı gelişme bulundu (Kaynaktan alınmış iddia / kayıt):';
+
+          responseParagraphs.push(headerPrefix);
           for (var m = 0; m < matchingRecords.length; m++) {
             var mr = matchingRecords[m];
+            var staleNote = mr.is_stale_cached_record ? ' [UYARI: Kaynak şu an erişilemiyor; son bilinen eski kayıt]' : '';
             responseParagraphs.push(
-              '• [' + mr.source_name + ' — Olay Tarihi: ' + String(mr.event_time).slice(0, 10) + ', Alım: ' + String(mr.ingested_at).slice(0, 10) + '] ' +
+              '• [' + (mr.isSampleFixture ? 'Örnek veri · ' : '') + mr.source_name +
+              ' — Olay Tarihi: ' + String(mr.event_time).slice(0, 10) +
+              ', Yayın: ' + String(mr.source_published_at).slice(0, 10) +
+              ', Alım: ' + String(mr.ingested_at).slice(0, 10) + ']' + staleNote + ' ' +
               mr.title + ': ' + mr.summary
             );
+          }
+          if (contradictions.length > 0) {
+            responseParagraphs.push('⚠️ ' + contradictions.join(' '));
           }
           suggestedNextAction = '"' + state.activeEntity + ' ile ilgili bu değişiklik hangi kurumlarla ilişkili?" diye sorarak doğrudan ve dolaylı bağlantı yollarını inceleyebilirsiniz.';
         }
       }
-      // Senaryo 2: İlişki Sorgusu (Zorunlu Dikey Kesit Tur 2: "Bu değişiklik hangi kurumlarla ilişkili?")
+      // Senaryo 3: İlişki Sorgusu (Zorunlu Dikey Kesit Tur 2: "Bu değişiklik hangi kurumlarla ilişkili?")
       else if (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.RELATION_EXPLORATION) {
         if (!focusEntity || matchingRecords.length === 0) {
           unknowns.push('İlişkisi incelenecek odak kurum veya kaynaklı kayıt bağlamı bulunamadı.');
           passportSegments.push({
             classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
             labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
-            text: unknowns[0]
+            text: activePool.length === 0 ? EMPTY_WORLD_DATA_MESSAGE_TR : unknowns[0]
           });
           responseParagraphs.push(
-            'Hangi kurum veya değişiklik arasındaki ilişkileri incelemek istediğinizi netleştirebilir misiniz? (Örn. önce bir kurum adını belirtebilirsiniz.)'
+            activePool.length === 0
+              ? EMPTY_WORLD_DATA_MESSAGE_TR
+              : 'Hangi kurum veya değişiklik arasındaki ilişkileri incelemek istediğinizi netleştirebilir misiniz? (Örn. önce bir kurum adını belirtebilirsiniz.)'
           );
-          suggestedNextAction = 'Önce incelemek istediğiniz kurumun adını yazın (ör. "TSMC hakkında son dönemde ne değişti?").';
+          suggestedNextAction = 'Önce incelemek istediğiniz kurumun adını yazın veya bir kaynak seçin.';
         } else {
           var relations = discoverRelatedEntitiesAndPaths(focusEntity, matchingRecords);
           state.activeEntity = focusEntity;
@@ -1093,10 +2796,11 @@
             unknowns.push(focusEntity + ' için mevcut kayıtlarda başka bir kurumla doğrulanmış bağlantı bulunamadı.');
             passportSegments.push({
               classCode: 'UNKNOWN',
+              epistemicState: 'UNKNOWN',
               labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
               text: unknowns[0]
             });
-            responseParagraphs.push(focusEntity + ' için mevcut dünya kayıtlarında başka bir kurumla doğrulanmış ortak kayıt bulunamadı.');
+            responseParagraphs.push(focusEntity + ' için mevcut dünya kayıtlarında başka bir kurumla ortak kayıt bulunamadı.');
           } else {
             responseParagraphs.push(
               'Önceki turda konuştuğumuz ' + focusEntity + ' gelişmesiyle ilişkili kurumlar ve kanıt sınıfları şunlardır:'
@@ -1106,6 +2810,7 @@
               var pClass = rel.epistemicClass === 'HYPOTHESIS' ? 'HYPOTHESIS' : (rel.epistemicClass === 'RULE_DERIVATION' ? 'RULE_DERIVATION' : 'SOURCE_CLAIM');
               passportSegments.push({
                 classCode: pClass,
+                epistemicState: rel.epistemicClass || pClass,
                 labelTr: ANSWER_PASSPORT_CLASSES_10[pClass].labelTr,
                 sourceName: rel.evidenceSourceName,
                 recordId: rel.evidenceRecordId,
@@ -1116,17 +2821,18 @@
               );
             }
             responseParagraphs.push(
-              'Not: Ortak kayıt ve tedarik bildirimleri doğrudan ilişkidir; tek başına zamansal yakınlık kesin nedensellik kanıtı değildir.'
+              'Not: Aynı belgede iki ismin birlikte geçmesi veya zamansal yakınlık tek başına nedensellik kanıtı değildir.'
             );
           }
           suggestedNextAction = '"Peki bu benim ilgilendiğim alanı etkiler mi?" diye sorarak kendi ilgi alanlarınız açısından olası etkileri değerlendirebilirsiniz.';
         }
       }
-      // Senaryo 3: Kullanıcı İlgi Alanı ve Danışmanlık Etkisi (Zorunlu Dikey Kesit Tur 3: "Peki bu benim ilgilendiğim alanı etkiler mi?")
+      // Senaryo 4: Kullanıcı İlgi Alanı ve Danışmanlık Etkisi (Zorunlu Dikey Kesit Tur 3: "Peki bu benim ilgilendiğim alanı etkiler mi?")
       else if (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.USER_DOMAIN_IMPACT) {
         var userInterests = Array.isArray(prefs.interestAreas) ? prefs.interestAreas : [];
         passportSegments.push({
           classCode: 'USER_PREFERENCE',
+          epistemicState: 'USER_PREFERENCE',
           labelTr: ANSWER_PASSPORT_CLASSES_10.USER_PREFERENCE.labelTr,
           text: 'Kullanıcı kontrollü tercih hafızasındaki ilgi alanlarınız: ' + (userInterests.join(', ') || 'Tanımlı değil')
         });
@@ -1135,55 +2841,60 @@
           unknowns.push('Etki analizi için aktif bir dünya gelişmesi veya odak kurum bağlamı bulunmuyor.');
           passportSegments.push({
             classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
             labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
-            text: unknowns[0]
+            text: activePool.length === 0 ? EMPTY_WORLD_DATA_MESSAGE_TR : unknowns[0]
           });
           responseParagraphs.push(
-            'Kayıtlı ilgi alanlarınız (' + (userInterests.join(', ') || 'belirtilmemiş') + ') mevcut, ancak hangi gelişmenin etkisini sormak istediğiniz net değil.'
+            activePool.length === 0
+              ? EMPTY_WORLD_DATA_MESSAGE_TR
+              : 'Kayıtlı ilgi alanlarınız (' + (userInterests.join(', ') || 'belirtilmemiş') + ') mevcut, ancak hangi gelişmenin etkisini sormak istediğiniz net değil.'
           );
           suggestedNextAction = 'Lütfen değerlendirmek istediğiniz kurumu veya gelişmeyi belirtin.';
         } else {
-          // Kaynaklı olgu
           var rec0 = matchingRecords[0];
           passportSegments.push({
             classCode: 'SOURCE_CLAIM',
+            epistemicState: rec0.isSampleFixture ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM',
             labelTr: ANSWER_PASSPORT_CLASSES_10.SOURCE_CLAIM.labelTr,
             sourceName: rec0.source_name,
             recordId: rec0.record_id,
             text: focusEntity + ' kaydı (' + rec0.source_name + '): ' + rec0.summary
           });
-          // Kural çıkarımı
+          var effectiveInterestsLabel = userInterests.length > 0 ? userInterests.join(', ') : 'henüz kullanıcı tarafından belirtilmemiş genel çalışma alanı';
           var ruleText =
             focusEntity + ' gelişmesi (' + (rec0.domains || []).join(', ') + ' alanları), tanımlı ilgi alanlarınız olan "' +
-            userInterests.join(', ') + '" ile tedarik zinciri ve yarı iletken/donanım bağımlılığı üzerinden doğrudan kesişmektedir.';
+            effectiveInterestsLabel + '" ile tedarik zinciri ve sektörel bağımlılık kuralları üzerinden değerlendirildi.';
           passportSegments.push({
             classCode: 'RULE_DERIVATION',
+            epistemicState: 'RULE_DERIVATION',
             labelTr: ANSWER_PASSPORT_CLASSES_10.RULE_DERIVATION.labelTr,
+            ruleId: 'RULE_DOMAIN_INTERSECTION_V1',
             text: ruleText
           });
-          // Olası hipotez
           var hypText =
-            'Olası Bağlantı (Hipotez): Dökümhane kapasite tahsisindeki değişimler, takip ettiğiniz donanım ve teknoloji projelerinde 6–14 haftalık tedarik süresi veya birim maliyet baskısı oluşturabilir.';
+            'Olası Bağlantı (Hipotez): Kapasite veya gösterge değişimleri, takip ettiğiniz projelerde tedarik süresi veya birim maliyet baskısı oluşturabilir (Doğrudan nedensellik kanıtı değil, incelenebilir senaryodur).';
           passportSegments.push({
             classCode: 'HYPOTHESIS',
+            epistemicState: 'HYPOTHESIS',
             labelTr: ANSWER_PASSPORT_CLASSES_10.HYPOTHESIS.labelTr,
             text: hypText
           });
-          // Bilinmeyen / eksik bilgi
           var unkText =
             'Eksik Bilgi (Bilinmeyen): Sizin kendi sözleşmelerinizdeki stok tampon süresi ve birim fiyat sabitleme koşulları dünya hafızasında yer almadığından net mali etki tutarı henüz hesaplanamaz.';
           unknowns.push(unkText);
           passportSegments.push({
             classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
             labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
             text: unkText
           });
 
           responseParagraphs.push(
-            '1. [Kullanıcı Tercihi ve Bağlam]: Açıkça tanımladığınız ilgi alanlarınız (' + userInterests.join(', ') + ') ile önceki turda incelenen ' + focusEntity + ' gelişmesini birlikte değerlendirdim.'
+            '1. [Kullanıcı Tercihi ve Bağlam]: Açıkça tanımladığınız ilgi alanlarınız (' + effectiveInterestsLabel + ') ile önceki turda incelenen ' + focusEntity + ' gelişmesini birlikte değerlendirdim.'
           );
           responseParagraphs.push(
-            '2. [Kaynaklı Olgu + Kural Çıkarımı]: ' + ruleText
+            '2. [Kaynaktan Alınmış İddia + Kural Çıkarımı]: ' + ruleText
           );
           responseParagraphs.push(
             '3. [Olası Bağlantı / Hipotez]: ' + hypText
@@ -1191,38 +2902,44 @@
           responseParagraphs.push(
             '4. [Bilinmeyen / Eksik Veri]: ' + unkText
           );
-          suggestedNextAction = 'Kendi tedarik veya bütçe seçeneklerinizi içeren CSV/JSON dosyanızı yükleyerek veya iki seçeneği yazarak deterministik maliyet/risk karşılaştırması çalıştırabilirsiniz.';
+          suggestedNextAction = 'Kendi tedarik veya bütçe seçeneklerinizi içeren CSV/XLSX dosyanızı yükleyerek veya iki seçeneği yazarak deterministik maliyet/risk karşılaştırması çalıştırabilirsiniz.';
         }
       }
-      // Senaryo 4: Kanıt ve Kaynak Sorma
+      // Senaryo 5: Kanıt ve Kaynak Sorma
       else if (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.PROVENANCE_AND_EVIDENCE) {
         if (matchingRecords.length === 0) {
           unknowns.push('Kanıtı gösterilecek aktif kayıt bulunamadı.');
           passportSegments.push({
             classCode: 'UNKNOWN',
+            epistemicState: 'UNKNOWN',
             labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
-            text: unknowns[0]
+            text: activePool.length === 0 ? EMPTY_WORLD_DATA_MESSAGE_TR : unknowns[0]
           });
-          responseParagraphs.push('Şu anda seçili bir kayıt bulunmuyor; önce bir kurum veya olay sorgulayabilirsiniz.');
+          responseParagraphs.push(activePool.length === 0 ? EMPTY_WORLD_DATA_MESSAGE_TR : 'Şu anda seçili bir kayıt bulunmuyor; önce bir kurum veya olay sorgulayabilirsiniz.');
+          suggestedNextAction = 'Bir kaynak seçip sorgu çalıştırabilir veya yerel dosya ekleyebilirsiniz.';
         } else {
-          responseParagraphs.push('Mevcut yanıtın dayandığı birincil kaynak kayıtları ve zaman damgaları:');
+          responseParagraphs.push('Mevcut yanıtın dayandığı kaynak kayıtları, içerik özetleri (SHA-256) ve zaman damgaları:');
           matchingRecords.forEach(function (r) {
             passportSegments.push({
               classCode: 'SOURCE_CLAIM',
+              epistemicState: r.isSampleFixture ? 'SAMPLE_TRAINING_DATA' : 'SOURCE_CLAIM',
               labelTr: ANSWER_PASSPORT_CLASSES_10.SOURCE_CLAIM.labelTr,
               sourceName: r.source_name,
               sourceUrl: r.source_url,
               recordId: r.record_id,
-              text: r.source_name + ' (' + r.source_license + ') — Olay: ' + r.event_time + ', Yayın: ' + r.source_published_at + ', Sisteme Alım: ' + r.ingested_at
+              contentHash: r.content_hash,
+              text: r.source_name + ' (' + r.source_license + ') — Olay: ' + r.event_time + ', Yayın: ' + r.source_published_at + ', Sisteme Alım: ' + r.ingested_at + ', Hash: ' + String(r.content_hash || '').slice(0, 12)
             });
             responseParagraphs.push(
-              '• Kaynak: ' + r.source_name + ' | Lisans: ' + r.source_license + ' | Olay Zamanı: ' + r.event_time + ' | Yayın: ' + r.source_published_at + ' | CAELUS Alım: ' + r.ingested_at
+              '• Kaynak: ' + r.source_name + ' (' + r.source_url + ') | Lisans: ' + r.source_license +
+              ' | Olay Zamanı: ' + r.event_time + ' | Yayın: ' + r.source_published_at +
+              ' | CAELUS Alım: ' + r.ingested_at + ' | SHA-256: ' + String(r.content_hash || '').slice(0, 16)
             );
           });
           suggestedNextAction = 'Kaydın revizyon geçmişini veya çelişen iddiaları sorgulayabilirsiniz.';
         }
       }
-      // Senaryo 5: Seçenek Karşılaştırma / Varsayım Değiştirme
+      // Senaryo 6: Seçenek Karşılaştırma / Varsayım Değiştirme
       else if (
         nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.OPTION_COMPARISON ||
         nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.ASSUMPTION_CHANGE
@@ -1233,6 +2950,7 @@
           assumptions.push('Bütçe tavanı kullanıcı girdisiyle ' + nums[0].value + ' olarak güncellendi.');
           passportSegments.push({
             classCode: 'MODEL_ASSUMPTION',
+            epistemicState: 'MODEL_ASSUMPTION',
             labelTr: ANSWER_PASSPORT_CLASSES_10.MODEL_ASSUMPTION.labelTr,
             text: assumptions[0]
           });
@@ -1240,38 +2958,46 @@
         var calcId = 'calc-advisor-' + Date.now();
         calculationIds.push(calcId);
         var ceiling = prefs.budgetCeiling || 100000;
+        assumptions.push('Aktif bütçe tavanı varsayımı: ' + ceiling + ' (kullanıcı tarafından değiştirilebilir).');
         var summaryCalc =
           'Deterministik Karşılaştırma Çerçevesi: Aktif bütçe tavanı varsayımı = ' + ceiling +
           ' birim. Seçeneklerin maliyet, süre ve tedarik riski kırılımı uydurma ağırlık kullanılmadan açık formülle hesaplanır.';
         passportSegments.push({
           classCode: 'VERIFIED_CALCULATION',
+          epistemicState: 'VERIFIED_CALCULATION',
           labelTr: ANSWER_PASSPORT_CLASSES_10.VERIFIED_CALCULATION.labelTr,
           calculationId: calcId,
           text: summaryCalc
         });
         passportSegments.push({
           classCode: 'MODEL_ASSUMPTION',
+          epistemicState: 'MODEL_ASSUMPTION',
           labelTr: ANSWER_PASSPORT_CLASSES_10.MODEL_ASSUMPTION.labelTr,
           text: 'Aktif bütçe tavanı varsayımı: ' + ceiling + ' (kullanıcı tarafından değiştirilebilir).'
         });
         responseParagraphs.push(summaryCalc);
         suggestedNextAction = 'Seçenek tablonuzu İlk Gerçek Görev veya Kişisel Ajan Karşılaştırma aracına aktararak satır bazlı kanıtlı raporu indirebilirsiniz.';
       }
-      // Senaryo 6: Selamlama veya Belirsiz Soru
+      // Senaryo 7: Selamlama veya Belirsiz Soru
       else if (nlu.speechAct === SUPPORTED_SPEECH_ACTS_12.GREETING_AND_GUIDE) {
         passportSegments.push({
           classCode: 'USER_INPUT',
+          epistemicState: 'USER_INPUT',
           labelTr: ANSWER_PASSPORT_CLASSES_10.USER_INPUT.labelTr,
           text: 'Kullanıcı selamlaması ve yönlendirme isteği.'
         });
         responseParagraphs.push(
-          'Merhaba. Ben CAELUS Konuşan Dünya Muhakeme Danışmanıyım. Genel amaçlı bir LLM kullanmadan, yalnızca kaynaklı dünya hafızası, açık kurallar ve deterministik hesaplama ile çalışırım.'
+          'Merhaba. Ben CAELUS Konuşan Dünya Muhakeme Danışmanıyım. Haricî bir LLM kullanmadan, yalnızca izin verdiğiniz gerçek kaynak kayıtları, kendi yerel dosyalarınız, açık kurallar ve deterministik hesaplama ile çalışırım.'
         );
-        suggestedNextAction = '"TSMC hakkında son dönemde ne değişti?" gibi bir kurum sorabilir, ardından "Bu değişiklik hangi kurumlarla ilişkili?" ve "Peki bu benim ilgilendiğim alanı etkiler mi?" sorularıyla ilerleyebilirsiniz.';
+        if (activePool.length === 0 && memoryStore.D_USER_PRIVATE_FILES.length === 0) {
+          responseParagraphs.push(EMPTY_WORLD_DATA_MESSAGE_TR);
+        }
+        suggestedNextAction = 'Bir açık veri kaynağından (Wikidata veya World Bank) sorgu çekebilir, yerel CSV/XLSX dosyanızı yükleyebilir veya bir kurum hakkında soru sorabilirsiniz.';
       } else {
         unknowns.push('Sorguda incelenecek kurum, zaman aralığı veya karar seçeneği belirsiz.');
         passportSegments.push({
           classCode: 'UNKNOWN',
+          epistemicState: 'UNKNOWN',
           labelTr: ANSWER_PASSPORT_CLASSES_10.UNKNOWN.labelTr,
           text: unknowns[0]
         });
@@ -1283,10 +3009,10 @@
         responseParagraphs.push(
           'Sorunuzda hangi kurum, zaman aralığı veya seçenek üzerinde çalışmam gerektiği tam net değil. Yanlış bir varsayım yapmamak için soruyorum: Hangi kurum veya konuyu inceleyelim?'
         );
-        suggestedNextAction = 'Bir kurum adı (ör. "TSMC" veya "Apple Inc.") ya da karşılaştırmak istediğiniz seçenekleri yazabilirsiniz.';
+        suggestedNextAction = 'Bir kurum adı (ör. "TSMC" veya "Türkiye"), yerel dosya sorusu ("Dosyamda hangi satırlarda eksik veri var?") ya da karşılaştırmak istediğiniz seçenekleri yazabilirsiniz.';
       }
 
-      // Katman 7: Yapılandırılmış Cevap Planı (Structured Answer Plan — Bölüm 4.2)
+      // Katman 7: Yapılandırılmış Cevap Planı (Structured Answer Plan)
       var structuredAnswerPlan = {
         answer_type: policyAction,
         user_intent: nlu.speechAct,
@@ -1298,7 +3024,9 @@
         contradictions: contradictions,
         unknowns: unknowns,
         confidence_basis: matchingRecords.length > 0
-          ? 'GROUNDED_IN_' + matchingRecords.length + '_SOURCED_RECORDS'
+          ? (trainingSampleModeActive && memoryStore.C_SOURCED_WORLD_MEMORY.length === 0
+              ? 'GROUNDED_IN_LABELED_TRAINING_SAMPLE_DATA'
+              : 'GROUNDED_IN_' + matchingRecords.length + '_SOURCED_RECORDS')
           : 'ABSTAIN_OR_CLARIFICATION_REQUIRED',
         suggested_next_action: suggestedNextAction,
         language: prefs.preferredLanguage || 'tr-TR',
@@ -1306,15 +3034,47 @@
         security_warnings: securityWarnings
       };
 
-      // Katman 8: Kontrollü Yanıt ve Cevap Pasaportu
+      // Katman 8: Kontrollü Yanıt, 7 Zorunlu Cevap Bileşeni (Bölüm 5.2) ve ProvSQL Semiring Soykütüğü
       var answerText = responseParagraphs.join('\n\n');
+      var semiringProvenance = computeProvenanceSemiringPolynomial(passportSegments);
+      var mandatoryDisclosure7 = {
+        shortAnswerTr: responseParagraphs[0] || '',
+        sourcesOrFileRows: passportSegments
+          .filter(function (s) { return s.recordId || s.sourceFile; })
+          .map(function (s) {
+            return s.sourceFile
+              ? (s.sourceFile + ' (Satır ' + s.sourceRowNumber + ')')
+              : (s.sourceName + ' [' + s.recordId + ']');
+          }),
+        dataAndEventDates: matchingRecords.map(function (r) {
+          return {
+            recordId: r.record_id,
+            eventTime: r.event_time,
+            publishedAt: r.source_published_at,
+            ingestedAt: r.ingested_at
+          };
+        }),
+        appliedRuleOrCalculation: calculationIds.length > 0
+          ? calculationIds.join(', ')
+          : (passportSegments.some(function (s) { return s.classCode === 'RULE_DERIVATION'; }) ? 'RULE_DOMAIN_INTERSECTION_V1' : 'DIRECT_RECORD_LOOKUP'),
+        assumptions: assumptions,
+        unknowns: unknowns,
+        nextStepForUser: suggestedNextAction
+      };
+
       var answerPassport = {
         schema: 'CAELUS_ANSWER_PASSPORT_V1',
         generatedAt: nowIso,
         nonLlmGuaranteed: true,
+        trainingSampleModeActive: trainingSampleModeActive && memoryStore.C_SOURCED_WORLD_MEMORY.length === 0,
         segments: passportSegments,
+        mandatoryDisclosure7: mandatoryDisclosure7,
+        provenanceSemiring: semiringProvenance,
         summaryCounts: passportSegments.reduce(function (acc, seg) {
           acc[seg.classCode] = (acc[seg.classCode] || 0) + 1;
+          if (seg.epistemicState && seg.epistemicState !== seg.classCode) {
+            acc[seg.epistemicState] = (acc[seg.epistemicState] || 0) + 1;
+          }
           return acc;
         }, {})
       };
@@ -1384,32 +3144,69 @@
     function inspectSeparatedMemory() {
       return {
         catalog: MEMORY_CLASS_CATALOG_5,
+        trainingSampleModeActive: trainingSampleModeActive,
         A_EPHEMERAL_DIALOGUE_STATE: JSON.parse(JSON.stringify(memoryStore.A_EPHEMERAL_DIALOGUE_STATE)),
         B_USER_CONTROLLED_PREFERENCES: JSON.parse(JSON.stringify(memoryStore.B_USER_CONTROLLED_PREFERENCES)),
         C_SOURCED_WORLD_MEMORY_COUNT: memoryStore.C_SOURCED_WORLD_MEMORY.length,
         C_SOURCED_WORLD_MEMORY: memoryStore.C_SOURCED_WORLD_MEMORY.slice(),
         D_USER_PRIVATE_FILES_COUNT: memoryStore.D_USER_PRIVATE_FILES.length,
-        E_PAST_ANALYSES_COUNT: memoryStore.E_PAST_ANALYSES_AND_REPORTS.length
+        D_USER_PRIVATE_FILES: memoryStore.D_USER_PRIVATE_FILES.map(function (f) {
+          return {
+            fileName: f.fileName,
+            contentHash: f.contentHash,
+            columns: f.columns,
+            totalDataRows: f.totalDataRows,
+            validRowsCount: f.validRows ? f.validRows.length : 0,
+            missingOrInvalidRowsCount: f.missingOrInvalidRows ? f.missingOrInvalidRows.length : 0
+          };
+        }),
+        E_PAST_ANALYSES_COUNT: memoryStore.E_PAST_ANALYSES_AND_REPORTS.length,
+        F_TRAINING_SAMPLE_MEMORY_COUNT: memoryStore.F_TRAINING_SAMPLE_MEMORY.length
       };
     }
 
-    function addWorldRecordsToAdvisorMemory(records) {
+    function addWorldRecordsToAdvisorMemory(records, addOptions) {
+      var aOpts = addOptions || {};
       if (!Array.isArray(records)) return memoryStore.C_SOURCED_WORLD_MEMORY.length;
       for (var i = 0; i < records.length; i++) {
-        var r = records[i];
-        if (!r || !r.record_id) continue;
-        // Kullanıcı tercihi veya uydurma kayıt dünya olgusu olarak yazılamaz!
-        if (r.epistemic_status === 'USER_PREFERENCE' || r.record_type === 'USER_PREFERENCE') {
+        var raw = records[i];
+        if (!raw || !raw.record_id) continue;
+        // 1. Kullanıcı tercihi veya sohbet varsayımı dünya olgusu olarak yazılamaz!
+        if (raw.epistemic_status === 'USER_PREFERENCE' || raw.record_type === 'USER_PREFERENCE') {
+          continue;
+        }
+        var norm = normalizeAdvisorWorldRecord(raw);
+        // 2. Örnek/eğitim verisi gerçek dünya hafızasına karışamaz!
+        if (norm.isSampleFixture && aOpts.allowSampleDataInRealMemory !== true) {
+          var sampleExists = memoryStore.F_TRAINING_SAMPLE_MEMORY.some(function (ex) {
+            return ex.record_id === norm.record_id;
+          });
+          if (!sampleExists) memoryStore.F_TRAINING_SAMPLE_MEMORY.push(norm);
+          continue;
+        }
+        // 3. Kaynaksız iddia (source_id veya geçerli source_url olmayan) doğrulanmış olguya yükseltilmez!
+        if (norm.epistemic_status === 'UNVERIFIED_CLAIM' && aOpts.allowUnverifiedInWorldMemory !== true) {
           continue;
         }
         var exists = memoryStore.C_SOURCED_WORLD_MEMORY.some(function (ex) {
-          return ex.record_id === r.record_id;
+          return ex.record_id === norm.record_id;
         });
         if (!exists) {
-          memoryStore.C_SOURCED_WORLD_MEMORY.unshift(r);
+          memoryStore.C_SOURCED_WORLD_MEMORY.unshift(norm);
         }
       }
       return memoryStore.C_SOURCED_WORLD_MEMORY.length;
+    }
+
+    function loadUserFileIntoAdvisor(fileName, content, fileOptions) {
+      var parsed = parseUserTableContentWithRowProvenance(fileName, content, fileOptions);
+      var existingIdx = memoryStore.D_USER_PRIVATE_FILES.findIndex(function (f) { return f.fileName === fileName; });
+      if (existingIdx !== -1) {
+        memoryStore.D_USER_PRIVATE_FILES[existingIdx] = parsed;
+      } else {
+        memoryStore.D_USER_PRIVATE_FILES.unshift(parsed);
+      }
+      return parsed;
     }
 
     return {
@@ -1419,6 +3216,12 @@
       deleteUserPreferences: deleteUserPreferences,
       inspectSeparatedMemory: inspectSeparatedMemory,
       addWorldRecordsToAdvisorMemory: addWorldRecordsToAdvisorMemory,
+      ingestRealWorldRecords: addWorldRecordsToAdvisorMemory,
+      ingestWorldRecord: function (rec, addOptions) {
+        return addWorldRecordsToAdvisorMemory(Array.isArray(rec) ? rec : [rec], addOptions);
+      },
+      loadUserFileIntoAdvisor: loadUserFileIntoAdvisor,
+      setTrainingSampleMode: setTrainingSampleMode,
       getVoiceStackCatalogAndStatus: getVoiceStackCatalogAndStatus
     };
   }
@@ -1569,16 +3372,24 @@
   }
 
   /**
-   * Sürümlü Ajan Sözleşmesi Oluşturucu ve Doğrulayıcı (`CAELUS_AGENT_CONTRACT_V1` — Bölüm 4)
+   * Sürümlü Ajan Sözleşmesi Oluşturucu ve Doğrulayıcı (`CAELUS_AGENT_CONTRACT_V1` — Bölüm 4 & 6)
+   * İzinler varsayılan olarak kapalıdır (Default Deny); yalnızca açıkça verilen kaynak/dosya izni açılır.
    */
   function buildAgentContractV1(spec) {
     var s = spec || {};
     var nowIso = new Date().toISOString();
     var capabilityType = s.capabilityType || MANDATORY_AGENT_CAPABILITIES_3.TRACK_REAL_SOURCE;
     var execMode = s.executionMode && AGENT_EXECUTION_MODES_3[s.executionMode] ? s.executionMode : 'MANUAL';
+    var strictDefaultDeny = s.strictDefaultDeny === true;
+
+    var hasExplicitSources = Array.isArray(s.allowed_sources) && s.allowed_sources.length > 0;
+    var hasExplicitFiles = Array.isArray(s.user_files) && s.user_files.length > 0;
+
     var allowedSources = Array.isArray(s.allowed_sources)
       ? s.allowed_sources.slice()
-      : (capabilityType === MANDATORY_AGENT_CAPABILITIES_3.INSPECT_USER_FILE ? ['user_local_file'] : ['wikidata', 'sec_edgar', 'openalex']);
+      : (strictDefaultDeny
+          ? []
+          : (capabilityType === MANDATORY_AGENT_CAPABILITIES_3.INSPECT_USER_FILE ? ['user_local_file'] : ['wikidata', 'sec_edgar', 'openalex']));
 
     var allowedTools = Array.isArray(s.allowed_tools)
       ? s.allowed_tools.slice()
@@ -1587,6 +3398,14 @@
         : capabilityType === MANDATORY_AGENT_CAPABILITIES_3.COMPARE_OPTIONS
           ? ['deterministic_option_calculator', 'unit_and_missing_validator']
           : ['living_world_source_reader', 'record_diff_detector']);
+
+    var networkAccessGranted = s.network_access !== undefined
+      ? Boolean(s.network_access)
+      : (!strictDefaultDeny && (hasExplicitSources || capabilityType === MANDATORY_AGENT_CAPABILITIES_3.TRACK_REAL_SOURCE));
+
+    var localFileReadGranted = s.local_file_read !== undefined
+      ? Boolean(s.local_file_read)
+      : (!strictDefaultDeny && (hasExplicitFiles || capabilityType === MANDATORY_AGENT_CAPABILITIES_3.INSPECT_USER_FILE));
 
     var agentId = s.agent_id || ('agent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
     var contract = {
@@ -1604,6 +3423,7 @@
       trigger: {
         type: execMode,
         schedule: s.schedule || (execMode === 'APP_OPEN' ? 'every_60_minutes_while_app_open' : 'manual_only'),
+        interval_ms: typeof s.interval_ms === 'number' ? s.interval_ms : (execMode === 'APP_OPEN' ? 60 * 60 * 1000 : null),
         event_conditions: Array.isArray(s.event_conditions) ? s.event_conditions : [],
         honest_mode_disclosure: AGENT_EXECUTION_MODES_3[execMode].honestDisclosureTr
       },
@@ -1617,14 +3437,11 @@
       allowed_sources: allowedSources,
       allowed_tools: allowedTools,
       permissions: {
-        network_access: s.network_access !== undefined
-          ? Boolean(s.network_access)
-          : capabilityType === MANDATORY_AGENT_CAPABILITIES_3.TRACK_REAL_SOURCE,
-        local_file_read: s.local_file_read !== undefined
-          ? Boolean(s.local_file_read)
-          : capabilityType === MANDATORY_AGENT_CAPABILITIES_3.INSPECT_USER_FILE,
+        network_access: networkAccessGranted,
+        local_file_read: localFileReadGranted,
         local_file_write: Boolean(s.local_file_write === true),
         notifications: Boolean(s.notifications === true),
+        can_invoke_other_agents: false,
         external_action: false
       },
       memory_policy: {
@@ -1649,7 +3466,10 @@
         max_runtime_ms: typeof s.max_runtime_ms === 'number' ? s.max_runtime_ms : 15000,
         max_steps: typeof s.max_steps === 'number' ? s.max_steps : 25,
         max_requests_per_run: typeof s.max_requests_per_run === 'number' ? s.max_requests_per_run : 10,
-        max_records_per_run: typeof s.max_records_per_run === 'number' ? s.max_records_per_run : 200
+        max_records_per_run: typeof s.max_records_per_run === 'number' ? s.max_records_per_run : 200,
+        max_result_bytes: typeof s.max_result_bytes === 'number' ? s.max_result_bytes : 524288,
+        max_file_bytes: typeof s.max_file_bytes === 'number' ? s.max_file_bytes : (5 * 1024 * 1024),
+        max_file_rows: typeof s.max_file_rows === 'number' ? s.max_file_rows : 10000
       },
       audit_policy: {
         log_every_step: true,
@@ -1700,7 +3520,7 @@
   }
 
   /**
-   * Çalışma Zamanı Yetki ve İzolasyon Denetleyicisi (`enforceAgentRuntimePermission` — Bölüm 8)
+   * Çalışma Zamanı Yetki ve İzolasyon Denetleyicisi (`enforceAgentRuntimePermission` — Bölüm 6.3 & 7.2 Cedar)
    */
   function enforceAgentRuntimePermission(agentContract, actionRequest, auditLog) {
     var nowIso = new Date().toISOString();
@@ -1709,16 +3529,79 @@
     var allowedSources = (agentContract && agentContract.allowed_sources) || [];
     var allowedFiles = (agentContract && agentContract.inputs && agentContract.inputs.user_files) || [];
     var allowedTools = (agentContract && agentContract.allowed_tools) || [];
+    var expectedScope = agentContract && agentContract.memory_policy && agentContract.memory_policy.scope;
+
+    // Cedar tarzı politikaları derle (forbid her zaman permit'i ezer)
+    var cedarPolicies = [
+      {
+        id: 'permit_own_memory',
+        effect: 'permit',
+        principal: agentContract ? agentContract.agent_id : '*',
+        action: 'READ_AGENT_MEMORY',
+        resource: expectedScope
+      },
+      {
+        id: 'forbid_cross_agent_memory',
+        effect: 'forbid',
+        principal: '*',
+        action: 'READ_AGENT_MEMORY',
+        when: function (_, r) { return r.resource !== expectedScope; }
+      },
+      {
+        id: 'permit_allowed_sources',
+        effect: 'permit',
+        principal: agentContract ? agentContract.agent_id : '*',
+        action: 'ACCESS_SOURCE',
+        resources: allowedSources
+      },
+      {
+        id: 'forbid_network_when_disabled',
+        effect: 'forbid',
+        principal: '*',
+        action: 'ACCESS_SOURCE',
+        when: function (_, r) { return !perms.network_access && r.resource !== 'user_local_file'; }
+      },
+      {
+        id: 'permit_allowed_files',
+        effect: 'permit',
+        principal: agentContract ? agentContract.agent_id : '*',
+        action: 'READ_USER_FILE',
+        resources: allowedFiles
+      },
+      {
+        id: 'forbid_file_read_when_disabled',
+        effect: 'forbid',
+        principal: '*',
+        action: 'READ_USER_FILE',
+        when: function () { return !perms.local_file_read; }
+      },
+      {
+        id: 'permit_allowed_tools',
+        effect: 'permit',
+        principal: agentContract ? agentContract.agent_id : '*',
+        action: 'INVOKE_TOOL',
+        resources: allowedTools
+      }
+    ];
+
+    var cedarEval = evaluateCedarStylePolicy(cedarPolicies, {
+      principal: agentContract ? agentContract.agent_id : 'unknown',
+      action: req.type,
+      resource: req.type === 'READ_AGENT_MEMORY' ? req.targetScope : req.target,
+      context: {}
+    });
 
     function recordCheck(allowed, code, detail) {
       var entry = {
         timestamp: nowIso,
         agentId: agentContract ? agentContract.agent_id : null,
         requestType: req.type,
-        target: req.target || null,
+        target: req.target || req.targetScope || null,
         allowed: allowed,
         code: code,
-        detailTr: detail
+        cedarDecision: cedarEval.decision,
+        cedarReasonCode: cedarEval.reasonCode,
+        detailTr: sanitizeAuditLogMessage(detail)
       };
       if (Array.isArray(auditLog)) auditLog.push(entry);
       return entry;
@@ -1726,8 +3609,7 @@
 
     // 1. Ajanlar arası hafıza izolasyonu kontrolü
     if (req.type === 'READ_AGENT_MEMORY') {
-      var expectedScope = agentContract && agentContract.memory_policy && agentContract.memory_policy.scope;
-      if (req.targetScope !== expectedScope) {
+      if (req.targetScope !== expectedScope || !cedarEval.allowed) {
         return recordCheck(
           false,
           'CROSS_AGENT_ISOLATION_VIOLATION',
@@ -1746,7 +3628,7 @@
           'Ajanın ağ erişim yetkisi (network_access) kapalı olduğundan "' + req.target + '" kaynağına erişim engellendi.'
         );
       }
-      if (allowedSources.indexOf(req.target) === -1) {
+      if (allowedSources.indexOf(req.target) === -1 || !cedarEval.allowed) {
         return recordCheck(
           false,
           'PERMISSION_DENIED_SOURCE_NOT_ALLOWED',
@@ -1765,7 +3647,7 @@
           'Ajanın yerel dosya okuma yetkisi (local_file_read) kapalı olduğundan dosya erişimi engellendi.'
         );
       }
-      if (allowedFiles.indexOf(req.target) === -1) {
+      if (allowedFiles.indexOf(req.target) === -1 || !cedarEval.allowed) {
         return recordCheck(
           false,
           'PERMISSION_DENIED_FILE_NOT_IN_ALLOWLIST',
@@ -1777,7 +3659,7 @@
 
     // 4. Araç çağrısı kontrolü
     if (req.type === 'INVOKE_TOOL') {
-      if (allowedTools.indexOf(req.target) === -1) {
+      if (allowedTools.indexOf(req.target) === -1 || !cedarEval.allowed) {
         return recordCheck(
           false,
           'PERMISSION_DENIED_TOOL_NOT_ALLOWED',
@@ -1796,14 +3678,13 @@
    */
   function exportAgentTemplateSafe(agentContract) {
     var copy = JSON.parse(JSON.stringify(agentContract || {}));
-    // Özel dosyaları ve gizli parametreleri temizle
     if (copy.inputs) {
       copy.inputs.user_files = [];
       if (copy.inputs.parameters && typeof copy.inputs.parameters === 'object') {
         var sanitizedParams = {};
         Object.keys(copy.inputs.parameters).forEach(function (k) {
           if (/key|token|secret|password|credential|private|filecontent/i.test(k)) {
-            return; // Gizli anahtar veya özel içerik dışa aktarılmaz!
+            return;
           }
           sanitizedParams[k] = copy.inputs.parameters[k];
         });
@@ -1816,28 +3697,53 @@
     return copy;
   }
 
+  var STUDIO_STORAGE_KEY_V1 = 'caelus_personal_agent_studio_v1';
+
+  function getDefaultStorageAdapter(customAdapter) {
+    if (customAdapter && typeof customAdapter.getItem === 'function' && typeof customAdapter.setItem === 'function') {
+      return customAdapter;
+    }
+    try {
+      if (root && root.localStorage && typeof root.localStorage.getItem === 'function') {
+        return root.localStorage;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /**
-   * Kişisel Ajan Stüdyosu ve Çalışma Zamanı Oluşturucu (`createPersonalAgentStudio`)
+   * Kişisel Ajan Stüdyosu ve Çalışma Zamanı Oluşturucu (`createPersonalAgentStudio` — Bölüm 6)
    */
   function createPersonalAgentStudio(options) {
     var opts = options || {};
+    var storageAdapter = getDefaultStorageAdapter(opts.storageAdapter);
+    var storageKey = opts.storageKey || STUDIO_STORAGE_KEY_V1;
+    var trainingSampleModeActive = opts.enableTrainingSampleMode === true;
+
     var agentsById = new Map();
     var agentIsolatedMemories = new Map();
     var agentRunLogsById = new Map();
     var userFilesByName = new Map();
-    var worldRecordsPool = Array.isArray(opts.worldRecords) && opts.worldRecords.length > 0
-      ? opts.worldRecords.slice()
-      : buildDefaultAdvisorWorldRecords();
 
-    // Varsayılan örnek kullanıcı dosyası (Kullanıcı izin verirse okunabilir)
+    // BÖLÜM 2.1: Üretim/normal kullanım modunda sabit örnek dünya kayıtları ve
+    // sahte CSV dosyası gerçek veri yerine otomatik yüklenmez!
+    var worldRecordsPool = [];
+    if (Array.isArray(opts.worldRecords) && opts.worldRecords.length > 0) {
+      worldRecordsPool = opts.worldRecords.map(normalizeAdvisorWorldRecord);
+    } else if (trainingSampleModeActive) {
+      worldRecordsPool = buildDefaultAdvisorWorldRecords({ markAsSampleFixture: true });
+    }
+
     if (Array.isArray(opts.initialUserFiles)) {
       opts.initialUserFiles.forEach(function (f) {
         if (f && f.fileName) userFilesByName.set(f.fileName, JSON.parse(JSON.stringify(f)));
       });
-    } else {
+    } else if (trainingSampleModeActive) {
       userFilesByName.set('tedarik_secenekleri_2026.csv', {
         fileName: 'tedarik_secenekleri_2026.csv',
         mimeType: 'text/csv',
+        isSampleFixture: true,
+        sample_badge_tr: 'Örnek veri',
         originalContent: [
           'secenek_adi,birim_maliyet_usd,teslim_suresi_gun,risk_puani,notlar',
           'Dresden Yerel Hat,142,18,15,Avrupa içi yedekli hat',
@@ -1847,13 +3753,112 @@
       });
     }
 
+    function saveStudioStateToStorage() {
+      if (!storageAdapter) return { saved: false, reason: 'NO_STORAGE_ADAPTER' };
+      try {
+        var payload = {
+          schema: 'CAELUS_AGENT_STUDIO_STORAGE_V1',
+          savedAt: new Date().toISOString(),
+          agents: Array.from(agentsById.values()),
+          memories: Array.from(agentIsolatedMemories.entries()),
+          runLogs: Array.from(agentRunLogsById.entries())
+        };
+        storageAdapter.setItem(storageKey, JSON.stringify(payload));
+        return { saved: true, agentsCount: payload.agents.length };
+      } catch (e) {
+        return { saved: false, reason: String(e && e.message ? e.message : e) };
+      }
+    }
+
+    function loadStudioStateFromStorage() {
+      if (!storageAdapter) return { loaded: false, agentsCount: 0 };
+      try {
+        var raw = storageAdapter.getItem(storageKey);
+        if (!raw) return { loaded: false, agentsCount: 0 };
+        var parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.agents)) return { loaded: false, agentsCount: 0 };
+        parsed.agents.forEach(function (ag) {
+          if (ag && ag.agent_id && validateAgentContractV1(ag).valid) {
+            agentsById.set(ag.agent_id, ag);
+          }
+        });
+        if (Array.isArray(parsed.memories)) {
+          parsed.memories.forEach(function (pair) {
+            if (Array.isArray(pair) && pair[0]) agentIsolatedMemories.set(pair[0], pair[1]);
+          });
+        }
+        if (Array.isArray(parsed.runLogs)) {
+          parsed.runLogs.forEach(function (pair) {
+            if (Array.isArray(pair) && pair[0]) agentRunLogsById.set(pair[0], Array.isArray(pair[1]) ? pair[1] : []);
+          });
+        }
+        return { loaded: true, agentsCount: agentsById.size };
+      } catch (_) {
+        return { loaded: false, agentsCount: 0 };
+      }
+    }
+
+    function clearStudioStorage() {
+      if (storageAdapter && typeof storageAdapter.removeItem === 'function') {
+        try { storageAdapter.removeItem(storageKey); } catch (_) {}
+      }
+      return { cleared: true };
+    }
+
+    if (opts.autoRestoreFromStorage !== false) {
+      loadStudioStateFromStorage();
+    }
+
+    function setTrainingSampleMode(enabled) {
+      trainingSampleModeActive = Boolean(enabled);
+      if (trainingSampleModeActive) {
+        if (worldRecordsPool.length === 0) {
+          worldRecordsPool = buildDefaultAdvisorWorldRecords({ markAsSampleFixture: true });
+        }
+        if (!userFilesByName.has('tedarik_secenekleri_2026.csv')) {
+          userFilesByName.set('tedarik_secenekleri_2026.csv', {
+            fileName: 'tedarik_secenekleri_2026.csv',
+            mimeType: 'text/csv',
+            isSampleFixture: true,
+            sample_badge_tr: 'Örnek veri',
+            originalContent: [
+              'secenek_adi,birim_maliyet_usd,teslim_suresi_gun,risk_puani,notlar',
+              'Dresden Yerel Hat,142,18,15,Avrupa içi yedekli hat',
+              'Asya Ekspres Hat,118,34,42,Tekil dökümhane bağımlılığı',
+              'Eksik Satir Ornegi,abc,-5,,Bozuk veri satırı'
+            ].join('\n')
+          });
+        }
+      } else {
+        worldRecordsPool = worldRecordsPool.filter(function (r) { return !r.isSampleFixture; });
+        var f = userFilesByName.get('tedarik_secenekleri_2026.csv');
+        if (f && f.isSampleFixture) {
+          userFilesByName.delete('tedarik_secenekleri_2026.csv');
+        }
+      }
+      return {
+        trainingSampleModeActive: trainingSampleModeActive,
+        worldRecordsCount: worldRecordsPool.length,
+        userFilesCount: userFilesByName.size
+      };
+    }
+
+    function setWorldRecordsPool(records) {
+      if (!Array.isArray(records)) return worldRecordsPool.length;
+      worldRecordsPool = records.map(normalizeAdvisorWorldRecord);
+      return worldRecordsPool.length;
+    }
+
     function registerUserFile(fileName, content, mimeType) {
+      var text = String(content || '');
       userFilesByName.set(fileName, {
         fileName: fileName,
         mimeType: mimeType || 'text/csv',
-        originalContent: String(content || '')
+        contentHash: computeDeterministicHashHex(text),
+        sizeBytes: text.length,
+        originalContent: text
       });
-      return { registered: true, fileName: fileName };
+      return { registered: true, fileName: fileName, sizeBytes: text.length };
     }
 
     function createAgent(spec) {
@@ -1866,9 +3871,11 @@
       agentIsolatedMemories.set(contract.memory_policy.scope, {
         seenRecordFingerprints: [],
         lastRunAt: null,
+        missedRunsWhileClosed: 0,
         notes: []
       });
       agentRunLogsById.set(contract.agent_id, []);
+      saveStudioStateToStorage();
       return contract;
     }
 
@@ -1897,11 +3904,15 @@
       if (updates && updates.inputs) {
         merged.inputs = Object.assign({}, existing.inputs, updates.inputs);
       }
+      if (updates && updates.safety_limits) {
+        merged.safety_limits = Object.assign({}, existing.safety_limits, updates.safety_limits);
+      }
       var validation = validateAgentContractV1(merged);
       if (!validation.valid) {
         throw new Error('Güncellenen Ajan Sözleşmesi geçersiz: ' + validation.errors.join(' | '));
       }
       agentsById.set(agentId, merged);
+      saveStudioStateToStorage();
       return merged;
     }
 
@@ -1912,12 +3923,24 @@
         ag.permissions.network_access = false;
       } else if (permissionKind === 'local_file_read') {
         ag.permissions.local_file_read = false;
+      } else if (permissionKind === 'local_file_write') {
+        ag.permissions.local_file_write = false;
+      } else if (permissionKind === 'notifications') {
+        ag.permissions.notifications = false;
       } else if (permissionKind === 'source' && targetValue) {
         ag.allowed_sources = ag.allowed_sources.filter(function (s) { return s !== targetValue; });
       } else if (permissionKind === 'file' && targetValue && ag.inputs && Array.isArray(ag.inputs.user_files)) {
         ag.inputs.user_files = ag.inputs.user_files.filter(function (f) { return f !== targetValue; });
+      } else if (permissionKind === 'all') {
+        ag.permissions.network_access = false;
+        ag.permissions.local_file_read = false;
+        ag.permissions.local_file_write = false;
+        ag.permissions.notifications = false;
+        ag.allowed_sources = [];
+        if (ag.inputs) ag.inputs.user_files = [];
       }
       ag.updated_at = new Date().toISOString();
+      saveStudioStateToStorage();
       return ag;
     }
 
@@ -1926,6 +3949,7 @@
       if (!ag) throw new Error('Ajan bulunamadı: ' + agentId);
       ag.status = AGENT_LIFECYCLE_STATES_9.PAUSED;
       ag.updated_at = new Date().toISOString();
+      saveStudioStateToStorage();
       return ag;
     }
 
@@ -1934,6 +3958,7 @@
       if (!ag) throw new Error('Ajan bulunamadı: ' + agentId);
       ag.status = AGENT_LIFECYCLE_STATES_9.READY;
       ag.updated_at = new Date().toISOString();
+      saveStudioStateToStorage();
       return ag;
     }
 
@@ -1942,6 +3967,7 @@
       if (!ag) throw new Error('Ajan bulunamadı: ' + agentId);
       ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
       ag.updated_at = new Date().toISOString();
+      saveStudioStateToStorage();
       return ag;
     }
 
@@ -1968,11 +3994,46 @@
       agentsById.delete(agentId);
       agentIsolatedMemories.delete(ag.memory_policy.scope);
       agentRunLogsById.delete(agentId);
+      saveStudioStateToStorage();
       return { deleted: true, impactPreview: impactPreview };
     }
 
+    /**
+     * Bölüm 6.5: Uygulama Kapalıyken Kaçırılan Zamanlı Çalışmaları Dürüstçe Tespit Et (`checkMissedScheduledRuns`)
+     */
+    function checkMissedScheduledRuns(nowIso) {
+      var nowMs = Date.parse(nowIso || new Date().toISOString()) || Date.now();
+      var summary = [];
+      agentsById.forEach(function (ag) {
+        if (!ag || ag.trigger.type !== 'APP_OPEN') return;
+        var intervalMs = ag.trigger.interval_ms || (60 * 60 * 1000);
+        var mem = agentIsolatedMemories.get(ag.memory_policy.scope) || {};
+        var refIso = mem.lastRunAt || ag.created_at;
+        var refMs = Date.parse(refIso) || nowMs;
+        var elapsedMs = Math.max(0, nowMs - refMs);
+        var missedCount = elapsedMs > intervalMs ? Math.floor(elapsedMs / intervalMs) : 0;
+        if (missedCount > 0) {
+          mem.missedRunsWhileClosed = (mem.missedRunsWhileClosed || 0) + missedCount;
+          agentIsolatedMemories.set(ag.memory_policy.scope, mem);
+        }
+        summary.push({
+          agentId: ag.agent_id,
+          agentName: ag.name,
+          executionMode: ag.trigger.type,
+          lastRunAt: mem.lastRunAt || null,
+          missedRunsCount: missedCount,
+          backgroundExecutionClaimed: false,
+          honestNoticeTr: missedCount > 0
+            ? 'Uygulama kapalıyken ' + missedCount + ' zamanlı çalışma gerçekleşmedi (CAELUS arka planda gizlice çalışmaz). İsterseniz şimdi elle çalıştırabilirsiniz.'
+            : 'Zamanlama güncel (yalnız uygulama açıkken çalışır).'
+        });
+      });
+      saveStudioStateToStorage();
+      return summary;
+    }
+
     // --------------------------------------------------------------------------
-    // 3 Zorunlu Ajan Yeteneğinin Gerçek Çalıştırılması (`runAgent`)
+    // 3 Zorunlu Ajan Yeteneğinin Gerçek Çalıştırılması ve Sınır Denetimi (`runAgent`)
     // --------------------------------------------------------------------------
     function runAgent(agentId, runContext) {
       var ag = agentsById.get(agentId);
@@ -1983,6 +4044,35 @@
       var auditSteps = [];
       var blockedPermissionAttempts = [];
       var securityAlerts = [];
+      var limits = ag.safety_limits || {};
+      var maxSteps = typeof limits.max_steps === 'number' ? limits.max_steps : 25;
+      var maxRequests = typeof limits.max_requests_per_run === 'number' ? limits.max_requests_per_run : 10;
+      var maxRecords = typeof limits.max_records_per_run === 'number' ? limits.max_records_per_run : 200;
+      var maxRuntimeMs = typeof limits.max_runtime_ms === 'number' ? limits.max_runtime_ms : 15000;
+      var maxResultBytes = typeof limits.max_result_bytes === 'number' ? limits.max_result_bytes : 524288;
+      var maxFileBytes = typeof limits.max_file_bytes === 'number' ? limits.max_file_bytes : (5 * 1024 * 1024);
+      var maxFileRows = typeof limits.max_file_rows === 'number' ? limits.max_file_rows : 10000;
+      var stepCounter = 0;
+
+      function checkRuntimeAndStepBudget(stepLabel) {
+        stepCounter += 1;
+        var elapsed = (typeof ctx.simulatedElapsedMs === 'number') ? ctx.simulatedElapsedMs : (Date.now() - startedAtMs);
+        if (stepCounter > maxSteps) {
+          return {
+            exceeded: true,
+            code: 'SAFETY_LIMIT_EXCEEDED_MAX_STEPS',
+            reasonTr: 'Ajan çalışma adımı sınırı (' + maxSteps + ' adım) "' + stepLabel + '" aşamasında aşıldı ve güvenli biçimde durduruldu.'
+          };
+        }
+        if (elapsed > maxRuntimeMs) {
+          return {
+            exceeded: true,
+            code: 'SAFETY_LIMIT_EXCEEDED_MAX_RUNTIME_MS',
+            reasonTr: 'Ajan çalışma süresi sınırı (' + maxRuntimeMs + ' ms) aşıldı ve güvenli biçimde durduruldu.'
+          };
+        }
+        return { exceeded: false };
+      }
 
       if (ag.status === AGENT_LIFECYCLE_STATES_9.PAUSED || ag.status === AGENT_LIFECYCLE_STATES_9.STOPPED) {
         return {
@@ -1993,6 +4083,24 @@
       }
 
       ag.status = AGENT_LIFECYCLE_STATES_9.RUNNING;
+
+      var b0 = checkRuntimeAndStepBudget('init_memory_check');
+      if (b0.exceeded) {
+        ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+        var limCard0 = buildActivityReportCard(ag, startedAtIso, Date.now() - startedAtMs, {
+          summaryTr: b0.reasonTr,
+          limitExceededCode: b0.code,
+          evidenceItems: [],
+          assumptions: [],
+          unknowns: [b0.reasonTr],
+          auditSteps: auditSteps,
+          blockedPermissionAttempts: blockedPermissionAttempts,
+          securityAlerts: securityAlerts
+        });
+        agentRunLogsById.get(agentId).push(limCard0);
+        saveStudioStateToStorage();
+        return limCard0;
+      }
 
       // Adım 1: Kendi izole hafızasına erişim kontrolü
       var memScopeToRead = ctx.attemptCrossAgentMemoryScope || ag.memory_policy.scope;
@@ -2014,6 +4122,7 @@
           securityAlerts: securityAlerts
         });
         agentRunLogsById.get(agentId).push(failReport);
+        saveStudioStateToStorage();
         return failReport;
       }
 
@@ -2038,6 +4147,7 @@
             securityAlerts: securityAlerts
           });
           agentRunLogsById.get(agentId).push(tFail);
+          saveStudioStateToStorage();
           return tFail;
         }
 
@@ -2045,8 +4155,42 @@
           ? ctx.requestedSources
           : ag.allowed_sources;
 
+        if (requestedSources.length > maxRequests) {
+          ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+          var reqLimCard = buildActivityReportCard(ag, startedAtIso, Date.now() - startedAtMs, {
+            summaryTr: 'Tek çalışmada izin verilen azami kaynak isteği sınırı (' + maxRequests + ') aşıldı.',
+            limitExceededCode: 'SAFETY_LIMIT_EXCEEDED_MAX_REQUESTS_PER_RUN',
+            evidenceItems: [],
+            assumptions: [],
+            unknowns: ['Kaynak isteği sayısı (' + requestedSources.length + ') > max_requests_per_run (' + maxRequests + ').'],
+            auditSteps: auditSteps,
+            blockedPermissionAttempts: blockedPermissionAttempts,
+            securityAlerts: securityAlerts
+          });
+          agentRunLogsById.get(agentId).push(reqLimCard);
+          saveStudioStateToStorage();
+          return reqLimCard;
+        }
+
         var checkedSources = [];
         for (var sIdx = 0; sIdx < requestedSources.length; sIdx++) {
+          var bStep = checkRuntimeAndStepBudget('source_permission_check_' + sIdx);
+          if (bStep.exceeded) {
+            ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+            var stepFailCard = buildActivityReportCard(ag, startedAtIso, Date.now() - startedAtMs, {
+              summaryTr: bStep.reasonTr,
+              limitExceededCode: bStep.code,
+              evidenceItems: [],
+              assumptions: [],
+              unknowns: [bStep.reasonTr],
+              auditSteps: auditSteps,
+              blockedPermissionAttempts: blockedPermissionAttempts,
+              securityAlerts: securityAlerts
+            });
+            agentRunLogsById.get(agentId).push(stepFailCard);
+            saveStudioStateToStorage();
+            return stepFailCard;
+          }
           var srcId = requestedSources[sIdx];
           var srcPerm = enforceAgentRuntimePermission(ag, {
             type: 'ACCESS_SOURCE',
@@ -2071,10 +4215,10 @@
             securityAlerts: securityAlerts
           });
           agentRunLogsById.get(agentId).push(noSrcCard);
+          saveStudioStateToStorage();
           return noSrcCard;
         }
 
-        // Kaynak erişilemezlik simülasyonu veya gerçek durum kontrolü
         if (ctx.simulateSourceUnavailable === true) {
           ag.status = AGENT_LIFECYCLE_STATES_9.SOURCE_UNAVAILABLE;
           var unavailCard = buildActivityReportCard(ag, startedAtIso, Date.now() - startedAtMs, {
@@ -2087,6 +4231,7 @@
             securityAlerts: securityAlerts
           });
           agentRunLogsById.get(agentId).push(unavailCard);
+          saveStudioStateToStorage();
           return unavailCard;
         }
 
@@ -2099,11 +4244,10 @@
         var syndicationDupes = [];
         var titleSeenInRun = new Set();
 
-        for (var r = 0; r < candidateRecords.length && matched.length < ag.safety_limits.max_records_per_run; r++) {
+        for (var r = 0; r < candidateRecords.length && matched.length < maxRecords; r++) {
           var rec = candidateRecords[r];
           if (!rec || checkedSources.indexOf(rec.source_id) === -1) continue;
 
-          // Güvenilmeyen kaynak metni enjeksiyon taraması
           var scan = scanUntrustedSourceForInjection((rec.title || '') + ' ' + (rec.summary || ''));
           if (scan.isSuspicious) {
             securityAlerts.push({
@@ -2135,7 +4279,7 @@
           titleSeenInRun.add(normTitle);
           matched.push(rec);
 
-          var fp = rec.record_id + '@' + (rec.source_published_at || rec.event_time || '');
+          var fp = rec.record_id + '@' + (rec.content_hash || rec.source_published_at || rec.event_time || '');
           if (ownMemory.seenRecordFingerprints.indexOf(fp) === -1) {
             newRecords.push(rec);
             ownMemory.seenRecordFingerprints.push(fp);
@@ -2152,11 +4296,14 @@
             recordId: m.record_id,
             sourceId: m.source_id,
             sourceName: m.source_name,
+            sourceUrl: m.source_url,
+            contentHash: m.content_hash,
             title: m.title,
             eventTime: m.event_time,
             publishedAt: m.source_published_at,
             ingestedAt: m.ingested_at,
             lastCheckedAt: startedAtIso,
+            isSampleFixture: Boolean(m.isSampleFixture),
             isNewSinceLastRun: newRecords.indexOf(m) !== -1
           };
         });
@@ -2173,12 +4320,17 @@
           },
           evidenceItems: evidenceItems,
           assumptions: ['Yalnızca ajanın izinli olduğu kaynaklar (' + checkedSources.join(', ') + ') tarandı.'],
-          unknowns: matched.length === 0 ? ['Seçili filtre ve kaynaklarda eşleşen kayıt bulunamadı.'] : [],
+          unknowns: matched.length === 0 ? [
+            worldRecordsPool.length === 0
+              ? EMPTY_WORLD_DATA_MESSAGE_TR
+              : 'Seçili filtre ve kaynaklarda eşleşen kayıt bulunamadı.'
+          ] : [],
           auditSteps: auditSteps,
           blockedPermissionAttempts: blockedPermissionAttempts,
           securityAlerts: securityAlerts
         });
         agentRunLogsById.get(agentId).push(reportCard);
+        saveStudioStateToStorage();
         return reportCard;
       }
 
@@ -2203,6 +4355,7 @@
             securityAlerts: securityAlerts
           });
           agentRunLogsById.get(agentId).push(fFail);
+          saveStudioStateToStorage();
           return fFail;
         }
 
@@ -2219,11 +4372,46 @@
             securityAlerts: securityAlerts
           });
           agentRunLogsById.get(agentId).push(missingFileCard);
+          saveStudioStateToStorage();
           return missingFileCard;
         }
 
-        var rawSnapshotBefore = fileEntry.originalContent;
-        var lines = String(fileEntry.originalContent || '').split(/\r?\n/).filter(function (l) { return l.trim().length > 0; });
+        var rawSnapshotBefore = String(fileEntry.originalContent || '');
+        if (rawSnapshotBefore.length > maxFileBytes) {
+          ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+          var fileSizeFail = buildActivityReportCard(ag, startedAtIso, Date.now() - startedAtMs, {
+            summaryTr: 'Dosya boyutu güvenlik sınırını (' + maxFileBytes + ' bayt) aştığından inceleme durduruldu.',
+            limitExceededCode: 'SAFETY_LIMIT_EXCEEDED_MAX_FILE_BYTES',
+            evidenceItems: [],
+            assumptions: [],
+            unknowns: ['Dosya boyutu (' + rawSnapshotBefore.length + ' bayt) > max_file_bytes (' + maxFileBytes + ').'],
+            auditSteps: auditSteps,
+            blockedPermissionAttempts: blockedPermissionAttempts,
+            securityAlerts: securityAlerts
+          });
+          agentRunLogsById.get(agentId).push(fileSizeFail);
+          saveStudioStateToStorage();
+          return fileSizeFail;
+        }
+
+        var lines = rawSnapshotBefore.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; });
+        if (lines.length - 1 > maxFileRows) {
+          ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+          var fileRowsFail = buildActivityReportCard(ag, startedAtIso, Date.now() - startedAtMs, {
+            summaryTr: 'Dosya satır sayısı güvenlik sınırını (' + maxFileRows + ' satır) aştığından inceleme durduruldu.',
+            limitExceededCode: 'SAFETY_LIMIT_EXCEEDED_MAX_FILE_ROWS',
+            evidenceItems: [],
+            assumptions: [],
+            unknowns: ['Satır sayısı (' + (lines.length - 1) + ') > max_file_rows (' + maxFileRows + ').'],
+            auditSteps: auditSteps,
+            blockedPermissionAttempts: blockedPermissionAttempts,
+            securityAlerts: securityAlerts
+          });
+          agentRunLogsById.get(agentId).push(fileRowsFail);
+          saveStudioStateToStorage();
+          return fileRowsFail;
+        }
+
         var headers = lines.length > 0 ? lines[0].split(',').map(function (h) { return h.trim(); }) : [];
         var validRows = [];
         var rowErrors = [];
@@ -2241,7 +4429,7 @@
           }
           var costVal = Number(cols[1]);
           var daysVal = Number(cols[2]);
-          var riskVal = cols[3] !== '' ? Number(cols[3]) : NaN;
+          var riskVal = cols[3] !== '' && cols[3] !== undefined ? Number(cols[3]) : NaN;
           if (!cols[0] || Number.isNaN(costVal) || Number.isNaN(daysVal) || daysVal < 0 || Number.isNaN(riskVal)) {
             rowErrors.push({
               sourceRowNumber: rowNum,
@@ -2260,7 +4448,6 @@
           }
         }
 
-        // Orijinal dosyanın değiştirilmediğini doğrula
         var originalFileMutated = fileEntry.originalContent !== rawSnapshotBefore;
         ag.status = AGENT_LIFECYCLE_STATES_9.COMPLETED;
 
@@ -2295,6 +4482,7 @@
           securityAlerts: securityAlerts
         });
         agentRunLogsById.get(agentId).push(fileReport);
+        saveStudioStateToStorage();
         return fileReport;
       }
 
@@ -2317,6 +4505,7 @@
             securityAlerts: securityAlerts
           });
           agentRunLogsById.get(agentId).push(cFail);
+          saveStudioStateToStorage();
           return cFail;
         }
 
@@ -2396,7 +4585,16 @@
           blockedPermissionAttempts: blockedPermissionAttempts,
           securityAlerts: securityAlerts
         });
+
+        if (JSON.stringify(compReport).length > maxResultBytes) {
+          ag.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+          compReport.status = AGENT_LIFECYCLE_STATES_9.STOPPED;
+          compReport.limitExceededCode = 'SAFETY_LIMIT_EXCEEDED_MAX_RESULT_BYTES';
+          compReport.summaryTr = 'Çıktı boyutu güvenlik sınırını (' + maxResultBytes + ' bayt) aştı.';
+        }
+
         agentRunLogsById.get(agentId).push(compReport);
+        saveStudioStateToStorage();
         return compReport;
       }
 
@@ -2421,6 +4619,7 @@
         agentVersion: ag.version,
         capabilityType: ag.capability_type,
         status: ag.status,
+        limitExceededCode: d.limitExceededCode || null,
         startedAt: startedAtIso,
         completedAt: new Date().toISOString(),
         durationMs: Math.max(1, durationMs),
@@ -2457,17 +4656,43 @@
       listAgents: listAgents,
       getAgentRunLogs: getAgentRunLogs,
       registerUserFile: registerUserFile,
+      setWorldRecordsPool: setWorldRecordsPool,
+      addWorldRecordsToPool: function (newRecs) {
+        var combined = (Array.isArray(newRecs) ? newRecs : []).concat(worldRecordsPool);
+        return setWorldRecordsPool(combined);
+      },
+      setTrainingSampleMode: setTrainingSampleMode,
+      saveStudioStateToStorage: saveStudioStateToStorage,
+      loadStudioStateFromStorage: loadStudioStateFromStorage,
+      clearStudioStorage: clearStudioStorage,
+      checkMissedScheduledRuns: checkMissedScheduledRuns,
       exportAgentTemplateSafe: exportAgentTemplateSafe,
       parseNaturalLanguageGoalToAgentDraft: parseNaturalLanguageGoalToAgentDraft
     };
   }
 
+  var CaelusWorldDataGate = {
+    LOGICAL_DATA_ZONES_5: LOGICAL_DATA_ZONES_5,
+    WORLD_GATE_MODES_3: WORLD_GATE_MODES_3,
+    ALLOWED_EXTERNAL_SOURCE_HOSTS: ALLOWED_EXTERNAL_SOURCE_HOSTS,
+    validateExternalSourceRequestSafety: validateExternalSourceRequestSafety,
+    previewOutboundSourceQuery: previewOutboundSourceQuery,
+    createWorldDataGate: createWorldDataGate,
+    normalizeAdvisorWorldRecord: normalizeAdvisorWorldRecord,
+    convertLivingWorldRecordToAdvisorRecord: convertLivingWorldRecordToAdvisorRecord,
+    convertAdvisorRecordToLivingWorldV2: convertAdvisorRecordToLivingWorldV2
+  };
+
   var CaelusConversationalAdvisor = {
     ANSWER_PASSPORT_CLASSES_10: ANSWER_PASSPORT_CLASSES_10,
+    EPISTEMIC_STATES_12: EPISTEMIC_STATES_12,
+    EMPTY_WORLD_DATA_MESSAGE_TR: EMPTY_WORLD_DATA_MESSAGE_TR,
     SUPPORTED_SPEECH_ACTS_12: SUPPORTED_SPEECH_ACTS_12,
     ADVISORY_POLICY_ACTIONS_12: ADVISORY_POLICY_ACTIONS_12,
     MEMORY_CLASS_CATALOG_5: MEMORY_CLASS_CATALOG_5,
     VOICE_TECHNOLOGY_CATALOG: VOICE_TECHNOLOGY_CATALOG,
+    ADVISOR_LANGUAGE_CAPABILITY_MATRIX: ADVISOR_LANGUAGE_CAPABILITY_MATRIX,
+    EXTERNAL_TECHNOLOGY_EVALUATION_CATALOG_7: EXTERNAL_TECHNOLOGY_EVALUATION_CATALOG_7,
     getVoiceStackCatalogAndStatus: getVoiceStackCatalogAndStatus,
     normalizeTurkishTokenRoot: normalizeTurkishTokenRoot,
     detectUserCorrection: detectUserCorrection,
@@ -2475,6 +4700,14 @@
     extractTemporalAndNumericSlots: extractTemporalAndNumericSlots,
     analyzeUtteranceNlu: analyzeUtteranceNlu,
     scanUntrustedSourceForInjection: scanUntrustedSourceForInjection,
+    detectUnsupportedQuestionBoundary: detectUnsupportedQuestionBoundary,
+    parseUserTableContentWithRowProvenance: parseUserTableContentWithRowProvenance,
+    normalizeAdvisorWorldRecord: normalizeAdvisorWorldRecord,
+    convertLivingWorldRecordToAdvisorRecord: convertLivingWorldRecordToAdvisorRecord,
+    convertAdvisorRecordToLivingWorldV2: convertAdvisorRecordToLivingWorldV2,
+    computeProvenanceSemiringPolynomial: computeProvenanceSemiringPolynomial,
+    runStratifiedDatalogLineageEngine: runStratifiedDatalogLineageEngine,
+    verifyConstraintConsistencyBounds: verifyConstraintConsistencyBounds,
     buildDefaultAdvisorWorldRecords: buildDefaultAdvisorWorldRecords,
     createConversationalAdvisorSession: createConversationalAdvisorSession
   };
@@ -2485,6 +4718,8 @@
     MANDATORY_AGENT_CAPABILITIES_3: MANDATORY_AGENT_CAPABILITIES_3,
     AGENT_EXECUTION_MODES_3: AGENT_EXECUTION_MODES_3,
     SUPPORTED_AGENT_SOURCES: SUPPORTED_AGENT_SOURCES,
+    EXTERNAL_TECHNOLOGY_EVALUATION_CATALOG_7: EXTERNAL_TECHNOLOGY_EVALUATION_CATALOG_7,
+    evaluateCedarStylePolicy: evaluateCedarStylePolicy,
     parseNaturalLanguageGoalToAgentDraft: parseNaturalLanguageGoalToAgentDraft,
     buildAgentContractV1: buildAgentContractV1,
     validateAgentContractV1: validateAgentContractV1,
@@ -2493,8 +4728,13 @@
     createPersonalAgentStudio: createPersonalAgentStudio
   };
 
+  if (root && typeof root === 'object') {
+    root.CaelusWorldDataGate = CaelusWorldDataGate;
+  }
+
   return {
     CaelusConversationalAdvisor: CaelusConversationalAdvisor,
-    CaelusPersonalAgentStudio: CaelusPersonalAgentStudio
+    CaelusPersonalAgentStudio: CaelusPersonalAgentStudio,
+    CaelusWorldDataGate: CaelusWorldDataGate
   };
 });

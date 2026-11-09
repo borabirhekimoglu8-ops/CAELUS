@@ -6636,35 +6636,92 @@ body.theme-light .linear-setting-row {
     <aside class="caelus-frt-drawer hidden" id="caelus-living-advisor-agent-drawer" role="dialog" aria-modal="false" aria-labelledby="laa-drawer-title">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(136,212,255,0.20); padding-bottom:8px;">
         <div>
-          <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:#FBBF24;">YAŞAYAN DÜNYA KATMANI · LLM DIŞI KONUŞAN DANIŞMAN · KİŞİSEL AJAN STÜDYOSU</div>
+          <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:#FBBF24;">EGEMEN DİJİTAL ALAN · DÜNYA VERİLERİ KAPISI · LLM DIŞI DANIŞMAN · KİŞİSEL AJANLAR</div>
           <strong id="laa-drawer-title" style="font-size:0.98rem; color:#F8FAFC;">Gerçek Kaynaklar &amp; 5 Zaman Damgası · Kanıtlı Diyalog &amp; Cevap Pasaportu · Kodsuz İzole Ajanlar</strong>
         </div>
         <button type="button" class="dunyam-callout-close-btn" id="btn-close-living-advisor-studio" aria-label="Yaşayan Dünya ve Ajanlar penceresini kapat">✕</button>
       </div>
 
+      <!-- EGEMEN DİJİTAL ALAN KONTROL ÇUBUĞU (Bölüm 3 & 9.3: 6 Temel Kullanıcı Sorusu) -->
+      <div id="laa-sovereign-control-bar" style="background:rgba(8,18,36,0.92); border:1px solid rgba(74,222,128,0.28); border-radius:10px; padding:8px 11px; display:flex; flex-direction:column; gap:7px; font-size:0.75rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span class="kpi-badge ok" id="laa-sovereign-location-badge" title="Verileriniz nerede tutuluyor?">📍 Bilgilerim Nerede: Yerel Cihaz / Tarayıcı Hafızası (Dış Sunucuya Otomatik Gönderim Yok)</span>
+            <span class="kpi-badge accent" id="laa-permitted-sources-summary">İzinli Dış Kaynak: 0 / 5</span>
+            <span class="kpi-badge warn hidden" id="laa-training-sample-badge">⚠️ Örnek veri (Eğitim Alanı Açık — Gerçek Hafızaya Aktarılmaz)</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <label for="sel-laa-gate-mode" style="font-weight:600; color:#88D4FF;">Bağlantı Kipi:</label>
+            <select id="sel-laa-gate-mode" class="dt-editor-input" style="padding:3px 8px; font-size:0.74rem; width:auto;" aria-label="Dünya Verileri Kapısı Çalışma Kipi">
+              <option value="OFFLINE" selected>1. Çevrim Dışı (Yalnızca Yerel Veriler · 0 Ağ İsteği)</option>
+              <option value="PERMITTED_CONNECTION">2. İzinli Bağlantı (Yalnızca Seçtiğiniz Kaynaklara HTTPS)</option>
+              <option value="SEPARATE_DEVICE_IMPORT">3. Ayrı Cihazdan Aktarım (SHA-256 Paket İçe Aktarımı)</option>
+            </select>
+            <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer; color:#E6C387; font-weight:600;" title="Açıldığında örnek kayıtlar ayrı Eğitim Alanı hafızasında gösterilir; gerçek dünya verisiyle asla karıştırılmaz.">
+              <input type="checkbox" id="chk-laa-training-sample-mode">
+              <span>Örnek veri (Eğitim Alanı)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Yerel Dosya Yükleme, Paket İçe Aktarma ve Veri Dışa Aktarma / Silme (Bölüm 3.5 & 9.3) -->
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; padding-top:5px; border-top:1px solid rgba(136,212,255,0.14);">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <label for="inp-laa-local-user-file" style="color:var(--text-2); font-weight:600;">📂 Kendi Dosyam (.csv / .tsv):</label>
+            <input type="file" id="inp-laa-local-user-file" accept=".csv,.tsv,.txt,.json" style="font-size:0.71rem; max-width:210px;" aria-label="Kişisel yerel CSV veya veri dosyası seç">
+            <button type="button" class="btn btn-sm" id="btn-laa-import-package-trigger" title="Ayrı cihazdan doğrulanmış JSON veri paketi içe aktar">📥 Paket İçe Aktar</button>
+            <input type="file" id="inp-laa-separate-device-pkg" accept=".json" class="hidden" aria-label="Ayrı cihazdan veri paketi dosyası">
+          </div>
+          <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm" id="btn-laa-export-user-data" title="Tüm yerel tercihlerinizi, dosyalarınızı ve ajan tanımlarınızı dışa aktarın">💾 Verilerimi Dışa Aktar</button>
+            <button type="button" class="btn btn-sm" id="btn-laa-delete-user-data" title="Yerel konuşma geçmişini, tercihleri ve ajan kayıtlarını silin">🗑 Yerel Verilerimi Sil</button>
+          </div>
+        </div>
+        <div id="laa-sovereign-action-feedback" class="hidden" style="padding:5px 8px; border-radius:6px; background:rgba(16,82,56,0.45); border:1px solid #3DD68C; color:#F8FAFC;"></div>
+      </div>
+
       <!-- 3 Ana Mod Sekmesi -->
       <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px;" role="tablist" aria-label="Yaşayan Dünya, Konuşan Danışman ve Kişisel Ajan Sekmeleri">
-        <button type="button" class="caelus-frt-step-pill active" data-laa-tab="living-world" id="btn-laa-tab-living-world" role="tab" aria-selected="true">1. Yaşayan Dünya (DÜNYA ŞİMDİ / İLGİLENDİĞİM KONU / OLASI BAĞLANTILAR)</button>
+        <button type="button" class="caelus-frt-step-pill active" data-laa-tab="living-world" id="btn-laa-tab-living-world" role="tab" aria-selected="true">1. Yaşayan Dünya &amp; Veri Kapısı (DÜNYA ŞİMDİ / İLGİLENDİĞİM KONU / BAĞLANTILAR)</button>
         <button type="button" class="caelus-frt-step-pill" data-laa-tab="advisor" id="btn-laa-tab-advisor" role="tab" aria-selected="false">2. Konuşan Danışman &amp; Cevap Pasaportu (LLM Dışı)</button>
         <button type="button" class="caelus-frt-step-pill" data-laa-tab="agent-studio" id="btn-laa-tab-agent-studio" role="tab" aria-selected="false">3. Kişisel Ajan Stüdyosu (CAELUS_AGENT_CONTRACT_V1)</button>
       </div>
 
-      <!-- SEKME 1: YAŞAYAN DÜNYA KATMANI -->
+      <!-- SEKME 1: YAŞAYAN DÜNYA KATMANI VE DENETLENEBİLİR DÜNYA VERİLERİ KAPISI -->
       <div class="caelus-frt-card" id="laa-panel-living-world">
         <div id="laa-empty-world-honesty-banner" style="background:rgba(15,28,52,0.88); border:1px dashed rgba(136,212,255,0.42); border-radius:10px; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
           <div>
-            <div style="font-size:0.70rem; font-weight:700; color:#E6C387; text-transform:uppercase;">VARSAYILAN DÜRÜST DÜNYA DURUMU (ÖRNEK SENARYO ≠ GERÇEK DÜNYA)</div>
-            <div id="laa-empty-world-message" style="font-size:0.81rem; color:#F8FAFC; white-space:pre-line; margin-top:2px;">Henüz dünya verisi yok.
-Gerçek veri kaynaklarını bağlayabilir veya kendi dosyanı yükleyebilirsin.</div>
+            <div style="font-size:0.70rem; font-weight:700; color:#E6C387; text-transform:uppercase;">VARSAYILAN DÜRÜST DÜNYA DURUMU (ÖRNEK VERİ ≠ GERÇEK DÜNYA)</div>
+            <div id="laa-empty-world-message" style="font-size:0.81rem; color:#F8FAFC; white-space:pre-line; margin-top:2px;">Henüz gerçek dünya verisi alınmadı. Bir kaynak seçebilir veya dosya ekleyebilirsin.</div>
           </div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <span class="kpi-badge warn" id="laa-sample-separation-badge">Örnek Senaryolar Ayrıştırıldı (ÖRNEK SENARYO)</span>
+            <span class="kpi-badge warn" id="laa-sample-separation-badge">Üretim Modu: 0 Sahte Olgu</span>
             <span class="kpi-badge accent" id="laa-scheduler-mode-badge">Zamanlayıcı: YALNIZ_UYGULAMA_ACIKKEN</span>
           </div>
         </div>
 
+        <!-- Dış Kaynak Sorgu ve Paylaşım Önizleme Kutusu (Bölüm 3.3 & 4) -->
+        <div id="laa-source-gate-controls" style="background:rgba(10,20,40,0.82); border:1px solid rgba(136,212,255,0.22); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:6px; font-size:0.75rem;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <label for="sel-laa-source-id" style="font-weight:600; color:#88D4FF;">Kaynak Seç:</label>
+            <select id="sel-laa-source-id" class="dt-editor-input" style="padding:4px 8px; font-size:0.75rem; width:auto;" aria-label="Sorgulanacak açık veri kaynağı">
+              <option value="wikidata">Wikidata (Varlık &amp; İlişki Grafı — CC0)</option>
+              <option value="world_bank_indicators">World Bank (Ülke &amp; Makro Göstergeler — CC BY 4.0)</option>
+              <option value="sec_edgar_submissions">SEC EDGAR (ABD Kurumsal Bildirimleri — Public Domain)</option>
+              <option value="openalex_scholarly">OpenAlex (Akademik Yayın Meta Verisi — CC0)</option>
+              <option value="gdelt_doc_v2">GDELT DOC 2.0 (Haber Başlığı İddiası — İncelemede)</option>
+            </select>
+            <label for="inp-laa-source-query-entity" style="font-weight:600; color:var(--text-2);">Sorgu / Varlık / Ülke Kodu:</label>
+            <input type="text" id="inp-laa-source-query-entity" class="dt-editor-input" value="TSMC" placeholder="Örn: TSMC, Q713418, TUR, 0000320193" style="padding:4px 8px; font-size:0.76rem; width:170px;">
+            <button type="button" class="btn btn-sm btn-primary" id="btn-laa-query-selected-source">🔍 Kaynağa İzin Ver &amp; Şimdi Sorgula</button>
+          </div>
+          <div id="laa-outbound-query-preview" style="font-size:0.71rem; color:#93C5FD; padding:4px 7px; background:rgba(15,28,52,0.75); border-radius:6px;">
+            🔒 Dışarı Gönderilecek Sorgu Önizlemesi: Özel dosyalarınız ve sohbet geçmişiniz asla paylaşılmaz.
+          </div>
+        </div>
+
         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-          <button type="button" class="caelus-pill-filter-btn active" data-lw-subview="DUNYA_SIMDI">DÜNYA ŞİMDİ (5 Gerçek Kaynak &amp; Tazelik)</button>
+          <button type="button" class="caelus-pill-filter-btn active" data-lw-subview="DUNYA_SIMDI">DÜNYA ŞİMDİ (5 Gerçek Kaynak &amp; İzin Durumu)</button>
           <button type="button" class="caelus-pill-filter-btn" data-lw-subview="ILGILENDIGIM_KONU">İLGİLENDİĞİM KONU (Kayıtlar &amp; 5 Zaman Damgası)</button>
           <button type="button" class="caelus-pill-filter-btn" data-lw-subview="OLASI_BAGLANTILAR">OLASI BAĞLANTILAR (A–G Kategorileri &amp; Tekilleştirme)</button>
           <button type="button" class="btn btn-sm btn-primary" id="btn-laa-sync-real-sources" style="margin-left:auto;">🔄 Bağlı Gerçek Kaynakları Şimdi Kontrol Et</button>
@@ -6679,25 +6736,33 @@ Gerçek veri kaynaklarını bağlayabilir veya kendi dosyanı yükleyebilirsin.<
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
           <div>
             <strong style="font-size:0.84rem; color:#88D4FF;">LLM Dışı 8 Katmanlı Konuşan Dünya Muhakeme Danışmanı</strong>
-            <div style="font-size:0.73rem; color:var(--text-2);" id="laa-voice-status-line">Birincil deneyim yazılı konuşmadır. Yerel/tarayıcı ses katmanı isteğe bağlıdır; kullanılamadığında otomatik olarak yazılı konuşmaya düşer.</div>
+            <div style="font-size:0.73rem; color:var(--text-2);" id="laa-voice-status-line">Birincil deneyim yazılı konuşmadır. Yerel/tarayıcı ses katmanı isteğe bağlıdır; hiçbir ses modeli gizlice indirilmez.</div>
           </div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <span class="kpi-badge ok">LLM Bağımlılığı: YOK (Deterministik NLU + Plan + Pasaport)</span>
+            <span class="kpi-badge ok">LLM Bağımlılığı: YOK (Deterministik NLU + 7 Bileşenli Pasaport + ProvSQL Semiring)</span>
             <button type="button" class="btn btn-sm" id="btn-laa-reset-dialogue-state">↺ Diyalog Bağlamını Sıfırla</button>
           </div>
         </div>
 
-        <!-- Zorunlu 3 Turlu Dikey Kesit Hızlı Tetikleyicileri -->
+        <!-- Kullanıcı Kontrollü İlgi Alanı / Tercih Girişi (Sahte Varsayılan Tercih Yüklenmez) -->
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; background:rgba(10,20,40,0.75); padding:6px 9px; border-radius:8px; border:1px solid rgba(136,212,255,0.16); font-size:0.74rem;">
+          <label for="inp-laa-user-interests" style="font-weight:600; color:#88D4FF;">Kişisel İlgi Alanlarım (İsteğe Bağlı):</label>
+          <input type="text" id="inp-laa-user-interests" class="dt-editor-input" placeholder="Örn: yarı iletken tedariki, enerji maliyeti (virgülle ayırın)" style="flex:1; min-width:200px; padding:4px 8px; font-size:0.75rem;">
+          <button type="button" class="btn btn-sm" id="btn-laa-save-user-interests">✓ Tercihimi Kaydet</button>
+        </div>
+
+        <!-- Zorunlu 3 Turlu Dikey Kesit ve Yerel Dosya Hızlı Tetikleyicileri -->
         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-          <span style="font-size:0.72rem; color:#E6C387; font-weight:700;">3 Turlu Dikey Kesit:</span>
+          <span style="font-size:0.72rem; color:#E6C387; font-weight:700;">Örnek Sorular:</span>
           <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="TSMC hakkında son dönemde ne değişti?">1. "TSMC hakkında son dönemde ne değişti?"</button>
           <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Bu değişiklik hangi kurumlarla ilişkili?">2. "Bu değişiklik hangi kurumlarla ilişkili?"</button>
           <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Peki bu benim ilgilendiğim alanı etkiler mi?">3. "Peki bu benim ilgilendiğim alanı etkiler mi?"</button>
           <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Hayır, Apple Inc. demek istedim">Düzeltme: "Hayır, Apple Inc. demek istedim"</button>
+          <button type="button" class="chip-btn laa-advisor-quick-q" data-advisor-q="Yüklediğim CSV dosyamda hangi satırlar var?">Dosya: "Yüklediğim CSV dosyamda hangi satırlar var?"</button>
         </div>
 
         <div style="display:flex; gap:8px;">
-          <input type="text" id="inp-laa-advisor-question" class="dt-editor-input" placeholder="Kurum, değişiklik, ilişki, varsayım veya seçenek sorunuzu yazın..." style="flex:1; padding:7px 10px; font-size:0.81rem;">
+          <input type="text" id="inp-laa-advisor-question" class="dt-editor-input" placeholder="Kurum, değişiklik, ilişki, yerel dosya, varsayım veya seçenek sorunuzu yazın..." style="flex:1; padding:7px 10px; font-size:0.81rem;">
           <button type="button" class="btn btn-sm btn-primary" id="btn-laa-advisor-ask">Sor &amp; Kanıtla</button>
         </div>
 
@@ -6709,15 +6774,36 @@ Gerçek veri kaynaklarını bağlayabilir veya kendi dosyanı yükleyebilirsin.<
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
           <div>
             <strong style="font-size:0.84rem; color:#88D4FF;">Kodsuz Kişisel Ajan Oluşturma ve Çalıştırma Platformu (CAELUS_AGENT_CONTRACT_V1)</strong>
-            <div style="font-size:0.73rem; color:var(--text-2);">Ajanlar yalnızca sizin açıkça verdiğiniz kaynak, dosya ve araç yetkileriyle çalışır; ajanlar arası hafıza izoledir.</div>
+            <div style="font-size:0.73rem; color:var(--text-2);">Ajanlar yalnızca sizin açıkça verdiğiniz kaynak, dosya ve araç yetkileriyle çalışır; ajanlar arası hafıza izoledir ve tanımlar yerel hafızada saklanır.</div>
           </div>
-          <span class="kpi-badge accent">Çalışma Modu: MANUAL / APP_OPEN (Dürüst Sınır)</span>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <span class="kpi-badge accent">Çalışma Modu: MANUAL / APP_OPEN (Dürüst Sınır)</span>
+            <button type="button" class="btn btn-sm" id="btn-laa-load-starter-agents" title="3 zorunlu yetenek türü için örnek ajan şablonlarını oluştur">📋 3 Örnek Ajan Şablonunu Yükle</button>
+          </div>
         </div>
 
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:rgba(8,16,32,0.75); padding:8px 10px; border-radius:10px; border:1px solid rgba(136,212,255,0.18);">
-          <input type="text" id="inp-laa-agent-goal" class="dt-editor-input" placeholder="Örn: TSMC ve Apple tedarik bildirimlerini takip et (veya test için: Bütün sosyal medyayı izle)" style="flex:1; min-width:220px; padding:6px 10px; font-size:0.79rem;">
-          <button type="button" class="btn btn-sm btn-primary" id="btn-laa-parse-goal-create-agent">+ Doğal Dilden Ajan Taslağı Oluştur</button>
-          <button type="button" class="btn btn-sm" id="btn-laa-test-unsupported-goal" title="Desteklenmeyen kaynak talebini dürüstçe reddetme testi">Test: "Bütün sosyal medyayı izle"</button>
+        <div style="display:flex; flex-direction:column; gap:6px; background:rgba(8,16,32,0.75); padding:8px 10px; border-radius:10px; border:1px solid rgba(136,212,255,0.18);">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <input type="text" id="inp-laa-agent-goal" class="dt-editor-input" placeholder="Örn: TSMC ve Apple tedarik bildirimlerini takip et (veya test için: Bütün sosyal medyayı izle)" style="flex:1; min-width:220px; padding:6px 10px; font-size:0.79rem;">
+            <button type="button" class="btn btn-sm btn-primary" id="btn-laa-parse-goal-create-agent">+ Doğal Dilden Ajan Oluştur</button>
+            <button type="button" class="btn btn-sm" id="btn-laa-test-unsupported-goal" title="Desteklenmeyen kaynak talebini dürüstçe reddetme testi">Test: "Bütün sosyal medyayı izle"</button>
+          </div>
+          <!-- Varsayılan Kapalı İzin Kutuları (Bölüm 6.2: İzinler varsayılan olarak kapalı olmalı) -->
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:0.73rem; color:var(--text-2);">
+            <strong style="color:#E6C387;">Açık Ajan İzinleri (Varsayılan Kapalı):</strong>
+            <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+              <input type="checkbox" id="chk-laa-agent-perm-network">
+              <span>Dış Kaynak Ağ İzni (network_access)</span>
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+              <input type="checkbox" id="chk-laa-agent-perm-file">
+              <span>Yerel Dosya Okuma İzni (local_file_read)</span>
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+              <input type="checkbox" id="chk-laa-agent-perm-notify">
+              <span>Uygulama İçi Bildirim (notifications)</span>
+            </label>
+          </div>
         </div>
 
         <div id="laa-agent-draft-feedback" class="hidden" style="font-size:0.77rem; padding:8px 10px; border-radius:8px; background:rgba(244,63,94,0.14); border:1px solid rgba(244,63,94,0.45); color:#FFE4E6;"></div>

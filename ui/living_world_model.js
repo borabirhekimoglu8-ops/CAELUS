@@ -3514,7 +3514,51 @@
   function parseWikidataEntityResponse(jsonPayload, options) {
     const opts = options || {};
     const nowIso = opts.nowIso || new Date().toISOString();
-    if (!jsonPayload || typeof jsonPayload !== 'object' || !jsonPayload.entities) {
+    if (!jsonPayload || typeof jsonPayload !== 'object') {
+      return { ok: false, errorCode: 'WIKIDATA_SCHEMA_MISMATCH', records: [] };
+    }
+    if (Array.isArray(jsonPayload.search) && !jsonPayload.entities) {
+      const searchRecords = [];
+      for (const item of jsonPayload.search) {
+        if (!item || !item.id) continue;
+        const qid = String(item.id);
+        const chosenLabel = String(item.label || qid);
+        const chosenDesc = String(item.description || 'not_provided');
+        const norm = normalizeAndValidateWorldRecord({
+          record_id: `WIKIDATA-ENT-${qid}`,
+          record_type: 'ENTITY',
+          subject: {
+            id: `WIKIDATA:${qid}`,
+            name: chosenLabel,
+            entity_type: 'ORGANIZATION_OR_CONCEPT',
+            domain: 'KNOWLEDGE_GRAPH',
+            external_ids: { wikidata_qid: qid, concepturi: item.concepturi || null }
+          },
+          relation: 'WIKIDATA_ENTITY_DESCRIPTION',
+          object: chosenDesc,
+          units: 'text',
+          source_id: 'wikidata',
+          source_url: item.url ? (String(item.url).startsWith('//') ? `https:${item.url}` : String(item.url)) : `https://www.wikidata.org/wiki/${qid}`,
+          source_document_id: `${qid}@search`,
+          source_publisher: 'Wikidata / Wikimedia Foundation',
+          source_license: 'CC0 1.0 Universal',
+          event_time: 'not_provided',
+          source_published_at: 'not_provided',
+          source_updated_at: 'not_provided',
+          ingested_at: nowIso,
+          last_checked_at: nowIso,
+          original_language: opts.language || 'tr',
+          original_text: `${chosenLabel}: ${chosenDesc}`,
+          epistemic_status: 'GERCEK_KAYNAK_KAYDI',
+          evidence_level: 'STRUCTURED_COMMUNITY_KG_REQUIRES_PRIMARY_CHECK',
+          geographic_scope: 'Küresel',
+          commercial_status: 'UYGUN'
+        }, { nowIso });
+        if (norm.valid) searchRecords.push(norm.record);
+      }
+      return { ok: true, records: searchRecords };
+    }
+    if (!jsonPayload.entities) {
       return { ok: false, errorCode: 'WIKIDATA_SCHEMA_MISMATCH', records: [] };
     }
     const records = [];
@@ -3921,17 +3965,25 @@
    * Canlı HTTP kaynağı sorgulama adaptörü (Çevrim dışı deterministik çekirdekten ayrı sınırda çalışır).
    * Erişilemeyen kaynaklar için asla sahte canlı yanıt üretmez; gerçek hata durumunu döndürür.
    */
-  async function fetchFromRealWorldSource(sourceId, queryParams, options) {
+  async function fetchFromRealWorldSource(rawSourceId, queryParams, options) {
     const opts = options || {};
     const params = queryParams || {};
     const nowIso = opts.nowIso || new Date().toISOString();
+    const aliasMap = {
+      wikidata_api: 'wikidata',
+      world_bank_api: 'world_bank_indicators',
+      sec_edgar: 'sec_edgar_submissions',
+      openalex: 'openalex_scholarly',
+      gdelt: 'gdelt_doc_v2'
+    };
+    const sourceId = aliasMap[rawSourceId] || rawSourceId;
     const spec = REAL_WORLD_SOURCE_CONNECTORS_CATALOG[sourceId];
     if (!spec) {
       return {
         ok: false,
-        source_id: sourceId,
+        source_id: rawSourceId,
         errorCode: 'UNKNOWN_SOURCE_ID',
-        userMessageTr: `Kaynak tanımı bulunamadı: ${sourceId}`,
+        userMessageTr: `Kaynak tanımı bulunamadı: ${rawSourceId}`,
         records: []
       };
     }
@@ -3967,23 +4019,33 @@
     };
 
     if (sourceId === 'wikidata') {
-      const ids = Array.isArray(params.entityIds) && params.entityIds.length > 0
-        ? params.entityIds.join('|')
-        : (params.entityId || 'Q312|Q2283|Q43');
-      url = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(ids)}&languages=tr|en&props=labels|descriptions|claims|info&format=json&origin=*`;
+      const rawCandidate = params.searchQuery || params.query || params.entityId || null;
+      const searchQ = rawCandidate && !/^Q\d+(\|Q\d+)*$/i.test(String(rawCandidate).trim())
+        ? String(rawCandidate).trim()
+        : null;
+      if (searchQ && (!Array.isArray(params.entityIds) || params.entityIds.length === 0) && !params.ids) {
+        const lang = params.language || 'tr';
+        url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(searchQ)}&language=${encodeURIComponent(lang)}&uselang=${encodeURIComponent(lang)}&limit=${Number(params.limit) || 3}&format=json&origin=*`;
+      } else {
+        const ids = Array.isArray(params.entityIds) && params.entityIds.length > 0
+          ? params.entityIds.join('|')
+          : (params.ids || params.entityId || 'Q312|Q2283|Q43');
+        url = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(ids)}&languages=tr|en&props=labels|descriptions|claims|info&format=json&origin=*`;
+      }
     } else if (sourceId === 'gdelt_doc_v2') {
       const q = params.query || 'semiconductor OR energy';
       url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=ArtList&maxrecords=${Number(params.maxRecords) || 5}&timespan=24h&format=json`;
     } else if (sourceId === 'world_bank_indicators') {
-      const countries = params.countries || 'TUR;WLD';
+      const rawCountries = String(params.countries || params.country || 'TUR');
+      const safeCountries = rawCountries.split(';').map((c) => encodeURIComponent(c.trim())).filter(Boolean).join(';') || 'TUR';
       const indicator = params.indicator || 'NY.GDP.MKTP.KD.ZG';
-      url = `https://api.worldbank.org/v2/country/${encodeURIComponent(countries)}/indicator/${encodeURIComponent(indicator)}?format=json&per_page=${Number(params.perPage) || 6}`;
+      url = `https://api.worldbank.org/v2/country/${safeCountries}/indicator/${encodeURIComponent(indicator)}?format=json&per_page=${Number(params.perPage) || 6}`;
     } else if (sourceId === 'sec_edgar_submissions') {
       const cikRaw = String(params.cik || '0000320193').replace(/\D/g, '').padStart(10, '0');
       url = `https://data.sec.gov/submissions/CIK${cikRaw}.json`;
       headers['User-Agent'] = 'CAELUSResearchPlatform contact@caelus-project.org';
     } else if (sourceId === 'openalex_scholarly') {
-      const search = params.search || 'causal discovery world model';
+      const search = params.search || params.query || 'causal discovery world model';
       url = `https://api.openalex.org/works?search=${encodeURIComponent(search)}&per-page=${Number(params.perPage) || 4}&mailto=contact@caelus-project.org`;
     }
 
@@ -4015,7 +4077,27 @@
         };
       }
 
-      const json = await resp.json();
+      let json = await resp.json();
+      if (sourceId === 'wikidata' && Array.isArray(json && json.search) && json.search.length > 0 && !json.entities && params.resolveFullEntities !== false) {
+        const foundIds = json.search.slice(0, 3).map((s) => s && s.id).filter((id) => /^Q\d+$/i.test(String(id || '')));
+        if (foundIds.length > 0) {
+          try {
+            const detailUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(foundIds.join('|'))}&languages=tr|en&props=labels|descriptions|claims|info&format=json&origin=*`;
+            const detailResp = await fetchFn(detailUrl, {
+              headers,
+              signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined
+            });
+            if (detailResp && detailResp.ok) {
+              const detailJson = await detailResp.json();
+              if (detailJson && detailJson.entities) {
+                json = detailJson;
+              }
+            }
+          } catch (_) {
+            // wbsearchentities sonucu yedek olarak kullanılır
+          }
+        }
+      }
       let parsed = { ok: false, records: [] };
       if (sourceId === 'wikidata') parsed = parseWikidataEntityResponse(json, { nowIso });
       else if (sourceId === 'gdelt_doc_v2') parsed = parseGdeltArtListResponse(json, { nowIso, queryTopic: params.query });
@@ -4237,7 +4319,8 @@
       getSchedulerRuntimeSummary,
       pauseOrResumeSource,
       ingestNormalizedRecordsIntoScheduler,
-      pollSourceSafe
+      pollSourceSafe,
+      syncSourceNow: pollSourceSafe
     };
   }
 

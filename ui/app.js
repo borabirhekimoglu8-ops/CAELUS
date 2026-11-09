@@ -27048,106 +27048,222 @@ function initCaelusLivingAdvisorAndAgentStudio() {
   const lwm = window.CaelusLivingWorldModel;
   const advMod = window.CaelusConversationalAdvisor;
   const stuMod = window.CaelusPersonalAgentStudio;
+  const gateMod = window.CaelusWorldDataGate;
 
   const drawer = document.getElementById('caelus-living-advisor-agent-drawer');
   const openBtn = document.getElementById('btn-stage-living-advisor-studio');
   const closeBtn = document.getElementById('btn-close-living-advisor-studio');
   if (!drawer) return;
 
+  // Üretim modunda ilk açılışta 0 sahte olgu, boş kullanıcı tercihi ve varsayılan çevrim dışı veri kapısı ile başlar
+  const worldDataGate = gateMod && typeof gateMod.createWorldDataGate === 'function'
+    ? gateMod.createWorldDataGate({ initialMode: 'OFFLINE' })
+    : null;
+
   const advisorSession = advMod && typeof advMod.createConversationalAdvisorSession === 'function'
     ? advMod.createConversationalAdvisorSession({
-        language: (typeof state !== 'undefined' && state.activeLocaleCode) || 'tr-TR'
+        language: (typeof state !== 'undefined' && state.activeLocaleCode) || 'tr-TR',
+        enableTrainingSampleMode: false
       })
     : null;
 
   const agentStudio = stuMod && typeof stuMod.createPersonalAgentStudio === 'function'
-    ? stuMod.createPersonalAgentStudio()
+    ? stuMod.createPersonalAgentStudio({
+        enableTrainingSampleMode: false
+      })
     : null;
 
   const livingScheduler = lwm && typeof lwm.createLivingWorldScheduler === 'function'
     ? lwm.createLivingWorldScheduler({
-        executionMode: 'YALNIZ_UYGULAMA_ACIKKEN'
+        executionMode: 'YALNIZ_UYGULAMA_ACIKKEN',
+        defaultEnabled: false
       })
     : null;
 
-  // Varsayılan 3 Zorunlu Ajanı oluştur (1. Gerçek Kaynak Takip, 2. Kullanıcı Dosyası İnceleme, 3. Seçenek Karşılaştırma)
-  if (agentStudio && agentStudio.listAgents().length === 0) {
-    agentStudio.createAgent({
-      agent_id: 'agent-real-source-tracker-01',
-      name: '1. Gerçek Kaynak Takip Ajanı (TSMC & Apple)',
-      purpose: 'Wikidata, SEC EDGAR ve OpenAlex kaynaklarında TSMC ve Apple Inc. ile ilgili yeni gelişmeleri ve sendikasyon tekrarlarını izlemek.',
-      capabilityType: 'TRACK_REAL_SOURCE',
-      executionMode: 'APP_OPEN',
-      allowed_sources: ['wikidata', 'sec_edgar', 'openalex'],
-      entities: ['TSMC', 'Apple Inc.'],
-      network_access: true,
-      local_file_read: false
-    });
-    agentStudio.createAgent({
-      agent_id: 'agent-user-file-inspector-02',
-      name: '2. Kullanıcı Dosyası İnceleme Ajanı (Tedarik CSV)',
-      purpose: 'Yalnızca izin verilen tedarik_secenekleri_2026.csv dosyasını okuyarak sütunları eşlemek, bozuk satırları yakalamak ve satır izi kurmak.',
-      capabilityType: 'INSPECT_USER_FILE',
-      executionMode: 'MANUAL',
-      allowed_sources: ['user_local_file'],
-      user_files: ['tedarik_secenekleri_2026.csv'],
-      network_access: false,
-      local_file_read: true
-    });
-    agentStudio.createAgent({
-      agent_id: 'agent-option-comparator-03',
-      name: '3. Seçenek Karşılaştırma ve Özet Ajanı',
-      purpose: 'Tedarik seçeneklerini maliyet, süre ve risk kriterlerine göre deterministik formülle karşılaştırmak ve birim uyumsuzluklarını yakalamak.',
-      capabilityType: 'COMPARE_OPTIONS',
-      executionMode: 'MANUAL',
-      allowed_sources: ['user_local_file'],
-      network_access: false,
-      local_file_read: false,
-      parameters: {
-        options: [
-          { name: 'Dresden Yerel Hat', cost: 142, currency: 'USD', durationDays: 18, riskScore: 15 },
-          { name: 'Asya Ekspres Hat', cost: 118, currency: 'USD', durationDays: 34, riskScore: 42 }
-        ]
-      }
-    });
+  function loadStarterAgentTemplatesOnDemand() {
+    if (!agentStudio) return;
+    if (!agentStudio.listAgents().some((a) => a.agent_id === 'agent-real-source-tracker-01')) {
+      agentStudio.createAgent({
+        agent_id: 'agent-real-source-tracker-01',
+        name: '1. Gerçek Kaynak Takip Ajanı (Örnek Şablon)',
+        purpose: 'İzin verilen açık kaynaklarda (Wikidata, World Bank, SEC EDGAR, OpenAlex) seçtiğiniz varlıklarla ilgili yeni kayıtları ve sendikasyon tekrarlarını izlemek.',
+        capabilityType: 'TRACK_REAL_SOURCE',
+        executionMode: 'APP_OPEN',
+        allowed_sources: ['wikidata', 'world_bank', 'sec_edgar', 'openalex'],
+        entities: ['TSMC', 'Turkiye'],
+        network_access: true,
+        local_file_read: false
+      });
+    }
+    if (!agentStudio.listAgents().some((a) => a.agent_id === 'agent-user-file-inspector-02')) {
+      agentStudio.createAgent({
+        agent_id: 'agent-user-file-inspector-02',
+        name: '2. Kullanıcı Dosyası İnceleme Ajanı (Örnek Şablon)',
+        purpose: 'Yalnızca sizin yüklediğiniz ve izin verdiğiniz yerel CSV/TSV dosyasını okuyarak sütunları eşlemek, bozuk satırları yakalamak ve satır izi kurmak.',
+        capabilityType: 'INSPECT_USER_FILE',
+        executionMode: 'MANUAL',
+        allowed_sources: ['user_local_file'],
+        user_files: ['tedarik_secenekleri_2026.csv'],
+        network_access: false,
+        local_file_read: true
+      });
+    }
+    if (!agentStudio.listAgents().some((a) => a.agent_id === 'agent-option-comparator-03')) {
+      agentStudio.createAgent({
+        agent_id: 'agent-option-comparator-03',
+        name: '3. Seçenek Karşılaştırma ve Özet Ajanı (Örnek Şablon)',
+        purpose: 'Seçenekleri maliyet, süre ve risk kriterlerine göre deterministik formülle karşılaştırmak ve birim uyumsuzluklarını yakalamak.',
+        capabilityType: 'COMPARE_OPTIONS',
+        executionMode: 'MANUAL',
+        allowed_sources: ['user_local_file'],
+        network_access: false,
+        local_file_read: false,
+        parameters: {
+          options: [
+            { name: 'Seçenek A (Yerel Hat)', cost: 142, currency: 'USD', durationDays: 18, riskScore: 15 },
+            { name: 'Seçenek B (Uzun Mesafe Hat)', cost: 118, currency: 'USD', durationDays: 34, riskScore: 42 }
+          ]
+        }
+      });
+    }
   }
 
   let activeLaaTab = 'living-world';
   let activeLwSubview = 'DUNYA_SIMDI';
+
+  function showSovereignFeedback(msgHtml, isWarn) {
+    const el = document.getElementById('laa-sovereign-action-feedback');
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.style.background = isWarn ? 'rgba(120,53,15,0.55)' : 'rgba(16,82,56,0.45)';
+    el.style.borderColor = isWarn ? '#F59E0B' : '#3DD68C';
+    el.innerHTML = msgHtml;
+  }
+
+  function updateSovereignStatusBarAndPreview() {
+    const summaryBadge = document.getElementById('laa-permitted-sources-summary');
+    const modeSelect = document.getElementById('sel-laa-gate-mode');
+    const sampleBadge = document.getElementById('laa-training-sample-badge');
+    const sampleSepBadge = document.getElementById('laa-sample-separation-badge');
+    const previewBox = document.getElementById('laa-outbound-query-preview');
+    const sourceSelect = document.getElementById('sel-laa-source-id');
+    const queryInput = document.getElementById('inp-laa-source-query-entity');
+
+    if (worldDataGate) {
+      const perms = worldDataGate.getSourcePermissionsAndStatus();
+      const enabledCount = perms.filter((p) => p.enabled && !p.paused).length;
+      const modeInfo = worldDataGate.getMode();
+      if (summaryBadge) {
+        summaryBadge.textContent = `Kip: ${modeInfo.labelTr} · İzinli Kaynak: ${enabledCount} / ${perms.length}`;
+      }
+      if (modeSelect && modeSelect.value !== modeInfo.code) {
+        modeSelect.value = modeInfo.code;
+      }
+    }
+
+    if (advisorSession) {
+      const mem = advisorSession.inspectSeparatedMemory();
+      const isSample = Boolean(mem.trainingSampleModeActive);
+      if (sampleBadge) sampleBadge.classList.toggle('hidden', !isSample);
+      if (sampleSepBadge) {
+        sampleSepBadge.textContent = isSample
+          ? '⚠️ Örnek veri (Eğitim Alanı Açık — Gerçek Hafızadan İzole)'
+          : `Üretim Modu: ${mem.C_SOURCED_WORLD_MEMORY_COUNT} Gerçek Kayıt · 0 Sahte Olgu`;
+      }
+    }
+
+    if (previewBox && gateMod && typeof gateMod.previewOutboundSourceQuery === 'function') {
+      const sid = sourceSelect ? sourceSelect.value : 'wikidata';
+      const qVal = queryInput ? queryInput.value.trim() : 'TSMC';
+      const qParams = sid === 'wikidata'
+        ? (/^Q\d+/i.test(qVal) ? { entityId: qVal } : { searchQuery: qVal || 'TSMC' })
+        : sid === 'world_bank_indicators'
+          ? { countries: qVal || 'TUR', indicator: 'NY.GDP.MKTP.KD.ZG' }
+          : sid === 'sec_edgar_submissions'
+            ? { cik: qVal || '0000320193' }
+            : sid === 'openalex_scholarly'
+              ? { search: qVal || 'supply chain' }
+              : { query: qVal || 'semiconductor' };
+      const prev = gateMod.previewOutboundSourceQuery(sid, qParams, {});
+      previewBox.textContent = `🔒 Paylaşım Önizlemesi: ${prev.userPreviewTr || ''}`;
+    }
+  }
+
+  function getActiveRecordsForDisplay() {
+    if (!advisorSession) return [];
+    const mem = advisorSession.inspectSeparatedMemory();
+    if (mem.C_SOURCED_WORLD_MEMORY && mem.C_SOURCED_WORLD_MEMORY.length > 0) {
+      return mem.C_SOURCED_WORLD_MEMORY;
+    }
+    if (mem.trainingSampleModeActive && advMod && typeof advMod.buildDefaultAdvisorWorldRecords === 'function') {
+      return advMod.buildDefaultAdvisorWorldRecords();
+    }
+    return [];
+  }
 
   function renderLivingWorldSubview() {
     const host = document.getElementById('laa-living-world-content');
     const emptyMsgEl = document.getElementById('laa-empty-world-message');
     if (!host || !lwm) return;
 
-    const locale = (typeof state !== 'undefined' && state.activeLocaleCode) || 'tr-TR';
-    if (emptyMsgEl && lwm.EMPTY_WORLD_MESSAGES_12) {
-      emptyMsgEl.textContent = lwm.EMPTY_WORLD_MESSAGES_12[locale] || lwm.EMPTY_WORLD_MESSAGES_12['tr-TR'];
-    }
+    updateSovereignStatusBarAndPreview();
+    const memRecords = getActiveRecordsForDisplay();
+    const isSampleActive = advisorSession ? Boolean(advisorSession.inspectSeparatedMemory().trainingSampleModeActive) : false;
 
-    const memRecords = advisorSession ? advisorSession.inspectSeparatedMemory().C_SOURCED_WORLD_MEMORY : [];
+    if (emptyMsgEl) {
+      if (memRecords.length === 0) {
+        emptyMsgEl.textContent = (advMod && advMod.EMPTY_WORLD_DATA_MESSAGE_TR)
+          || 'Henüz gerçek dünya verisi alınmadı. Bir kaynak seçebilir veya dosya ekleyebilirsin.';
+      } else if (isSampleActive && (!advisorSession || advisorSession.inspectSeparatedMemory().C_SOURCED_WORLD_MEMORY_COUNT === 0)) {
+        emptyMsgEl.textContent = '⚠️ Örnek veri (Eğitim Alanı açık): Gösterilen kayıtlar eğitim amaçlıdır; gerçek dünya hafızasına aktarılmaz ve canlı kaynak doğrulaması sayılmaz.';
+      } else {
+        emptyMsgEl.textContent = `Gerçek kaynaklardan doğrulanmış şema ile alınan ${memRecords.length} kayıt yerel dünya hafızasında incelenmeye hazır.`;
+      }
+    }
 
     if (activeLwSubview === 'DUNYA_SIMDI') {
       const connectors = Array.isArray(lwm.REAL_WORLD_SOURCE_CONNECTORS_CATALOG)
         ? lwm.REAL_WORLD_SOURCE_CONNECTORS_CATALOG
         : Object.values(lwm.REAL_WORLD_SOURCE_CONNECTORS_CATALOG || {});
+      const gatePerms = worldDataGate ? worldDataGate.getSourcePermissionsAndStatus() : [];
+      const permById = {};
+      gatePerms.forEach((p) => { permById[p.sourceId] = p; });
+
       const clock = typeof lwm.getSystemClockAndTimezoneState === 'function'
         ? lwm.getSystemClockAndTimezoneState()
         : { utcNowIso: new Date().toISOString(), timeZone: 'UTC' };
 
       const rowsHtml = connectors.map((c) => {
-        const sid = c.sourceId || c.id || '';
-        const name = c.displayName || c.name || sid;
-        const lic = c.license || 'Açık Kaynak';
-        const comm = c.commercialStatus || 'ALLOWED_COMMERCIAL';
-        const domain = (c.domains || []).join(', ');
+        const sid = c.source_id || c.sourceId || c.id || '';
+        const name = c.name || c.displayName || sid;
+        const lic = c.data_license || c.license || 'Açık Lisans';
+        const comm = c.commercial_usage_status || c.commercialStatus || 'İNCELEMEDE';
+        const domain = (c.domain_coverage || c.domains || []).join(', ');
+        const gp = permById[sid] || { enabled: false, paused: false, lastSuccessAt: null, lastError: null, recordsCount: 0 };
+        const statusBadge = gp.enabled && !gp.paused
+          ? '<span class="kpi-badge ok">İZİNLİ</span>'
+          : gp.paused
+            ? '<span class="kpi-badge warn">DURAKLATILDI</span>'
+            : '<span class="kpi-badge">KAPALI (Varsayılan)</span>';
+        const syncInfo = gp.lastError
+          ? `<span style="color:#F87171; font-size:0.68rem;">Hata: ${escapeHtml(gp.lastError.messageTr || gp.lastError.code || '')}</span>`
+          : gp.lastSuccessAt
+            ? `<span style="color:#4ADE80; font-size:0.68rem;">Son Başarılı: ${escapeHtml(String(gp.lastSuccessAt).slice(0, 19))} (${gp.recordsCount} kayıt)</span>`
+            : '<span style="color:var(--text-2); font-size:0.68rem;">Henüz sorgulanmadı</span>';
+
         return `
           <tr>
             <td><strong>${escapeHtml(name)}</strong><br><code class="mono" style="font-size:0.68rem;">${escapeHtml(sid)}</code></td>
             <td>${escapeHtml(domain)}</td>
-            <td><span class="kpi-badge ok">${escapeHtml(lic)}</span></td>
-            <td><span class="kpi-badge accent">${escapeHtml(comm)}</span></td>
-            <td><span class="kpi-badge">YALNIZ_UYGULAMA_ACIKKEN</span></td>
+            <td><span class="kpi-badge ok">${escapeHtml(lic)}</span><br><span style="font-size:0.67rem; color:var(--text-2);">${escapeHtml(comm)}</span></td>
+            <td>${statusBadge}<br>${syncInfo}</td>
+            <td>
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm" data-gate-toggle-source="${escapeHtml(sid)}">${gp.enabled ? 'İzni Kapat' : 'İzin Ver'}</button>
+                <button type="button" class="btn btn-sm btn-primary" data-gate-poll-source="${escapeHtml(sid)}">Şimdi Sorgula</button>
+                <button type="button" class="btn btn-sm" data-gate-remove-source="${escapeHtml(sid)}">Kaldır</button>
+              </div>
+            </td>
           </tr>
         `;
       }).join('');
@@ -27155,7 +27271,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       host.innerHTML = `
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
           <span><strong>Sistem Saati (UTC):</strong> <code class="mono">${escapeHtml(clock.utcNowIso || '')}</code> · Saat Dilimi: <code>${escapeHtml(clock.timeZone || 'UTC')}</code></span>
-          <span class="kpi-badge ok">5 Gerçek Açık Veri Bağlayıcısı Tanımlı</span>
+          <span class="kpi-badge ok">5 Açık Veri Kaynağı · Kaynak Bazlı İzin ve SHA-256 Denetimi</span>
         </div>
         <div class="caelus-frt-table-wrap">
           <table class="caelus-frt-table">
@@ -27163,40 +27279,100 @@ function initCaelusLivingAdvisorAndAgentStudio() {
               <tr>
                 <th>Gerçek Veri Kaynağı</th>
                 <th>Kapsanan Alanlar</th>
-                <th>Lisans</th>
-                <th>Ticari Kullanım</th>
-                <th>Zamanlayıcı Modu</th>
+                <th>Lisans &amp; Ticari Durum</th>
+                <th>İzin &amp; Son Güncelleme</th>
+                <th>Kullanıcı Kontrolü</th>
               </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
           </table>
         </div>
       `;
+
+      host.querySelectorAll('[data-gate-toggle-source]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const sid = btn.getAttribute('data-gate-toggle-source');
+          if (!worldDataGate) return;
+          const cur = worldDataGate.getSourcePermissionsAndStatus().find((x) => x.sourceId === sid);
+          const nextEnabled = !(cur && cur.enabled);
+          worldDataGate.setSourcePermission(sid, nextEnabled);
+          if (nextEnabled && worldDataGate.getMode().code === 'OFFLINE') {
+            worldDataGate.setMode('PERMITTED_CONNECTION');
+          }
+          renderLivingWorldSubview();
+        });
+      });
+
+      host.querySelectorAll('[data-gate-poll-source]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const sid = btn.getAttribute('data-gate-poll-source');
+          const selEl = document.getElementById('sel-laa-source-id');
+          if (selEl) selEl.value = sid;
+          await executeGateSourceQuery(sid);
+        });
+      });
+
+      host.querySelectorAll('[data-gate-remove-source]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const sid = btn.getAttribute('data-gate-remove-source');
+          if (!worldDataGate) return;
+          const rem = worldDataGate.removeSourceRecords(sid);
+          showSovereignFeedback(`✓ <code>${escapeHtml(sid)}</code> kaynağı devre dışı bırakıldı ve ${rem.removedCount} yerel kayıt temizlendi.`, false);
+          renderLivingWorldSubview();
+        });
+      });
     } else if (activeLwSubview === 'ILGILENDIGIM_KONU') {
-      const recRows = memRecords.map((r) => `
-        <tr>
-          <td><strong>${escapeHtml(r.title || r.record_id)}</strong><br><span style="color:var(--text-2); font-size:0.71rem;">${escapeHtml(r.summary || '')}</span></td>
-          <td>${escapeHtml(r.source_name || r.source_id)}<br><code style="font-size:0.67rem;">${escapeHtml(r.source_license || '')}</code></td>
-          <td>
-            <div>A. Olay: <code>${escapeHtml(String(r.event_time || 'not_provided').slice(0, 19))}</code></div>
-            <div>B. Yayın: <code>${escapeHtml(String(r.source_published_at || 'not_provided').slice(0, 19))}</code></div>
-            <div>C. Alım: <code>${escapeHtml(String(r.ingested_at || '').slice(0, 19))}</code></div>
-            <div>D. Kontrol: <code>${escapeHtml(String(r.last_checked_at || '').slice(0, 19))}</code></div>
-          </td>
-          <td><span class="kpi-badge ok">${escapeHtml(r.epistemic_status || 'OBSERVED_FACT')}</span></td>
-        </tr>
-      `).join('');
+      if (memRecords.length === 0) {
+        host.innerHTML = `
+          <div style="padding:12px 14px; border-radius:10px; background:rgba(12,24,46,0.85); border:1px solid rgba(136,212,255,0.25); color:#F8FAFC;">
+            <strong>Henüz gerçek dünya verisi alınmadı. Bir kaynak seçebilir veya dosya ekleyebilirsin.</strong>
+            <div style="margin-top:4px; font-size:0.74rem; color:var(--text-2);">Yukarıdaki <em>"Kaynak Seç"</em> kutusundan Wikidata veya World Bank seçip <strong>"Kaynağa İzin Ver &amp; Şimdi Sorgula"</strong> düğmesine basabilir ya da yerel <code>.csv</code> dosyanızı yükleyebilirsiniz.</div>
+          </div>
+        `;
+        return;
+      }
+
+      const recRows = memRecords.map((r) => {
+        const badgeClass = r.isSampleFixture ? 'warn' : 'ok';
+        const epLabel = r.isSampleFixture
+          ? 'Örnek veri (Eğitim)'
+          : (r.epistemic_label_tr || r.epistemic_status || 'Kaynaktan alınmış iddia');
+        return `
+          <tr>
+            <td>
+              <strong>${escapeHtml(r.title || r.record_id)}</strong>
+              <br><span style="color:var(--text-2); font-size:0.71rem;">${escapeHtml(r.summary || '')}</span>
+              <br><code style="font-size:0.65rem; color:#93C5FD;">SHA-256: ${escapeHtml(String(r.content_hash || '').slice(0, 16))}… · Biçim: ${escapeHtml(r.data_format || 'JSON')}</code>
+            </td>
+            <td>
+              ${escapeHtml(r.source_name || r.source_id)}
+              <br><code style="font-size:0.67rem;">${escapeHtml(r.source_license || '')}</code>
+              ${r.source_url ? `<br><a href="${escapeHtml(r.source_url)}" target="_blank" rel="noopener noreferrer" style="font-size:0.67rem; color:#38BDF8;">Kaynak Bağlantısı ↗</a>` : ''}
+            </td>
+            <td>
+              <div>A. Olay: <code>${escapeHtml(String(r.event_time || 'not_provided').slice(0, 19))}</code></div>
+              <div>B. Yayın: <code>${escapeHtml(String(r.source_published_at || 'not_provided').slice(0, 19))}</code></div>
+              <div>C. Alım: <code>${escapeHtml(String(r.ingested_at || '').slice(0, 19))}</code></div>
+              <div>D. Kontrol: <code>${escapeHtml(String(r.last_checked_at || '').slice(0, 19))}</code></div>
+            </td>
+            <td>
+              <span class="kpi-badge ${badgeClass}">${escapeHtml(epLabel)}</span>
+              <div style="font-size:0.67rem; color:var(--text-2); margin-top:3px;">${escapeHtml(r.freshness_status || 'FRESH')}</div>
+            </td>
+          </tr>
+        `;
+      }).join('');
 
       host.innerHTML = `
-        <div style="font-size:0.76rem; color:#88D4FF; font-weight:600;">İlgilendiğiniz Kurum ve Alan Kayıtları (5 Ayrı Zaman Damgası Korunur — Olay Tarihi ≠ Alım Tarihi):</div>
+        <div style="font-size:0.76rem; color:#88D4FF; font-weight:600;">Kayıtlı Dünya ve Varlık Kayıtları (Olay Tarihi ≠ Alım Tarihi · Kaynaktan Alınmış İddia ≠ Bağımsız Doğrulanmış Olgu):</div>
         <div class="caelus-frt-table-wrap">
           <table class="caelus-frt-table">
             <thead>
               <tr>
-                <th>Başlık &amp; Özet</th>
-                <th>Kaynak &amp; Lisans</th>
-                <th>5 Zaman Damgası (A/B/C/D)</th>
-                <th>Epistemik Sınıf</th>
+                <th>Başlık, Özet &amp; İçerik Özeti (Hash)</th>
+                <th>Kaynak Sağlayıcı, Lisans &amp; Bağlantı</th>
+                <th>Zaman Damgaları (A/B/C/D)</th>
+                <th>Bilgi Statüsü &amp; Tazelik</th>
               </tr>
             </thead>
             <tbody>${recRows}</tbody>
@@ -27204,27 +27380,104 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         </div>
       `;
     } else {
+      if (memRecords.length === 0) {
+        host.innerHTML = `
+          <div style="padding:12px 14px; border-radius:10px; background:rgba(12,24,46,0.85); border:1px solid rgba(136,212,255,0.25); color:#F8FAFC;">
+            <strong>Henüz gerçek dünya verisi alınmadı. Bir kaynak seçebilir veya dosya ekleyebilirsin.</strong>
+            <div style="margin-top:4px; font-size:0.74rem; color:var(--text-2);">Alanlar arası bağlantı ve varlık tekilleştirme analizi için önce gerçek bir kaynak sorgulayın veya Eğitim Alanını açın.</div>
+          </div>
+        `;
+        return;
+      }
+
+      const v2Records = (advMod && typeof advMod.convertAdvisorRecordToLivingWorldV2 === 'function')
+        ? memRecords.map(advMod.convertAdvisorRecordToLivingWorldV2).filter(Boolean)
+        : [];
       const entRes = typeof lwm.resolveLivingWorldEntities === 'function'
-        ? lwm.resolveLivingWorldEntities([
-            { id: 'e1', name: 'TSMC', external_ids: { wikidata_qid: 'Q713418' }, country: 'TW' },
-            { id: 'e2', name: 'Taiwan Semiconductor Manufacturing Co.', external_ids: {}, country: 'TW' }
-          ])
-        : { candidates: [] };
-      const candidateBanner = (entRes.candidates && entRes.candidates.length > 0)
-        ? entRes.candidates.map((c) => `<div style="padding:6px 10px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.45); border-radius:8px;"><strong>Yanlış Birleştirme Koruması:</strong> ${escapeHtml(c.promptTr || 'Bu iki kayıt aynı kuruma ait olabilir.')} (Otomatik birleştirilmedi, kullanıcı onayı bekleniyor.)</div>`).join('')
-        : '<div style="padding:6px 10px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.45); border-radius:8px;"><strong>Yanlış Birleştirme Koruması:</strong> "Bu iki kayıt aynı kuruma ait olabilir." (Kesin dış kimlik eşleşmesi olmayan benzer isimler otomatik birleştirilmez.)</div>';
+        ? lwm.resolveLivingWorldEntities(v2Records)
+        : { candidateMatches: [] };
+      const matches = entRes.candidateMatches || entRes.candidates || [];
+      const candidateBanner = matches.length > 0
+        ? matches.map((c) => `<div style="padding:6px 10px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.45); border-radius:8px;"><strong>Yanlış Birleştirme Koruması:</strong> ${escapeHtml(c.status_message_tr || c.promptTr || 'Bu iki kayıt aynı kuruma ait olabilir.')} (Otomatik birleştirilmedi.)</div>`).join('')
+        : '<div style="padding:6px 10px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.45); border-radius:8px;"><strong>Yanlış Birleştirme Koruması:</strong> Kesin dış kimlik eşleşmesi olmayan benzer isimler otomatik birleştirilmez; tüm kayıtların kaynak izi ayrı korunur.</div>';
+
+      const crossConn = typeof lwm.discoverCrossDomainLivingConnections === 'function'
+        ? lwm.discoverCrossDomainLivingConnections(v2Records)
+        : { directRelations: [], candidateHypothesisPaths: [] };
+
+      const directItems = (crossConn.directRelations || []).slice(0, 6).map((rel) =>
+        `<li><strong>[${escapeHtml(rel.connection_category_label_tr || 'Doğrudan Kaynaklı İlişki')}]:</strong> ${escapeHtml(rel.from_entity)} → ${escapeHtml(rel.to_entity)} (${escapeHtml(rel.predicate)}) — <em>${escapeHtml(rel.why_shown_tr || '')}</em></li>`
+      ).join('');
 
       host.innerHTML = `
         ${candidateBanner}
         <div style="padding:8px 10px; background:rgba(12,24,46,0.78); border:1px solid rgba(136,212,255,0.22); border-radius:10px;">
-          <strong>Alanlar Arası Bağlantı Kategorileri (A–G):</strong>
+          <strong>Mevcut Kayıtlardan Çıkarılan Alanlar Arası İlişkiler (Birlikte Geçme ≠ Nedensellik):</strong>
           <ul style="margin:6px 0 0 16px; line-height:1.45;">
-            <li><strong>DOGRUDAN_KAYNAKLI_ILISKI:</strong> TSMC ↔ Apple Inc. (SEC EDGAR CIK0000320193 ve Wikidata Q713418 ortak tedarik bildirimi)</li>
-            <li><strong>ORTAK_VARLIK_BAGLANTISI:</strong> TSMC ↔ ASML (Avrupa yarı iletken üretim ve litografi ekipmanı ortaklığı)</li>
-            <li><strong>ZAMANSAL_YAKINLIK / HIPOTEZ_ADAYI:</strong> Kapasite tahsisi değişiminin alt kademe donanım teslim sürelerine olası etkisi (Nedensellik olarak sunulmaz!)</li>
+            ${directItems || '<li>Seçili kayıtlarda doğrudan ilişkili varlık bağlantısı listelendi.</li>'}
           </ul>
         </div>
       `;
+    }
+  }
+
+  async function executeGateSourceQuery(overrideSourceId) {
+    if (!worldDataGate) return;
+    const sourceSelect = document.getElementById('sel-laa-source-id');
+    const queryInput = document.getElementById('inp-laa-source-query-entity');
+    const queryBtn = document.getElementById('btn-laa-query-selected-source');
+    const sid = overrideSourceId || (sourceSelect ? sourceSelect.value : 'wikidata');
+    const qVal = queryInput ? queryInput.value.trim() : 'TSMC';
+
+    if (worldDataGate.getMode().code === 'OFFLINE') {
+      worldDataGate.setMode('PERMITTED_CONNECTION');
+    }
+    worldDataGate.setSourcePermission(sid, true);
+    updateSovereignStatusBarAndPreview();
+
+    const qParams = sid === 'wikidata'
+      ? (/^Q\d+/i.test(qVal) ? { entityId: qVal } : { searchQuery: qVal || 'TSMC' })
+      : sid === 'world_bank_indicators'
+        ? { countries: qVal || 'TUR', indicator: 'NY.GDP.MKTP.KD.ZG' }
+        : sid === 'sec_edgar_submissions'
+          ? { cik: qVal || '0000320193' }
+          : sid === 'openalex_scholarly'
+            ? { search: qVal || 'supply chain' }
+            : { query: qVal || 'semiconductor' };
+
+    if (queryBtn) {
+      queryBtn.disabled = true;
+      queryBtn.textContent = 'Sorgulanıyor...';
+    }
+    try {
+      const res = await worldDataGate.queryExternalSource(sid, qParams);
+      if (res.ok && Array.isArray(res.records) && res.records.length > 0) {
+        if (advisorSession) advisorSession.addWorldRecordsToAdvisorMemory(res.records);
+        if (agentStudio && typeof agentStudio.addWorldRecordsToPool === 'function') {
+          agentStudio.addWorldRecordsToPool(res.records);
+        }
+        if (livingScheduler && advMod && typeof advMod.convertAdvisorRecordToLivingWorldV2 === 'function') {
+          const v2Recs = res.records.map(advMod.convertAdvisorRecordToLivingWorldV2).filter(Boolean);
+          livingScheduler.ingestNormalizedRecordsIntoScheduler(sid, v2Recs);
+        }
+        showSovereignFeedback(
+          `✓ <strong>${escapeHtml(sid)}</strong> kaynağından <strong>${res.records.length}</strong> gerçek kayıt alındı (SHA-256 mühürlü). Şimdi <em>İlgilendiğim Konu</em> veya <em>Konuşan Danışman</em> sekmesinde sorgulayabilirsiniz.`,
+          false
+        );
+      } else {
+        showSovereignFeedback(
+          `⚠️ <strong>${escapeHtml(sid)}</strong> sorgusu tamamlanamadı: ${escapeHtml(res.userMessageTr || res.errorCode || 'Kaynak yanıt vermedi')}. ${res.staleWarningTr ? escapeHtml(res.staleWarningTr) : 'Sahte veri üretilmedi.'}`,
+          true
+        );
+      }
+    } catch (err) {
+      showSovereignFeedback(`⚠️ Kaynak sorgu hatası: ${escapeHtml(String(err && err.message ? err.message : err))}`, true);
+    } finally {
+      if (queryBtn) {
+        queryBtn.disabled = false;
+        queryBtn.textContent = '🔍 Kaynağa İzin Ver & Şimdi Sorgula';
+      }
+      renderLivingWorldSubview();
     }
   }
 
@@ -27233,12 +27486,18 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     if (!out || !turnRec) return;
     const plan = turnRec.structuredAnswerPlan || {};
     const passport = turnRec.answerPassport || { segments: [] };
+    const disc = passport.mandatoryDisclosure7 || {};
+    const semiring = passport.provenanceSemiring || {};
 
     const segHtml = (passport.segments || []).map((seg) => `
       <div style="padding:5px 8px; border-radius:7px; background:rgba(15,28,52,0.85); border-left:3px solid #38bdf8; display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
-        <span><strong>[${escapeHtml(seg.classCode)} · ${escapeHtml(seg.labelTr)}]:</strong> ${escapeHtml(seg.text)}</span>
+        <span><strong>[${escapeHtml(seg.epistemicState || seg.classCode)} · ${escapeHtml(seg.labelTr)}]:</strong> ${escapeHtml(seg.text)}</span>
       </div>
     `).join('');
+
+    const datesList = (disc.dataAndEventDates || []).map((d) =>
+      `<code>${escapeHtml(d.recordId)}</code> (Olay: ${escapeHtml(String(d.eventTime || 'not_provided').slice(0, 10))}, Alım: ${escapeHtml(String(d.ingestedAt || '').slice(0, 10))})`
+    ).join(' · ') || 'Yerel/doğrudan değerlendirme';
 
     out.innerHTML = `
       <div style="padding:10px 12px; border-radius:10px; background:rgba(12,26,48,0.92); border:1px solid rgba(136,212,255,0.32);">
@@ -27247,7 +27506,16 @@ function initCaelusLivingAdvisorAndAgentStudio() {
           <span class="kpi-badge ok">Odak Varlık: ${escapeHtml((plan.referenced_entities || []).join(', ') || 'Belirtilmedi')}</span>
         </div>
         <div style="white-space:pre-line; color:#F8FAFC; line-height:1.5; margin-bottom:8px;">${escapeHtml(turnRec.answerText || '')}</div>
-        ${plan.suggested_next_action ? `<div style="font-size:0.74rem; color:#88D4FF;"><strong>Önerilen Sonraki Adım:</strong> ${escapeHtml(plan.suggested_next_action)}</div>` : ''}
+        <div style="padding:7px 9px; border-radius:8px; background:rgba(8,18,36,0.82); border:1px solid rgba(136,212,255,0.18); font-size:0.72rem; line-height:1.45;">
+          <strong style="color:#88D4FF;">7 Zorunlu Cevap Bileşeni (Bölüm 5.2):</strong>
+          <div>1. <strong>Dayandığı Kaynaklar / Dosya Satırları:</strong> ${escapeHtml((disc.sourcesOrFileRows || []).join(', ') || 'Henüz dış kaynak/dosya kaydı eşleşmedi')}</div>
+          <div>2. <strong>Veri ve Olay Tarihleri:</strong> ${datesList}</div>
+          <div>3. <strong>Uygulanan Hesap / Kural:</strong> <code>${escapeHtml(disc.appliedRuleOrCalculation || 'DIRECT_RECORD_LOOKUP')}</code></div>
+          <div>4. <strong>Varsayımlar:</strong> ${escapeHtml((disc.assumptions || []).join(' | ') || 'Ek model varsayımı yok')}</div>
+          <div>5. <strong>Bilinmeyenler / Eksik Veri:</strong> ${escapeHtml((disc.unknowns || []).join(' | ') || 'Belirtilmedi')}</div>
+          <div>6. <strong>Önerilen Sonraki Adım:</strong> ${escapeHtml(disc.nextStepForUser || plan.suggested_next_action || '')}</div>
+          <div>7. <strong>ProvSQL Soykütük Polinomu (ℕ[X]):</strong> <code>${escapeHtml(semiring.polynomialExpression || '0')}</code></div>
+        </div>
       </div>
       <div style="display:flex; flex-direction:column; gap:5px;">
         <strong style="font-size:0.75rem; color:#4ADE80;">CEVAP PASAPORTU (${passport.segments.length} Kanıt/Epistemik Segment · LLM Kullanılmadı):</strong>
@@ -27261,6 +27529,16 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     if (!listEl || !agentStudio) return;
     const agents = agentStudio.listAgents();
 
+    if (agents.length === 0) {
+      listEl.innerHTML = `
+        <div style="padding:10px 12px; border-radius:10px; background:rgba(12,24,46,0.86); border:1px dashed rgba(136,212,255,0.35); color:#F8FAFC;">
+          <strong>Henüz tanımlı kişisel ajan yok (Varsayılan olarak sahte ajan yüklenmez).</strong>
+          <div style="font-size:0.73rem; color:var(--text-2); margin-top:3px;">Yukarıdaki hedef kutusuna doğal dilde amacınızı yazıp izinleri seçerek yeni bir ajan oluşturabilir veya <strong>"📋 3 Örnek Ajan Şablonunu Yükle"</strong> düğmesini kullanabilirsiniz.</div>
+        </div>
+      `;
+      return;
+    }
+
     listEl.innerHTML = agents.map((ag) => `
       <div style="padding:9px 11px; border-radius:10px; background:rgba(12,24,46,0.86); border:1px solid rgba(136,212,255,0.24); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
         <div style="min-width:220px; flex:1;">
@@ -27270,13 +27548,15 @@ function initCaelusLivingAdvisorAndAgentStudio() {
             <span class="kpi-badge mono">v${ag.version} · ${escapeHtml(ag.capability_type)}</span>
           </div>
           <div style="font-size:0.73rem; color:var(--text-2); margin-top:2px;">${escapeHtml(ag.purpose)}</div>
-          <div style="font-size:0.70rem; color:#88D4FF; margin-top:2px;">İzinli Kaynaklar: <code>${escapeHtml((ag.allowed_sources || []).join(', '))}</code> · Ağ: <code>${ag.permissions.network_access ? 'AÇIK' : 'KAPALI'}</code> · Dosya Okuma: <code>${ag.permissions.local_file_read ? 'AÇIK' : 'KAPALI'}</code></div>
+          <div style="font-size:0.70rem; color:#88D4FF; margin-top:2px;">İzinli Kaynaklar: <code>${escapeHtml((ag.allowed_sources || []).join(', ') || 'yok')}</code> · Ağ: <code>${ag.permissions.network_access ? 'AÇIK' : 'KAPALI'}</code> · Dosya Okuma: <code>${ag.permissions.local_file_read ? 'AÇIK' : 'KAPALI'}</code> · Dosyalar: <code>${escapeHtml((ag.user_files || []).join(', ') || 'yok')}</code></div>
         </div>
         <div style="display:flex; gap:5px; flex-wrap:wrap;">
           <button type="button" class="btn btn-sm btn-primary" data-run-agent-id="${escapeHtml(ag.agent_id)}">▶ Çalıştır</button>
           <button type="button" class="btn btn-sm" data-pause-agent-id="${escapeHtml(ag.agent_id)}">⏸ Duraklat</button>
           <button type="button" class="btn btn-sm" data-stop-agent-id="${escapeHtml(ag.agent_id)}">⏹ Durdur</button>
+          <button type="button" class="btn btn-sm" data-revoke-agent-id="${escapeHtml(ag.agent_id)}" title="Ağ ve dosya okuma izinlerini geri al">🔒 Yetkiyi Geri Al</button>
           <button type="button" class="btn btn-sm" data-export-agent-id="${escapeHtml(ag.agent_id)}">📤 Güvenli Şablon</button>
+          <button type="button" class="btn btn-sm" data-delete-agent-id="${escapeHtml(ag.agent_id)}">🗑 Sil</button>
         </div>
       </div>
     `).join('');
@@ -27307,6 +27587,19 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       });
     });
 
+    listEl.querySelectorAll('[data-revoke-agent-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-revoke-agent-id');
+        agentStudio.revokeAgentPermission(aid, 'network_access');
+        agentStudio.revokeAgentPermission(aid, 'local_file_read');
+        renderAgentStudioList();
+        const outEl = document.getElementById('laa-agent-run-output');
+        if (outEl) {
+          outEl.innerHTML = `<div style="padding:8px 10px; border-radius:8px; background:rgba(120,53,15,0.55); border:1px solid #F59E0B;"><strong>🔒 Yetki Geri Alındı:</strong> <code>${escapeHtml(aid)}</code> ajanının dış ağ ve yerel dosya okuma izinleri kapatıldı (Cedar Politikası: DENY).</div>`;
+        }
+      });
+    });
+
     listEl.querySelectorAll('[data-export-agent-id]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const aid = btn.getAttribute('data-export-agent-id');
@@ -27319,6 +27612,18 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         }
       });
     });
+
+    listEl.querySelectorAll('[data-delete-agent-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-delete-agent-id');
+        const delRes = agentStudio.deleteAgentWithImpactPreview(aid, true);
+        renderAgentStudioList();
+        const outEl = document.getElementById('laa-agent-run-output');
+        if (outEl && delRes && delRes.impactPreview) {
+          outEl.innerHTML = `<div style="padding:8px 10px; border-radius:8px; background:rgba(15,28,52,0.85); border:1px solid rgba(136,212,255,0.3);"><strong>🗑 Ajan Silindi:</strong> ${escapeHtml(delRes.impactPreview.impactMessageTr || '')}</div>`;
+        }
+      });
+    });
   }
 
   function renderAgentRunReport(report) {
@@ -27327,7 +27632,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     outEl.innerHTML = `
       <div style="padding:10px 12px; border-radius:10px; background:rgba(8,22,42,0.92); border:1px solid rgba(74,222,128,0.45);">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
-          <strong style="color:#4ADE80;">Ajan Çalışma ve Kanıt Kartı: ${escapeHtml(report.agentName || '')}</strong>
+          <strong style="color:#4ADE80;">Ajan Çalışma ve Kanıt Kartı: ${escapeHtml(report.agentName || '')} (v${report.agentVersion || 1})</strong>
           <span class="kpi-badge ok">Durum: ${escapeHtml(report.status || '')} · ${report.durationMs || 1} ms</span>
         </div>
         <div style="margin-top:4px; color:#F8FAFC;">${escapeHtml(report.summaryTr || '')}</div>
@@ -27389,29 +27694,170 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     });
   });
 
+  // Egemen Dijital Alan Kontrolleri (Kip, Örnek Veri Anahtarı, Yerel Dosya, Paket İçe Aktar, Veri Dışa Aktar / Sil)
+  const modeSelectEl = document.getElementById('sel-laa-gate-mode');
+  if (modeSelectEl && worldDataGate) {
+    modeSelectEl.addEventListener('change', () => {
+      worldDataGate.setMode(modeSelectEl.value);
+      updateSovereignStatusBarAndPreview();
+      renderLivingWorldSubview();
+    });
+  }
+
+  const sampleToggleEl = document.getElementById('chk-laa-training-sample-mode');
+  if (sampleToggleEl) {
+    sampleToggleEl.addEventListener('change', () => {
+      const enabled = Boolean(sampleToggleEl.checked);
+      if (advisorSession && typeof advisorSession.setTrainingSampleMode === 'function') {
+        advisorSession.setTrainingSampleMode(enabled);
+      }
+      if (agentStudio && typeof agentStudio.setTrainingSampleMode === 'function') {
+        agentStudio.setTrainingSampleMode(enabled);
+      }
+      updateSovereignStatusBarAndPreview();
+      renderLivingWorldSubview();
+      showSovereignFeedback(
+        enabled
+          ? '⚠️ <strong>Örnek veri (Eğitim Alanı)</strong> açıldı. Gösterilen örnek kayıtlar gerçek dünya hafızasına aktarılmaz.'
+          : '✓ <strong>Örnek veri (Eğitim Alanı)</strong> kapatıldı. Yalnızca gerçek kaynaklardan alınan kayıtlar ve kendi dosyalarınız kullanılır.',
+        enabled
+      );
+    });
+  }
+
+  const sourceSelectEl = document.getElementById('sel-laa-source-id');
+  const queryEntityInputEl = document.getElementById('inp-laa-source-query-entity');
+  const querySourceBtnEl = document.getElementById('btn-laa-query-selected-source');
+  if (sourceSelectEl) sourceSelectEl.addEventListener('change', updateSovereignStatusBarAndPreview);
+  if (queryEntityInputEl) queryEntityInputEl.addEventListener('input', updateSovereignStatusBarAndPreview);
+  if (querySourceBtnEl) {
+    querySourceBtnEl.addEventListener('click', () => {
+      executeGateSourceQuery();
+    });
+  }
+
+  const localFileInput = document.getElementById('inp-laa-local-user-file');
+  if (localFileInput) {
+    localFileInput.addEventListener('change', (ev) => {
+      const file = ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = String(reader.result || '');
+        if (worldDataGate) worldDataGate.registerPrivateUserFile(file.name, content);
+        const parsed = advisorSession ? advisorSession.loadUserFileIntoAdvisor(file.name, content) : null;
+        if (agentStudio) agentStudio.registerUserFile(file.name, content);
+        showSovereignFeedback(
+          `✓ <strong>${escapeHtml(file.name)}</strong> yerel özel alanınıza (Alan A) yüklendi: <strong>${parsed ? parsed.validRows.length : 0}</strong> geçerli satır, sütunlar: <code>${escapeHtml(parsed && parsed.columns ? parsed.columns.join(', ') : '')}</code>. Dış kaynaklarla paylaşılmaz.`,
+          false
+        );
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  const importPkgBtn = document.getElementById('btn-laa-import-package-trigger');
+  const importPkgInput = document.getElementById('inp-laa-separate-device-pkg');
+  if (importPkgBtn && importPkgInput) {
+    importPkgBtn.addEventListener('click', () => importPkgInput.click());
+    importPkgInput.addEventListener('change', (ev) => {
+      const file = ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file || !worldDataGate) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const pkg = JSON.parse(String(reader.result || '{}'));
+          worldDataGate.setMode('SEPARATE_DEVICE_IMPORT');
+          const imp = worldDataGate.importSeparateDevicePackage(pkg);
+          if (imp.ok) {
+            const extRecs = worldDataGate.inspectZones().B_EXTERNAL_SOURCE_RECORDS || [];
+            if (advisorSession) advisorSession.addWorldRecordsToAdvisorMemory(extRecs);
+            if (agentStudio && typeof agentStudio.addWorldRecordsToPool === 'function') {
+              agentStudio.addWorldRecordsToPool(extRecs);
+            }
+            showSovereignFeedback(`✓ Ayrı cihaz paketi doğrulandı ve ${imp.importedCount} kayıt içeri aktarıldı.`, false);
+            renderLivingWorldSubview();
+          } else {
+            showSovereignFeedback(`⚠️ Paket doğrulaması başarısız: ${escapeHtml(imp.userMessageTr || imp.errorCode || '')}`, true);
+          }
+        } catch (err) {
+          showSovereignFeedback(`⚠️ Geçersiz JSON paketi: ${escapeHtml(String(err.message || err))}`, true);
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  const exportUserDataBtn = document.getElementById('btn-laa-export-user-data');
+  if (exportUserDataBtn) {
+    exportUserDataBtn.addEventListener('click', () => {
+      const payload = {
+        exported_at: new Date().toISOString(),
+        schema: 'CAELUS_SOVEREIGN_USER_EXPORT_V1',
+        advisor_memory: advisorSession ? advisorSession.inspectSeparatedMemory() : null,
+        world_gate_zones: worldDataGate ? worldDataGate.inspectZones() : null,
+        agents: agentStudio ? agentStudio.listAgents().map((a) => agentStudio.exportAgentTemplateSafe(a)) : []
+      };
+      try {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `caelus_yerel_verilerim_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (_) {}
+      showSovereignFeedback('✓ Tüm yerel tercihleriniz, kayıtlarınız ve güvenli ajan şablonlarınız JSON olarak dışa aktarıldı.', false);
+    });
+  }
+
+  const deleteUserDataBtn = document.getElementById('btn-laa-delete-user-data');
+  if (deleteUserDataBtn) {
+    deleteUserDataBtn.addEventListener('click', () => {
+      if (advisorSession) {
+        advisorSession.clearDialogueState();
+        advisorSession.deleteUserPreferences();
+      }
+      if (agentStudio && typeof agentStudio.clearStudioStorage === 'function') {
+        agentStudio.clearStudioStorage();
+        agentStudio.listAgents().slice().forEach((ag) => {
+          agentStudio.deleteAgentWithImpactPreview(ag.agent_id, true);
+        });
+      }
+      renderLivingWorldSubview();
+      renderAgentStudioList();
+      showSovereignFeedback('🗑 Yerel konuşma geçmişi, kullanıcı tercihleri ve ajan kayıtları cihaz hafızasından silindi.', false);
+    });
+  }
+
   const btnExportCorePkg = document.getElementById('btn-laa-export-core-pkg');
   if (btnExportCorePkg && lwm && typeof lwm.buildVersionedCoreAnalysisPackage === 'function') {
     btnExportCorePkg.addEventListener('click', () => {
       const memRecs = advisorSession ? advisorSession.inspectSeparatedMemory().C_SOURCED_WORLD_MEMORY : [];
-      const pkg = lwm.buildVersionedCoreAnalysisPackage(memRecs);
+      const v2Recs = (advMod && typeof advMod.convertAdvisorRecordToLivingWorldV2 === 'function')
+        ? memRecs.map(advMod.convertAdvisorRecordToLivingWorldV2).filter(Boolean)
+        : memRecs;
+      const pkg = lwm.buildVersionedCoreAnalysisPackage(v2Recs);
       const replay = lwm.runOfflineCorePackageReplay(pkg);
       const host = document.getElementById('laa-living-world-content');
       if (host) {
         host.insertAdjacentHTML(
           'afterbegin',
-          `<div style="padding:8px 10px; border-radius:8px; background:rgba(16,82,56,0.45); border:1px solid #3DD68C;"><strong>✓ Çevrim Dışı Çekirdek Veri Paketi Üretildi ve Doğrulandı:</strong> Şema <code>${escapeHtml(pkg.schema_version)}</code> · SHA-256: <code>${escapeHtml((pkg.package_sha256 || '').slice(0, 16))}…</code> · Deterministik Tekrar Oynatma: <code>${replay.deterministicMatch ? 'BİREBİR EŞLEŞTİ' : 'HATA'}</code></div>`
+          `<div style="padding:8px 10px; border-radius:8px; background:rgba(16,82,56,0.45); border:1px solid #3DD68C;"><strong>✓ Çevrim Dışı Çekirdek Veri Paketi Üretildi ve Doğrulandı:</strong> Şema <code>${escapeHtml(pkg.schema_version)}</code> · SHA-256: <code>${escapeHtml((pkg.package_hash_sha256 || pkg.package_sha256 || '').slice(0, 16))}…</code> · Deterministik Tekrar Oynatma: <code>${replay.ok ? 'BİREBİR EŞLEŞTİ (0 Ağ İsteği)' : 'HATA'}</code></div>`
         );
       }
     });
   }
 
   const btnSyncReal = document.getElementById('btn-laa-sync-real-sources');
-  if (btnSyncReal && livingScheduler) {
+  if (btnSyncReal) {
     btnSyncReal.addEventListener('click', async () => {
       btnSyncReal.disabled = true;
       btnSyncReal.textContent = 'Kontrol Ediliyor...';
       try {
-        await livingScheduler.syncSourceNow('wikidata', { ids: 'Q713418', languages: 'tr|en' });
+        await executeGateSourceQuery();
       } catch (_) {}
       btnSyncReal.disabled = false;
       btnSyncReal.textContent = '🔄 Bağlı Gerçek Kaynakları Şimdi Kontrol Et';
@@ -27420,6 +27866,17 @@ function initCaelusLivingAdvisorAndAgentStudio() {
   }
 
   // Konuşan Danışman Kontrolleri
+  const interestsInput = document.getElementById('inp-laa-user-interests');
+  const saveInterestsBtn = document.getElementById('btn-laa-save-user-interests');
+  if (saveInterestsBtn && advisorSession) {
+    saveInterestsBtn.addEventListener('click', () => {
+      const raw = interestsInput ? interestsInput.value : '';
+      const list = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      advisorSession.updateUserPreferences({ interestAreas: list });
+      showSovereignFeedback(`✓ Kişisel ilgi alanlarınız yerel hafızaya kaydedildi: <strong>${escapeHtml(list.join(', ') || 'Temizlendi')}</strong>`, false);
+    });
+  }
+
   const askInput = document.getElementById('inp-laa-advisor-question');
   const askBtn = document.getElementById('btn-laa-advisor-ask');
   if (askBtn && advisorSession) {
@@ -27453,11 +27910,19 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     });
   }
 
-  // Kişisel Ajan Doğal Dil Hedef Ayrıştırıcı
+  // Kişisel Ajan Doğal Dil Hedef Ayrıştırıcı ve Açık İzin Seçimi
   const goalInput = document.getElementById('inp-laa-agent-goal');
   const goalCreateBtn = document.getElementById('btn-laa-parse-goal-create-agent');
   const testUnsupportedBtn = document.getElementById('btn-laa-test-unsupported-goal');
+  const loadStarterAgentsBtn = document.getElementById('btn-laa-load-starter-agents');
   const feedbackEl = document.getElementById('laa-agent-draft-feedback');
+
+  if (loadStarterAgentsBtn) {
+    loadStarterAgentsBtn.addEventListener('click', () => {
+      loadStarterAgentTemplatesOnDemand();
+      renderAgentStudioList();
+    });
+  }
 
   function handleGoalParse(rawGoal) {
     if (!agentStudio || !stuMod) return;
@@ -27470,13 +27935,20 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       return;
     }
     if (feedbackEl) feedbackEl.classList.add('hidden');
+    const permNet = document.getElementById('chk-laa-agent-perm-network');
+    const permFile = document.getElementById('chk-laa-agent-perm-file');
+    const permNotify = document.getElementById('chk-laa-agent-perm-notify');
+
     agentStudio.createAgent({
       name: draft.proposedName,
       purpose: draft.proposedPurpose,
       capabilityType: draft.capabilityType,
       executionMode: draft.executionMode,
       allowed_sources: draft.selectedSources,
-      entities: draft.focusEntities
+      entities: draft.focusEntities,
+      network_access: permNet ? Boolean(permNet.checked) : Boolean(draft.permissions && draft.permissions.network_access),
+      local_file_read: permFile ? Boolean(permFile.checked) : Boolean(draft.permissions && draft.permissions.local_file_read),
+      notifications: permNotify ? Boolean(permNotify.checked) : false
     });
     renderAgentStudioList();
   }
@@ -27497,6 +27969,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
   renderLivingWorldSubview();
   renderAgentStudioList();
 
+  window.caelusWorldDataGateInstance = worldDataGate;
   window.caelusAdvisorSession = advisorSession;
   window.caelusPersonalAgentStudioInstance = agentStudio;
   window.caelusLivingWorldSchedulerInstance = livingScheduler;
