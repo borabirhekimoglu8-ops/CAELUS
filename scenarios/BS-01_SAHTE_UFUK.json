@@ -4,7 +4,7 @@
   "blackswan_class": "observability_attack",
   "sector": "global_transshipment_hub",
   "min_caelus_engine": "2.0",
-  "signature": "ed25519:9bb1dbd039043670b7bf2c5d7533777866135b92f9b38fe6cd8d9735a04fa802:2c6aa704a83c35e5818675fe44837fe8b5292d692fff4e9ac5e4ea151de63380f4ae667d92259fb4ae42c2cb6ba4da900451c68622e169bc7b4edf6d1f170a0e",
+  "signature": "ed25519:a11b528e5344d9aa7147473bf16ce9e9c977f89608958b586359414cc7e97e7f:d6575132f6798cb03f1c50501e493449c071846b6bf0affe24d2fb4c4a343051cdd2363253baeeda641c4726c382dd61f91e524c7f82d1829e5a4f1a563e5408",
 
   "meta": {
     "title": "Sahte Ufuk — Küresel Aktarma Limanı Gözlemlenebilirlik Saldırısı",

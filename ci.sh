@@ -46,13 +46,17 @@ g++ -std=c++17 -O2 -DCAELUS_CPP_UNIT_TEST=1 \
     "$ROOT/tests/test_causal_engine.cpp" -o "$TEST_EXE"
 "$TEST_EXE"
 
-log "Loopback connector integration smoke"
-"$PYTHON" "$ROOT/tests/connector_smoke.py"
-
 log "Offline dataset, export, signing, and model-verification smoke"
 cargo build --release --locked --bin caelus_sign_model
 "$PYTHON" "$ROOT/tests/run_neural_toolchain_smoke.py" \
     --signer-binary "$MODEL_SIGNER"
+if [[ "${CAELUS_SKIP_CONNECTOR_SMOKE:-0}" != "1" ]]; then
+    log "Connector smoke (intel data-plane auth + signature gate)"
+    "$PYTHON" "$ROOT/tests/connector_smoke.py"
+fi
+
+log "pure-Python blake3 fallback equivalence"
+"$PYTHON" "$ROOT/tests/test_pure_blake3.py"
 
 log "Linux production build"
 CAELUS_PRODUCTION=1 "$ROOT/build.sh"

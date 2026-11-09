@@ -1,0 +1,382 @@
+{
+  "report_version": "1.0.0",
+  "dataset_id": "DS_1F8D7FA0EAB8",
+  "world_id": "WLD_DS_1F8D7FA0EAB8",
+  "sheet_titles": [
+    "Özet",
+    "Varlıklar",
+    "İlişkiler",
+    "Senaryo Karşılaştırması",
+    "Varsayımlar",
+    "Hatalar ve Eksik Veriler",
+    "Kaynak İzleri"
+  ],
+  "sheets": {
+    "Ozet": [
+      {
+        "alan": "Rapor Başlığı",
+        "deger": "CAELUS Açıklanabilir Karar ve Kaynak İzi Raporu — vaka_a_tedarik_zinciri.xlsx",
+        "aciklama": "Kullanıcı verisinden deterministik dünya modeli ve senaryo karşılaştırma çıktısı"
+      },
+      {
+        "alan": "Kaynak Dosya ve Sayfa",
+        "deger": "vaka_a_tedarik_zinciri.xlsx / Tedarik_Zinciri",
+        "aciklama": "SHA-256: f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4"
+      },
+      {
+        "alan": "Sürümlü Veri Sözleşmesi",
+        "deger": "CAELUS_DATA_PACKAGE_V1 (v1.0.0)",
+        "aciklama": "Geçerli Kayıt: 6 | Hatalı Satır: 2"
+      },
+      {
+        "alan": "Karar Sorusu",
+        "deger": "Marmara Yarı İletken Ltd. veya Kuzey Lojistik A.Ş. hattındaki kesintide hangi müdahale seçeneği Alfa Teknoloji A.Ş. ve bağlı kurumların toplam baskısını daha fazla düşürür?",
+        "aciklama": "Senaryo motorunda karşılaştırılan karar problemi"
+      },
+      {
+        "alan": "Müdahalesiz Temel Akış Baskısı",
+        "deger": "0.8837",
+        "aciklama": "SIMULE_EDILEN — Hiçbir müdahale yapılmazsa 24 adım sonundaki sistem baskısı"
+      },
+      {
+        "alan": "Seçenek 1 Sonrası Baskı",
+        "deger": "0.8837 (Fark: 0)",
+        "aciklama": "Seçenek 1: Marmara Yarı İletken Ltd. Yedek Kapasite ve Alternatif Hat Devreye Alma"
+      },
+      {
+        "alan": "Seçenek 2 Sonrası Baskı",
+        "deger": "0.8392 (Fark: -0.0445)",
+        "aciklama": "Seçenek 2: Kuzey Lojistik A.Ş. Yerel Stok / Tampon Koruma Kalkanı"
+      },
+      {
+        "alan": "Önerilen Seçenek ve Dayanağı",
+        "deger": "Seçenek 2: Kuzey Lojistik A.Ş. Yerel Stok / Tampon Koruma Kalkanı",
+        "aciklama": "Seçenek 2: Kuzey Lojistik A.Ş. Yerel Stok / Tampon Koruma Kalkanı, müdahalesiz temel akış baskısını (0.8837) 0.8392 seviyesine çekerek en yüksek sistemik rahatlamayı sağlar. Bu sonuç doğrudan vaka_a_tedarik_zinciri.xlsx (Tedarik_Zinciri) içindeki doğrulanmış satırlardan ve açık yayılım varsayımlarından üretilmiştir."
+      }
+    ],
+    "Varliklar": [
+      {
+        "entity_id": "ENT_ALFA_TEKNOLOJI",
+        "entity_name": "Alfa Teknoloji A.Ş.",
+        "entity_type": "Üretim Kurumu",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "BİRLEŞTİRİLDİ (Alfa Teknoloji A.Ş. + ALFA TEKNOLOJI AS + Alfa Teknoloji)",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "2, 3, 4"
+      },
+      {
+        "entity_id": "ENT_MARMARA_YARI_ILETKEN",
+        "entity_name": "Marmara Yarı İletken Ltd.",
+        "entity_type": "Tedarikçi / Altyapı Düğümü",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "TEKİL VARLIK",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "2, 5, 7"
+      },
+      {
+        "entity_id": "ENT_KUZEY_LOJISTIK",
+        "entity_name": "Kuzey Lojistik A.Ş.",
+        "entity_type": "Tedarikçi / Altyapı Düğümü",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "TEKİL VARLIK",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "3, 6"
+      },
+      {
+        "entity_id": "ENT_EGE_ENERJI_DAGITIM",
+        "entity_name": "Ege Enerji Dağıtım A.Ş.",
+        "entity_type": "Tedarikçi / Altyapı Düğümü",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "TEKİL VARLIK",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "4"
+      },
+      {
+        "entity_id": "ENT_BETA_BIYOTEKNOLOJI",
+        "entity_name": "Beta Biyoteknoloji A.Ş.",
+        "entity_type": "Sağlık Üreticisi",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "TEKİL VARLIK",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "5"
+      },
+      {
+        "entity_id": "ENT_ANADOLU_SOGUK_ZINCIR",
+        "entity_name": "Anadolu Soğuk Zincir Ltd.",
+        "entity_type": "Lojistik Operatörü",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "TEKİL VARLIK",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "6"
+      },
+      {
+        "entity_id": "ENT_KURESEL_SILIKON_WAFER",
+        "entity_name": "Küresel Silikon Wafer Corp.",
+        "entity_type": "Tedarikçi / Altyapı Düğümü",
+        "epistemic_status": "KAYNAKTA_IDDIA_EDILEN",
+        "dedup_decision": "TEKİL VARLIK",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_rows": "7"
+      }
+    ],
+    "Iliskiler": [
+      {
+        "relation_id": "REL_DS_1F8D7FA0EAB8_R2",
+        "from_entity": "Marmara Yarı İletken Ltd.",
+        "to_entity": "Alfa Teknoloji A.Ş.",
+        "relation_type": "Kritik Bileşen Tedariki",
+        "weight": "0.88",
+        "unit_value": "12500 Adet",
+        "occurred_at": "2026-02-01T00:00:00.000Z",
+        "source_trace": "vaka_a_tedarik_zinciri.xlsx#Tedarik_Zinciri:Satır 2"
+      },
+      {
+        "relation_id": "REL_DS_1F8D7FA0EAB8_R3",
+        "from_entity": "Kuzey Lojistik A.Ş.",
+        "to_entity": "Alfa Teknoloji A.Ş.",
+        "relation_type": "Soğuk Zincir ve Taşıma",
+        "weight": "0.76",
+        "unit_value": "8400 Adet",
+        "occurred_at": "2026-02-02T00:00:00.000Z",
+        "source_trace": "vaka_a_tedarik_zinciri.xlsx#Tedarik_Zinciri:Satır 3"
+      },
+      {
+        "relation_id": "REL_DS_1F8D7FA0EAB8_R4",
+        "from_entity": "Ege Enerji Dağıtım A.Ş.",
+        "to_entity": "Alfa Teknoloji A.Ş.",
+        "relation_type": "Enerji ve Altyapı Beslemesi",
+        "weight": "0.82",
+        "unit_value": "6200 MWh",
+        "occurred_at": "2026-02-03T00:00:00.000Z",
+        "source_trace": "vaka_a_tedarik_zinciri.xlsx#Tedarik_Zinciri:Satır 4"
+      },
+      {
+        "relation_id": "REL_DS_1F8D7FA0EAB8_R5",
+        "from_entity": "Marmara Yarı İletken Ltd.",
+        "to_entity": "Beta Biyoteknoloji A.Ş.",
+        "relation_type": "Sensör Çipi Tedariki",
+        "weight": "0.91",
+        "unit_value": "4500 Adet",
+        "occurred_at": "2026-02-04T00:00:00.000Z",
+        "source_trace": "vaka_a_tedarik_zinciri.xlsx#Tedarik_Zinciri:Satır 5"
+      },
+      {
+        "relation_id": "REL_DS_1F8D7FA0EAB8_R6",
+        "from_entity": "Kuzey Lojistik A.Ş.",
+        "to_entity": "Anadolu Soğuk Zincir Ltd.",
+        "relation_type": "Depo ve Aktarma Ortaklığı",
+        "weight": "0.69",
+        "unit_value": "15800 Ton",
+        "occurred_at": "2026-02-05T00:00:00.000Z",
+        "source_trace": "vaka_a_tedarik_zinciri.xlsx#Tedarik_Zinciri:Satır 6"
+      },
+      {
+        "relation_id": "REL_DS_1F8D7FA0EAB8_R7",
+        "from_entity": "Küresel Silikon Wafer Corp.",
+        "to_entity": "Marmara Yarı İletken Ltd.",
+        "relation_type": "Ham Madde İthalatı",
+        "weight": "0.94",
+        "unit_value": "19000 Wafer",
+        "occurred_at": "2026-02-06T00:00:00.000Z",
+        "source_trace": "vaka_a_tedarik_zinciri.xlsx#Tedarik_Zinciri:Satır 7"
+      }
+    ],
+    "Senaryo_Karsilastirmasi": [
+      {
+        "option_id": "ENT_ALFA_TEKNOLOJI",
+        "option_label": "Alfa Teknoloji A.Ş.",
+        "target_node": "Satır [2, 3, 4] (BİRLEŞTİRİLDİ (Alfa Teknoloji A.Ş. + ALFA TEKNOLOJI AS + Alfa Teknoloji))",
+        "baseline_stress": "0.99",
+        "post_option_stress": "Seçenek 1: 0.99 | Seçenek 2: 0.99",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: 0",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Marmara Yarı İletken Ltd.->Alfa Teknoloji A.Ş. (Satır 2); Kuzey Lojistik A.Ş.->Alfa Teknoloji A.Ş. (Satır 3); Ege Enerji Dağıtım A.Ş.->Alfa Teknoloji A.Ş. (Satır 4)"
+      },
+      {
+        "option_id": "ENT_MARMARA_YARI_ILETKEN",
+        "option_label": "Marmara Yarı İletken Ltd.",
+        "target_node": "Satır [2, 5, 7] (TEKİL VARLIK)",
+        "baseline_stress": "0.99",
+        "post_option_stress": "Seçenek 1: 0.99 | Seçenek 2: 0.99",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: 0",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Marmara Yarı İletken Ltd.->Alfa Teknoloji A.Ş. (Satır 2); Marmara Yarı İletken Ltd.->Beta Biyoteknoloji A.Ş. (Satır 5); Küresel Silikon Wafer Corp.->Marmara Yarı İletken Ltd. (Satır 7)"
+      },
+      {
+        "option_id": "ENT_KUZEY_LOJISTIK",
+        "option_label": "Kuzey Lojistik A.Ş.",
+        "target_node": "Satır [3, 6] (TEKİL VARLIK)",
+        "baseline_stress": "0.7232",
+        "post_option_stress": "Seçenek 1: 0.7232 | Seçenek 2: 0.5132",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: -0.21",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Kuzey Lojistik A.Ş.->Alfa Teknoloji A.Ş. (Satır 3); Kuzey Lojistik A.Ş.->Anadolu Soğuk Zincir Ltd. (Satır 6)"
+      },
+      {
+        "option_id": "ENT_EGE_ENERJI_DAGITIM",
+        "option_label": "Ege Enerji Dağıtım A.Ş.",
+        "target_node": "Satır [4] (TEKİL VARLIK)",
+        "baseline_stress": "0.7224",
+        "post_option_stress": "Seçenek 1: 0.7224 | Seçenek 2: 0.7224",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: 0",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Ege Enerji Dağıtım A.Ş.->Alfa Teknoloji A.Ş. (Satır 4)"
+      },
+      {
+        "option_id": "ENT_BETA_BIYOTEKNOLOJI",
+        "option_label": "Beta Biyoteknoloji A.Ş.",
+        "target_node": "Satır [5] (TEKİL VARLIK)",
+        "baseline_stress": "0.99",
+        "post_option_stress": "Seçenek 1: 0.99 | Seçenek 2: 0.99",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: 0",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Marmara Yarı İletken Ltd.->Beta Biyoteknoloji A.Ş. (Satır 5)"
+      },
+      {
+        "option_id": "ENT_ANADOLU_SOGUK_ZINCIR",
+        "option_label": "Anadolu Soğuk Zincir Ltd.",
+        "target_node": "Satır [6] (TEKİL VARLIK)",
+        "baseline_stress": "0.9174",
+        "post_option_stress": "Seçenek 1: 0.9174 | Seçenek 2: 0.7653",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: -0.1521",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Kuzey Lojistik A.Ş.->Anadolu Soğuk Zincir Ltd. (Satır 6)"
+      },
+      {
+        "option_id": "ENT_KURESEL_SILIKON_WAFER",
+        "option_label": "Küresel Silikon Wafer Corp.",
+        "target_node": "Satır [7] (TEKİL VARLIK)",
+        "baseline_stress": "0.8208",
+        "post_option_stress": "Seçenek 1: 0.8208 | Seçenek 2: 0.8208",
+        "delta_stress": "Seçenek 1: 0 | Seçenek 2: 0",
+        "epistemic_class": "SIMULE_EDILEN",
+        "rationale": "Küresel Silikon Wafer Corp.->Marmara Yarı İletken Ltd. (Satır 7)"
+      }
+    ],
+    "Varsayimlar": [
+      {
+        "assumption_id": "ASSUMP_01_PROPAGATION_ELASTICITY",
+        "category": "VARSAYILAN",
+        "statement": "Tedarikçi veya altyapı düğümündeki kesinti baskısı, tablodaki Kritiklik / Kapasite Ağırlığı (0-1) oranında bağımlı kuruma gecikmeli olarak yayılır.",
+        "impact_if_violated": "Kurumun tablo dışı gizli stok veya ikincil bağımsız hattı varsa gerçek etki simüle edilenden daha düşük gerçekleşir."
+      },
+      {
+        "assumption_id": "ASSUMP_02_UNCONFIRMED_CLAIMS_NOT_FACTS",
+        "category": "VARSAYILAN",
+        "statement": "Kullanıcı tablosundan içe alınan satırlar KAYNAKTA_IDDIA_EDILEN statüsündedir; hata içeren satırlar (örneğin Satır 8-9) hesaplamaya sessizce dahil edilmez.",
+        "impact_if_violated": "Dışlanan hatalı satırlardaki kurumlar kritik darboğaz üzerinde yer alıyorsa toplam sistem baskısı eksik tahmin edilebilir."
+      }
+    ],
+    "Hatalar_ve_Eksik_Veriler": [
+      {
+        "source_row": "8",
+        "column_name": "Tarih",
+        "error_code": "INVALID_CALENDAR_DAY",
+        "reason_tr": "Satır 8: '2026-02-30' takvimde var olmayan bir gündür (örneğin Şubat 30).",
+        "remediation_tr": "Tarihi YYYY-AA-GG (örneğin 2026-02-01) olarak düzeltin."
+      },
+      {
+        "source_row": "8",
+        "column_name": "Kritiklik_Skoru",
+        "error_code": "NON_NUMERIC_TEXT",
+        "reason_tr": "Satır 8: Kritiklik/kapasite ağırlığı ('BOZUK_SKOR') 0 ile 1 arasında geçerli bir sayı değil.",
+        "remediation_tr": "0.00 ile 1.00 arasında sayısal bir ağırlık girin (örneğin 0.85)."
+      },
+      {
+        "source_row": "8",
+        "column_name": "Aylık_Hacim_Birim",
+        "error_code": "NON_NUMERIC_TEXT",
+        "reason_tr": "Satır 8: Miktar/hacim alanında ('BELIRSIZ_HACIM') sayısal olmayan metin bulundu.",
+        "remediation_tr": "Sütundaki metin ifadelerini temizleyip sayısal değer girin."
+      },
+      {
+        "source_row": "9",
+        "column_name": "Şirket Adı",
+        "error_code": "MISSING_SOURCE_ENTITY_NAME",
+        "reason_tr": "Satır 9: Kaynak varlık/kurum adı boş bırakılmış.",
+        "remediation_tr": "Bu satıra geçerli bir kurum veya varlık adı girin ya da boş satırı silin."
+      }
+    ],
+    "Kaynak_Izleri": [
+      {
+        "record_id": "DS_1F8D7FA0EAB8_R2",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_hash": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_row": "2",
+        "imported_at": "2026-11-09T16:45:00.000Z",
+        "occurred_at": "2026-02-01T00:00:00.000Z",
+        "learned_at": "2026-11-09T16:45:00.000Z",
+        "mapping_method": "RULE_BASED_DETERMINISTIC",
+        "user_confirmation": "CONFIRMED"
+      },
+      {
+        "record_id": "DS_1F8D7FA0EAB8_R3",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_hash": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_row": "3",
+        "imported_at": "2026-11-09T16:45:00.000Z",
+        "occurred_at": "2026-02-02T00:00:00.000Z",
+        "learned_at": "2026-11-09T16:45:00.000Z",
+        "mapping_method": "RULE_BASED_DETERMINISTIC",
+        "user_confirmation": "CONFIRMED"
+      },
+      {
+        "record_id": "DS_1F8D7FA0EAB8_R4",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_hash": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_row": "4",
+        "imported_at": "2026-11-09T16:45:00.000Z",
+        "occurred_at": "2026-02-03T00:00:00.000Z",
+        "learned_at": "2026-11-09T16:45:00.000Z",
+        "mapping_method": "RULE_BASED_DETERMINISTIC",
+        "user_confirmation": "CONFIRMED"
+      },
+      {
+        "record_id": "DS_1F8D7FA0EAB8_R5",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_hash": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_row": "5",
+        "imported_at": "2026-11-09T16:45:00.000Z",
+        "occurred_at": "2026-02-04T00:00:00.000Z",
+        "learned_at": "2026-11-09T16:45:00.000Z",
+        "mapping_method": "RULE_BASED_DETERMINISTIC",
+        "user_confirmation": "CONFIRMED"
+      },
+      {
+        "record_id": "DS_1F8D7FA0EAB8_R6",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_hash": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_row": "6",
+        "imported_at": "2026-11-09T16:45:00.000Z",
+        "occurred_at": "2026-02-05T00:00:00.000Z",
+        "learned_at": "2026-11-09T16:45:00.000Z",
+        "mapping_method": "RULE_BASED_DETERMINISTIC",
+        "user_confirmation": "CONFIRMED"
+      },
+      {
+        "record_id": "DS_1F8D7FA0EAB8_R7",
+        "source_file": "vaka_a_tedarik_zinciri.xlsx",
+        "source_hash": "f636c77a2634841436d07efe8cc614c9f495bbcf7c79d7db395e670c24e646e4",
+        "source_sheet": "Tedarik_Zinciri",
+        "source_row": "7",
+        "imported_at": "2026-11-09T16:45:00.000Z",
+        "occurred_at": "2026-02-06T00:00:00.000Z",
+        "learned_at": "2026-11-09T16:45:00.000Z",
+        "mapping_method": "RULE_BASED_DETERMINISTIC",
+        "user_confirmation": "CONFIRMED"
+      }
+    ]
+  }
+}

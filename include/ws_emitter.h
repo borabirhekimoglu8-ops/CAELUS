@@ -32,6 +32,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <functional>
 #include <sstream>
 #include <iomanip>
 #include <vector>
@@ -40,6 +41,10 @@
 #include <cstdlib>
 #include <cctype>
 #include <cerrno>
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include "caelus_otel_local.h"
 
 // ── Platform socket abstraction ───────────────────────────────────────────────
 #ifdef _WIN32
@@ -48,10 +53,12 @@
 #  endif
 #  include <winsock2.h>
 #  include <ws2tcpip.h>
+#  include <windows.h>
 
    using SocketFd = SOCKET;
    static constexpr SocketFd kInvalidSocket = INVALID_SOCKET;
    inline void   close_socket(SocketFd s) { ::closesocket(s); }
+   inline void   shutdown_write(SocketFd s) { ::shutdown(s, SD_SEND); }
    inline bool   wsa_init() {
        WSADATA w;
        return ::WSAStartup(MAKEWORD(2, 2), &w) == 0;
@@ -72,6 +79,7 @@
    using SocketFd = int;
    static constexpr SocketFd kInvalidSocket = -1;
    inline void   close_socket(SocketFd s) { ::close(s); }
+   inline void   shutdown_write(SocketFd s) { ::shutdown(s, SHUT_WR); }
    inline bool   wsa_init()    { return true; }
    inline void   wsa_cleanup() {}
    inline bool   set_nonblocking(SocketFd s) {
@@ -233,26 +241,55 @@ inline std::vector<uint8_t> ws_text_frame(const std::string& payload) {
     return f;
 }
 
-// ── Send all bytes reliably over a blocking socket ───────────────────────────
+// ── Send all bytes reliably over a blocking or non-blocking socket ──────────
 inline bool send_all(SocketFd s, const uint8_t* buf, int len) {
     int sent = 0;
+    int retries = 0;
     while (sent < len) {
         int n = (int)::send(s, (const char*)(buf + sent), len - sent, 0);
-        if (n <= 0) return false;
-        sent += n;
+        if (n > 0) {
+            sent += n;
+            retries = 0;
+            continue;
+        }
+        if (n == 0) return false;
+#ifdef _WIN32
+        const int err = ::WSAGetLastError();
+        const bool would_block = (err == WSAEWOULDBLOCK);
+#else
+        const bool would_block = (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR);
+#endif
+        // Yavaş okuyucu toleransı: tarayıcı büyük bir JS paketini ayrıştırırken soketi
+        // >1 sn okuyamayabilir (özellikle load_world ile gelen yüzlerce KB'lık dünya
+        // deposu karesinde). İlerleme olmadan en fazla ~10 sn beklenir; gerçekten
+        // ölü istemci TCP hatası ile yine anında düşer.
+        if (!would_block || ++retries > 500) return false;
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(s, &wfds);
+        timeval tv{0, 20000}; // 20ms per retry (ilerlemesiz toplam ≈10s)
+        ::select((int)(s + 1), nullptr, &wfds, nullptr, &tv);
     }
     return true;
 }
 
-// ── Read HTTP request until \r\n\r\n (bounded to 8 KiB) ────────────────────
+// ── Read HTTP request until \r\n\r\n (bounded to 8 KiB, non-blocking wait) ──
 inline bool recv_http_header(SocketFd s, std::string& out) {
     out.clear();
-    char c;
+    char buf[4096];
     while (true) {
-        int n = (int)::recv(s, &c, 1, 0);
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        // Chromium speculative preconnect sockets send 0 bytes; do not let an
+        // idle socket block the single event loop thread for more than 120ms.
+        timeval tv{0, 120000};
+        int ready = ::select((int)(s + 1), &rfds, nullptr, nullptr, &tv);
+        if (ready <= 0) return false;
+        int n = (int)::recv(s, buf, (int)sizeof(buf), 0);
         if (n <= 0) return false;
-        out += c;
-        if (out.size() >= 4u && out.substr(out.size() - 4u) == "\r\n\r\n")
+        out.append(buf, static_cast<size_t>(n));
+        if (out.find("\r\n\r\n") != std::string::npos)
             return true;
         if (out.size() > 8192u) return false;
     }
@@ -269,6 +306,20 @@ public:
     struct Config {
         size_t   max_clients{8u};
         size_t   buffer_events{4096u};
+        // ── Uzak War Room (opsiyonel, varsayılan KAPALI = air-gapped) ─────────
+        // bind_all=true → 0.0.0.0'a bağlanır (LAN'dan erişilebilir); aksi hâlde
+        // yalnız 127.0.0.1. bind_all iken token ZORUNLUDUR (core_engine bunu
+        // fail-closed zorlar): token boşken uzak moda hiç geçilmez.
+        bool        bind_all{false};
+        std::string token;   // boş → kimlik kontrolü yok (yalnız loopback modu)
+    };
+
+    // Tek portta sunulan statik HTTP varlığı (embedded War Room UI).
+    struct HttpRoute {
+        std::string    path;          // "/" veya "/app.js"
+        std::string    content_type;  // "text/html; charset=utf-8" vb.
+        const uint8_t* data{nullptr};
+        size_t         len{0};
     };
 
     WsEmitter()
@@ -327,17 +378,21 @@ public:
         ::setsockopt(listen_sock_, SOL_SOCKET, SO_REUSEADDR,
                      (const char*)&yes, (int)sizeof(yes));
 
+        const bool remote = resolved.bind_all;
+        const char* bind_ip = remote ? "0.0.0.0" : "127.0.0.1";
+
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_port   = htons(port);
-        // Loopback ONLY — packets never leave the machine.
-        ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+        // Varsayılan: loopback (paketler makineyi terk etmez). Uzak modda
+        // (bind_all) 0.0.0.0 → LAN erişimi; token zorunlu (core_engine zorlar).
+        ::inet_pton(AF_INET, bind_ip, &addr.sin_addr);
 
         if (::bind(listen_sock_, (sockaddr*)&addr, sizeof(addr)) != 0 ||
             ::listen(listen_sock_, listen_backlog(resolved.max_clients)) != 0) {
             close_socket(listen_sock_);
             listen_sock_ = kInvalidSocket;
-            std::cerr << "[WS-EMITTER] HATA: 127.0.0.1:" << port
+            std::cerr << "[WS-EMITTER] HATA: " << bind_ip << ":" << port
                       << " portuna bagilanamadi. War Room koprusu baslatilmadi.\n";
             wsa_cleanup();
             return false;
@@ -347,10 +402,21 @@ public:
         running_.store(true, std::memory_order_release);
         thread_  = std::thread(&WsEmitter::run_loop, this);
         std::cout << "[WS-EMITTER] War Room koprusu baslatildi"
-                  << " → ws://127.0.0.1:" << port
+                  << " → ws://" << bind_ip << ":" << port
+                  << (remote ? " (UZAK MOD: LAN + token)" : " (loopback)")
                   << " (istemci siniri: " << resolved.max_clients
                   << ", ring: " << resolved.buffer_events << " olay)\n";
         return true;
+    }
+
+    /**
+     * Register a static HTTP asset served on the SAME port (plain GET).
+     * Used to serve the embedded War Room UI to a remote browser. Set BEFORE
+     * start(); routes are read on the background thread with no further sync.
+     */
+    void add_http_route(std::string path, std::string content_type,
+                        const uint8_t* data, size_t len) {
+        routes_.push_back(HttpRoute{std::move(path), std::move(content_type), data, len});
     }
 
     /**
@@ -385,6 +451,22 @@ public:
     /** True when at least one War Room browser is currently connected. */
     bool connected() const {
         return client_count_.load(std::memory_order_relaxed) > 0u;
+    }
+
+    /**
+     * Install a handler for inbound War Room commands (browser → engine).
+     *
+     * The handler is invoked on the emitter's background thread when a client
+     * sends a WebSocket text frame; the frame payload (a single command line
+     * such as "tick 24" or "lever DENIZ_TAHLIYE") is passed through. The
+     * engine mutates only on its own thread, so the handler MUST NOT touch the
+     * engine directly — it should enqueue the command for the main loop.
+     *
+     * Set this BEFORE start(); it is read on the background thread with no
+     * further synchronisation, so post-start mutation is not supported.
+     */
+    void on_command(std::function<void(std::string)> handler) {
+        cmd_handler_ = std::move(handler);
     }
 
 private:
@@ -434,7 +516,18 @@ private:
             if (sel < 0) break;
 
             if (ls != kInvalidSocket && FD_ISSET(ls, &rd)) {
-                accept_client(ls, clients);
+                // Drain all pending connections in the listen queue so concurrent
+                // HTTP asset requests (CesiumJS, workers, tiles, app.js) are served immediately.
+                for (int accept_burst = 0; accept_burst < 32; ++accept_burst) {
+                    fd_set lrd;
+                    FD_ZERO(&lrd);
+                    FD_SET(ls, &lrd);
+                    timeval ztv{0, 0};
+                    if (accept_burst > 0 && ::select((int)(ls + 1), &lrd, nullptr, nullptr, &ztv) <= 0) {
+                        break;
+                    }
+                    accept_client(ls, clients);
+                }
             }
 
             for (size_t i = 0; i < clients.size();) {
@@ -464,13 +557,365 @@ private:
         client_count_.store(0u, std::memory_order_release);
     }
 
+    // İstek satırından hedefi (path?query) çıkar: "GET /?token=x HTTP/1.1".
+    static std::string request_target(const std::string& req) {
+        const size_t sp1 = req.find(' ');
+        if (sp1 == std::string::npos) return "/";
+        const size_t sp2 = req.find(' ', sp1 + 1);
+        if (sp2 == std::string::npos) return "/";
+        return req.substr(sp1 + 1, sp2 - sp1 - 1);
+    }
+
+    // Hedeften bir sorgu parametresini çıkarır (URL-decode YOK — token hex/base).
+    static std::string query_param(const std::string& target, const std::string& key) {
+        const size_t q = target.find('?');
+        if (q == std::string::npos) return {};
+        const std::string qs = target.substr(q + 1);
+        const std::string needle = key + "=";
+        size_t pos = 0;
+        while (pos < qs.size()) {
+            size_t amp = qs.find('&', pos);
+            std::string kv = qs.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+            if (kv.compare(0, needle.size(), needle) == 0)
+                return kv.substr(needle.size());
+            if (amp == std::string::npos) break;
+            pos = amp + 1;
+        }
+        return {};
+    }
+
+    // Sabit-zaman string eşitliği (token karşılaştırması timing sızdırmasın).
+    static bool ct_equal(const std::string& a, const std::string& b) {
+        const size_t n = a.size() > b.size() ? a.size() : b.size();
+        volatile unsigned char acc = (a.size() == b.size()) ? 0u : 1u;
+        for (size_t i = 0; i < n; ++i) {
+            const unsigned char ca = i < a.size() ? (unsigned char)a[i] : 0u;
+            const unsigned char cb = i < b.size() ? (unsigned char)b[i] : 0u;
+            acc = (unsigned char)(acc | (unsigned char)(ca ^ cb));
+        }
+        return acc == 0u;
+    }
+
+    // token_ boşsa (loopback modu) her istek geçer; doluysa query token şart.
+    bool token_ok(const std::string& target) const {
+        if (config_.token.empty()) return true;
+        return ct_equal(query_param(target, "token"), config_.token);
+    }
+
+public:
+    /**
+     * Doğrulanan yerel Origin kontrolü (CSWSH koruması).
+     *
+     * Kurallar:
+     *   1. Boş Origin (CLI/otomasyon istemcisi) → izin verilir.
+     *   2. "null" Origin → varsayılan olarak REDDEDİLİR (sandboxed iframe
+     *      `<iframe sandbox="allow-scripts">` saldırgan siteden `Origin: null`
+     *      gönderir). Yalnızca `allow_null_origin=true` veya
+     *      `CAELUS_WS_ALLOW_NULL_ORIGIN=1` ortam değişkeni ile açılabilir.
+     *   3. "file://" veya "file:///..." → yerel dosya şeması (host içeremez).
+     *   4. "http://" veya "https://" → host TAM OLARAK "127.0.0.1", "localhost"
+     *      veya "[::1]" olmalıdır (`localhost.evil.example` veya
+     *      `127.0.0.1.evil.com` önek atlatmaları reddedilir).
+     *   5. Port belirtilmişse 1..65535 aralığında salt rakam olmalıdır.
+     */
+    static bool is_allowed_local_origin(std::string origin, bool allow_null_origin = false) {
+        while (!origin.empty() &&
+               (origin.back() == ' ' || origin.back() == '\t' ||
+                origin.back() == '\r' || origin.back() == '\n')) {
+            origin.pop_back();
+        }
+        if (origin.empty()) return true;
+
+        for (char& c : origin) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+
+        if (origin == "null") {
+            return allow_null_origin;
+        }
+
+        if (origin == "file://" || origin.rfind("file:///", 0) == 0) {
+            return true;
+        }
+
+        std::string rest;
+        if (origin.rfind("http://", 0) == 0) {
+            rest = origin.substr(7);
+        } else if (origin.rfind("https://", 0) == 0) {
+            rest = origin.substr(8);
+        } else {
+            return false;
+        }
+
+        // Opsiyonel sonda '/' varsa kaldır; başka path/query/userinfo olamaz.
+        if (!rest.empty() && rest.back() == '/') {
+            rest.pop_back();
+        }
+        if (rest.empty()) return false;
+        if (rest.find('/') != std::string::npos ||
+            rest.find('@') != std::string::npos ||
+            rest.find('?') != std::string::npos ||
+            rest.find('#') != std::string::npos) {
+            return false;
+        }
+
+        std::string host;
+        std::string port_str;
+        if (rest.front() == '[') {
+            const size_t close_bracket = rest.find(']');
+            if (close_bracket == std::string::npos) return false;
+            host = rest.substr(0, close_bracket + 1);
+            if (close_bracket + 1 < rest.size()) {
+                if (rest[close_bracket + 1] != ':') return false;
+                port_str = rest.substr(close_bracket + 2);
+                if (port_str.empty()) return false;
+            }
+        } else {
+            const size_t colon = rest.find(':');
+            if (colon == std::string::npos) {
+                host = rest;
+            } else {
+                host = rest.substr(0, colon);
+                port_str = rest.substr(colon + 1);
+                if (port_str.empty()) return false;
+            }
+        }
+
+        if (host != "127.0.0.1" && host != "localhost" && host != "[::1]") {
+            return false;
+        }
+
+        if (!port_str.empty()) {
+            if (port_str.size() > 5) return false;
+            unsigned long port_val = 0;
+            for (char ch : port_str) {
+                if (ch < '0' || ch > '9') return false;
+                port_val = port_val * 10ul + static_cast<unsigned long>(ch - '0');
+            }
+            if (port_val < 1ul || port_val > 65535ul) return false;
+        }
+
+        return true;
+    }
+
+private:
+    // Loopback CSWSH koruması: token yokken tarayıcı yabancı bir Origin gönderirse
+    // (örn. https://evil.example, http://localhost.evil.example, Origin: null)
+    // bağlantıyı reddet.
+    bool origin_ok(const std::string& req) const {
+        if (!config_.token.empty()) return true;  // Token doğrulaması aktifken token_ok() belirleyicidir.
+        const std::string origin = ws_detail::get_header(req, "Origin");
+        const char* allow_null_env = std::getenv("CAELUS_WS_ALLOW_NULL_ORIGIN");
+        const bool allow_null = allow_null_env &&
+            (std::strcmp(allow_null_env, "1") == 0 || std::strcmp(allow_null_env, "true") == 0);
+        return is_allowed_local_origin(origin, allow_null);
+    }
+
+    // Plain HTTP GET → embedded War Room varlığını sun (uzak tarayıcı için).
+    // Statik varlıklar (HTML/JS) herkese açıktır — sır içermez ve <script
+    // src="app.js"> isteği token taşıyamaz. Güvenlik sınırı WS upgrade'dedir:
+    // token olmadan hiçbir canlı veri akmaz ve hiçbir komut kabul edilmez.
+    void serve_http(SocketFd cl, const std::string& target) {
+        std::string path = target;
+        const size_t q = path.find('?');
+        if (q != std::string::npos) path.erase(q);
+        if (path.empty()) path = "/";
+
+        caelus::telemetry::ScopedLocalSpan http_span(
+            path == "/api/local-otel-spans" ? "http.get.local_otel_spans" :
+            (path == "/api/os-host-telemetry" ? "http.get.os_host_telemetry" : "http.get.static_asset"),
+            "ws_emitter_http", 0, "OK");
+        caelus::telemetry::LocalOtelCollector::instance().increment_counter("http.requests.total", 1);
+
+        if (path == "/api/local-otel-spans") {
+            const std::string body = caelus::telemetry::LocalOtelCollector::instance().export_local_json(32);
+            std::ostringstream hdr;
+            hdr << "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+                << "Cache-Control: no-store\r\n"
+                << "Content-Length: " << body.size() << "\r\n"
+                << "Connection: close\r\n\r\n";
+            const std::string h = hdr.str();
+            ws_detail::send_all(cl, (const uint8_t*)h.data(), (int)h.size());
+            ws_detail::send_all(cl, (const uint8_t*)body.data(), (int)body.size());
+            return;
+        }
+
+        if (path == "/api/os-host-telemetry") {
+            uint32_t mem_load_pct = 50;
+            uint64_t total_phys_mb = 16384;
+            uint64_t avail_phys_mb = 8192;
+            uint64_t uptime_sec = 0;
+#ifdef _WIN32
+            MEMORYSTATUSEX ms{};
+            ms.dwLength = sizeof(ms);
+            if (::GlobalMemoryStatusEx(&ms)) {
+                mem_load_pct = static_cast<uint32_t>(ms.dwMemoryLoad);
+                total_phys_mb = static_cast<uint64_t>(ms.ullTotalPhys / (1024ULL * 1024ULL));
+                avail_phys_mb = static_cast<uint64_t>(ms.ullAvailPhys / (1024ULL * 1024ULL));
+            }
+            uptime_sec = static_cast<uint64_t>(::GetTickCount64() / 1000ULL);
+#endif
+            auto now = std::chrono::system_clock::now();
+            std::time_t tt = std::chrono::system_clock::to_time_t(now);
+            std::tm gmt{};
+#ifdef _WIN32
+            gmtime_s(&gmt, &tt);
+#else
+            gmtime_r(&tt, &gmt);
+#endif
+            char iso_buf[32]{};
+            std::strftime(iso_buf, sizeof(iso_buf), "%Y-%m-%dT%H:%M:%SZ", &gmt);
+
+            std::ostringstream body_ss;
+            body_ss << "{\"source_name\":\"WIN32_OS_HOST_TELEMETRY_127_0_0_1\","
+                    << "\"data_classification\":\"OBSERVED_DATA\","
+                    << "\"read_only\":true,"
+                    << "\"occurrence_time_iso\":\"" << iso_buf << "\","
+                    << "\"memory_load_pct\":" << mem_load_pct << ","
+                    << "\"total_phys_mb\":" << total_phys_mb << ","
+                    << "\"avail_phys_mb\":" << avail_phys_mb << ","
+                    << "\"uptime_sec\":" << uptime_sec << "}";
+            const std::string body = body_ss.str();
+            std::ostringstream hdr;
+            hdr << "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+                << "Cache-Control: no-store\r\n"
+                << "Content-Length: " << body.size() << "\r\n"
+                << "Connection: close\r\n\r\n";
+            const std::string h = hdr.str();
+            ws_detail::send_all(cl, (const uint8_t*)h.data(), (int)h.size());
+            ws_detail::send_all(cl, (const uint8_t*)body.data(), (int)body.size());
+            return;
+        }
+
+        for (const auto& rt : routes_) {
+            if (rt.path == path) {
+                std::ostringstream hdr;
+                hdr << "HTTP/1.1 200 OK\r\nContent-Type: " << rt.content_type
+                    << "\r\nContent-Length: " << rt.len
+                    << "\r\nConnection: close\r\n\r\n";
+                const std::string h = hdr.str();
+                ws_detail::send_all(cl, (const uint8_t*)h.data(), (int)h.size());
+                ws_detail::send_all(cl, rt.data, (int)rt.len);
+                return;
+            }
+        }
+
+        // Safe static asset serving for /vendor/..., /assets/..., and UI engine modules
+        if ((path.rfind("/vendor/", 0) == 0 || path.rfind("/ui/vendor/", 0) == 0 ||
+             path.rfind("/assets/", 0) == 0 || path.rfind("/ui/assets/", 0) == 0 ||
+             path == "/learned_world_model.js" || path == "/ui/learned_world_model.js" ||
+             path == "/living_world_model.js" || path == "/ui/living_world_model.js" ||
+             path == "/discovery_value_engine.js" || path == "/ui/discovery_value_engine.js" ||
+             path == "/first_real_task_engine.js" || path == "/ui/first_real_task_engine.js" ||
+             path == "/personal_agent_and_advisor.js" || path == "/ui/personal_agent_and_advisor.js" ||
+             path == "/spatial_experience.js" || path == "/ui/spatial_experience.js") &&
+            path.find("..") == std::string::npos &&
+            path.find('\\') == std::string::npos &&
+            path.find(':') == std::string::npos) {
+            std::string raw_rel = (path.rfind("/ui/", 0) == 0) ? path.substr(3) : path;
+            std::string rel;
+            rel.reserve(raw_rel.size());
+            for (size_t i = 0; i < raw_rel.size(); ++i) {
+                if (raw_rel[i] == '/' && !rel.empty() && rel.back() == '/') continue;
+                rel.push_back(raw_rel[i]);
+            }
+            std::vector<std::string> base_dirs = {"./ui", "../ui"};
+            if (const char* env_root = std::getenv("CAELUS_STATIC_ROOT")) {
+                if (*env_root) base_dirs.insert(base_dirs.begin(), std::string(env_root));
+            }
+#ifdef _WIN32
+            char exe_buf[MAX_PATH]{};
+            DWORD exe_len = ::GetModuleFileNameA(nullptr, exe_buf, MAX_PATH);
+            if (exe_len > 0 && exe_len < MAX_PATH) {
+                std::string exe_p(exe_buf, exe_len);
+                for (char& ch : exe_p) if (ch == '\\') ch = '/';
+                size_t sl = exe_p.find_last_of('/');
+                if (sl != std::string::npos) {
+                    std::string exe_dir = exe_p.substr(0, sl);
+                    base_dirs.push_back(exe_dir + "/ui");
+                    base_dirs.push_back(exe_dir + "/../ui");
+                }
+            }
+#endif
+            for (const auto& bdir : base_dirs) {
+                std::string full_p = bdir + rel;
+                std::ifstream ifs(full_p, std::ios::binary | std::ios::ate);
+                if (!ifs.is_open()) continue;
+                std::streamsize fsize = ifs.tellg();
+                if (fsize < 0 || fsize > 64 * 1024 * 1024) continue;
+                ifs.seekg(0, std::ios::beg);
+                std::vector<uint8_t> fbuf(static_cast<size_t>(fsize));
+                if (fsize > 0 && !ifs.read(reinterpret_cast<char*>(fbuf.data()), fsize)) continue;
+
+                std::string ctype = "application/octet-stream";
+                auto ends_ci = [&](const char* suf) {
+                    size_t slen = std::strlen(suf);
+                    if (rel.size() < slen) return false;
+                    for (size_t i = 0; i < slen; ++i) {
+                        if (std::tolower((unsigned char)rel[rel.size() - slen + i]) != suf[i]) return false;
+                    }
+                    return true;
+                };
+                if (ends_ci(".js") || ends_ci(".mjs") || ends_ci(".cjs")) ctype = "application/javascript; charset=utf-8";
+                else if (ends_ci(".css")) ctype = "text/css; charset=utf-8";
+                else if (ends_ci(".json") || ends_ci(".geojson")) ctype = "application/json; charset=utf-8";
+                else if (ends_ci(".xml")) ctype = "application/xml; charset=utf-8";
+                else if (ends_ci(".html")) ctype = "text/html; charset=utf-8";
+                else if (ends_ci(".md") || ends_ci(".txt")) ctype = "text/plain; charset=utf-8";
+                else if (ends_ci(".png")) ctype = "image/png";
+                else if (ends_ci(".jpg") || ends_ci(".jpeg")) ctype = "image/jpeg";
+                else if (ends_ci(".gif")) ctype = "image/gif";
+                else if (ends_ci(".svg")) ctype = "image/svg+xml";
+                else if (ends_ci(".wasm")) ctype = "application/wasm";
+                else if (ends_ci(".glb")) ctype = "model/gltf-binary";
+                else if (ends_ci(".gltf")) ctype = "model/gltf+json; charset=utf-8";
+                else if (ends_ci(".b3dm") || ends_ci(".i3dm") || ends_ci(".pnts") || ends_ci(".cmpt")) ctype = "application/octet-stream";
+                else if (ends_ci(".pbf")) ctype = "application/x-protobuf";
+                else if (ends_ci(".woff2")) ctype = "font/woff2";
+                else if (ends_ci(".woff")) ctype = "font/woff";
+
+                std::ostringstream hdr;
+                hdr << "HTTP/1.1 200 OK\r\nContent-Type: " << ctype
+                    << "\r\nCache-Control: public, max-age=3600"
+                    << "\r\nContent-Length: " << fbuf.size()
+                    << "\r\nConnection: close\r\n\r\n";
+                const std::string h = hdr.str();
+                ws_detail::send_all(cl, (const uint8_t*)h.data(), (int)h.size());
+                if (!fbuf.empty()) {
+                    ws_detail::send_all(cl, fbuf.data(), (int)fbuf.size());
+                }
+                return;
+            }
+        }
+        static const char* nf =
+            "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n"
+            "Connection: close\r\n\r\nbulunamdi";
+        ws_detail::send_all(cl, (const uint8_t*)nf, (int)std::strlen(nf));
+    }
+
     // ── RFC 6455 §4 — server handshake ───────────────────────────────────────
-    bool perform_handshake(SocketFd cl) {
+    // WS upgrade → true (istemci olur). Plain GET → varlık sunulur, false.
+    bool perform_handshake(SocketFd cl, bool& served_http) {
+        served_http = false;
         std::string req;
         if (!ws_detail::recv_http_header(cl, req)) return false;
 
+        const std::string target = request_target(req);
         std::string ws_key = ws_detail::get_header(req, "Sec-WebSocket-Key");
-        if (ws_key.empty()) return false;
+        if (ws_key.empty()) {
+            // WebSocket değil → statik HTTP isteği (UI sayfası/asset).
+            serve_http(cl, target);
+            served_http = true;
+            return false;
+        }
+        // WS upgrade: token kapısı (tarayıcı WS'i header set edemez → query token).
+        if (!token_ok(target) || !origin_ok(req)) {
+            static const char* r =
+                "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n";
+            ws_detail::send_all(cl, (const uint8_t*)r, (int)std::strlen(r));
+            std::cerr << "[WS-EMITTER] Gecersiz token veya yabanci Origin — WS reddedildi.\n";
+            return false;
+        }
 
         std::string accept = ws_detail::ws_accept_key(ws_key);
         std::string resp =
@@ -487,6 +932,15 @@ private:
         SocketFd cl = ::accept(ls, nullptr, nullptr);
         if (cl == kInvalidSocket) return;
 
+        bool served_http = false;
+        if (!perform_handshake(cl, served_http)) {
+            if (served_http) {
+                shutdown_write(cl);
+            }
+            close_socket(cl);
+            return;
+        }
+
         if (clients.size() >= max_clients_) {
             close_socket(cl);
             std::cerr << "[WS-EMITTER] UYARI: War Room istemci siniri dolu ("
@@ -494,7 +948,7 @@ private:
             return;
         }
 
-        if (!perform_handshake(cl) || !set_nonblocking(cl)) {
+        if (!set_nonblocking(cl)) {
             close_socket(cl);
             return;
         }
@@ -514,22 +968,124 @@ private:
     }
 
     bool handle_client_read(SocketFd cl) {
-        uint8_t buf[512];
-        int n = (int)::recv(cl, (char*)buf, sizeof(buf), 0);
+        std::vector<uint8_t> buf(262144);
+        int n = (int)::recv(cl, (char*)buf.data(), (int)buf.size(), 0);
         if (n <= 0) return false; // closed or error
 
-        // RFC 6455 opcode: 0x8=close, 0x9=ping, 0xA=pong
-        uint8_t opcode = buf[0] & 0x0Fu;
-        if (opcode == 0x08u) {
-            uint8_t cf[] = {0x88u, 0x00u};
-            ws_detail::send_all(cl, cf, 2);
-            return false;
+        size_t total = static_cast<size_t>(n);
+        size_t offset = 0;
+        while (offset + 2 <= total) {
+            uint8_t opcode = buf[offset] & 0x0Fu;
+            if (opcode == 0x08u) {
+                uint8_t cf[] = {0x88u, 0x00u};
+                ws_detail::send_all(cl, cf, 2);
+                return false;
+            }
+            const bool masked = (buf[offset + 1] & 0x80u) != 0u;
+            size_t hdr_len = 2 + (masked ? 4 : 0);
+            size_t payload_len = buf[offset + 1] & 0x7Fu;
+            if (payload_len == 126u) {
+                if (offset + 4 > total) break;
+                hdr_len += 2;
+                payload_len = (static_cast<size_t>(buf[offset + 2]) << 8) | buf[offset + 3];
+            } else if (payload_len == 127u) {
+                if (offset + 10 > total) break;
+                hdr_len += 8;
+                uint64_t len64 = 0;
+                for (int b = 0; b < 8; ++b) {
+                    len64 = (len64 << 8) | static_cast<uint64_t>(buf[offset + 2 + b]);
+                }
+                payload_len = static_cast<size_t>(len64);
+            }
+            const size_t expected_end = offset + hdr_len + payload_len;
+            if (expected_end > buf.size()) {
+                buf.resize(expected_end + 4096);
+            }
+            int retry_spins = 0;
+            // Büyük çerçeveler (ör. yüzlerce KB'lık save_world) birkaç TCP okumasına
+            // bölünebilir; tarayıcı meşgulken parçalar gecikebilir → ~5 sn sabır.
+            while (total < expected_end && expected_end <= buf.size() && retry_spins < 500) {
+                fd_set rfds;
+                FD_ZERO(&rfds);
+                FD_SET(cl, &rfds);
+                timeval tv{0, 10000}; // 10ms per wait (ilerlemesiz toplam ≈5 sn)
+                int sel = ::select((int)(cl + 1), &rfds, nullptr, nullptr, &tv);
+                if (sel < 0) break;
+                if (sel == 0) {
+                    ++retry_spins;
+                    continue;
+                }
+                int more = (int)::recv(cl, (char*)buf.data() + total, (int)(buf.size() - total), 0);
+                if (more > 0) {
+                    total += static_cast<size_t>(more);
+                } else if (more == 0) {
+                    break;
+                } else {
+                    ++retry_spins;
+                }
+            }
+            // Eksik (kesik) çerçeve ASLA komut olarak işlenmez: kesik bir save_world JSON'u
+            // diske yazılırsa dünya deposu bozulur ve her açılışta bağlantıyı düşürür.
+            if (expected_end > total) {
+                std::cerr << "[WS-EMITTER] UYARI: eksik WebSocket cercevesi atildi ("
+                          << (total - offset) << "/" << (hdr_len + payload_len)
+                          << " bayt); komut calistirilmadi.\n";
+                break;
+            }
+            const size_t frame_bytes = hdr_len + payload_len;
+            if (opcode == 0x09u && frame_bytes >= 2) {
+                buf[offset] = 0x8Au;
+                ws_detail::send_all(cl, buf.data() + offset, (int)frame_bytes);
+            } else if (opcode == 0x01u) {
+                handle_text_frame(buf.data() + offset, frame_bytes);
+            }
+            if (expected_end > total) break;
+            offset = expected_end;
         }
-        if (opcode == 0x09u && n >= 2) {
-            buf[0] = 0x8Au;
-            ws_detail::send_all(cl, buf, n);
+        return true; // Non-text / oversized frames silently ignored.
+    }
+
+    /**
+     * RFC 6455 §5 — decode a single client text frame and forward its payload
+     * to the command handler. Client→server frames are ALWAYS masked (§5.1);
+     * we unmask in place.
+     */
+    void handle_text_frame(uint8_t* buf, size_t n) {
+        if (!cmd_handler_ || n < 2) return;
+        const bool masked = (buf[1] & 0x80u) != 0u;
+        uint64_t len = buf[1] & 0x7Fu;
+        size_t pos = 2;
+        if (len == 126u) {
+            if (n < 4) return;
+            len = (static_cast<uint64_t>(buf[2]) << 8) | buf[3];
+            pos = 4;
+        } else if (len == 127u) {
+            if (n < 10) return;
+            len = 0;
+            for (int b = 0; b < 8; ++b) {
+                len = (len << 8) | static_cast<uint64_t>(buf[2 + b]);
+            }
+            pos = 10;
         }
-        return true; // Other frames silently ignored.
+        uint8_t mask[4] = {0, 0, 0, 0};
+        if (masked) {
+            if (n < pos + 4) return;
+            std::memcpy(mask, buf + pos, 4);
+            pos += 4;
+        }
+        if (pos > n) return;
+        if (len > n - pos) return; // kesik çerçeve: çalıştırma (bozuk komut diske yazılmasın)
+        std::string payload;
+        payload.resize(static_cast<size_t>(len));
+        for (uint64_t i = 0; i < len; ++i) {
+            payload[i] = static_cast<char>(buf[pos + i] ^ (masked ? mask[i & 3u] : 0u));
+        }
+        // Strip trailing CR/LF/NUL a browser or proxy might append.
+        while (!payload.empty() &&
+               (payload.back() == '\r' || payload.back() == '\n' || payload.back() == '\0')) {
+            payload.pop_back();
+        }
+        if (!payload.empty()) cmd_handler_(payload);
     }
 
     bool client_has_pending(const ClientSlot& c) {
@@ -618,7 +1174,7 @@ private:
     }
 
     static int listen_backlog(size_t max_clients) {
-        size_t backlog = std::max<size_t>(1u, max_clients);
+        size_t backlog = std::max<size_t>(64u, max_clients);
 #ifdef SOMAXCONN
         backlog = std::min<size_t>(backlog, static_cast<size_t>(SOMAXCONN));
 #endif
@@ -637,6 +1193,13 @@ private:
     std::deque<BufferedEvent> buffer_;
     uint64_t                next_event_seq_{0};
     size_t                  buffer_limit_{4096u};
+
+    // Inbound War Room command sink (browser → engine). Set before start();
+    // invoked only on the background thread thereafter.
+    std::function<void(std::string)> cmd_handler_;
+
+    // Statik HTTP rotaları (embedded UI). Set before start(); read-only after.
+    std::vector<HttpRoute> routes_;
 };
 
 

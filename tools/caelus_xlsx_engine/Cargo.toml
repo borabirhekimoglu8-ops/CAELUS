@@ -1,0 +1,12 @@
+﻿[package]
+name = "caelus_xlsx_engine"
+version = "0.1.0"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+calamine = "0.38"
+rust_xlsxwriter = "0.79"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"

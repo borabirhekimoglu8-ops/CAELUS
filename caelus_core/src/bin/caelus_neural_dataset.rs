@@ -296,6 +296,9 @@ fn build_engine(case_name: &str, rollout_seed: u64) -> (CausalEngine, i64) {
         reversible,
         permanent_loss_fp: 220_000,
         flipped: false,
+        min_friction_fp: 0,
+        condition_node_id: String::new(),
+        min_node_state_fp: 0,
     });
 
     let success_probability = if case_name == "recovery_failure" {

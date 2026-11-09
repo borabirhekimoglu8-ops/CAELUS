@@ -1,0 +1,9 @@
+Şirket Adı,Şirket Türü,Tedarikçi Kurum,İlişki Türü,Kritiklik_Skoru,Aylık_Hacim_Birim,Birim,Tarih,Toplam_Risk_Formül,Gözlem_Kaynağı,Notlar
+Alfa Teknoloji A.Ş.,Üretim Kurumu,Marmara Yarı İletken Ltd.,Kritik Bileşen Tedariki,0.88,12500,Adet,2026-02-01,11000.0,ERP_SatinAlma_Kaydi_2026Q1,Ana işlemci modülü tedarik hattı
+ALFA TEKNOLOJI AS,Üretim Kurumu,Kuzey Lojistik A.Ş.,Soğuk Zincir ve Taşıma,0.76,8400,Adet,2026-02-02,6384.0,Gumruk_Beyanname_2026_02,Kuzey koridoru gümrük geçişli sevkiyat
+Alfa Teknoloji,Üretim Kurumu,Ege Enerji Dağıtım A.Ş.,Enerji ve Altyapı Beslemesi,0.82,6200,MWh,2026-02-03,5084.0,Enerji_Izleme_Tablosu,Üretim tesisi kesintisiz güç bağlantısı
+Beta Biyoteknoloji A.Ş.,Sağlık Üreticisi,Marmara Yarı İletken Ltd.,Sensör Çipi Tedariki,0.91,4500,Adet,2026-02-04,4095.0,Tedarik_Sozlesmesi_B4,Soğuk zincir sensör kartı bağımlılığı
+Anadolu Soğuk Zincir Ltd.,Lojistik Operatörü,Kuzey Lojistik A.Ş.,Depo ve Aktarma Ortaklığı,0.69,15800,Ton,2026-02-05,10902.0,Liman_Aktarma_Gunlugu,Bölgesel aktarma deposu
+Marmara Yarı İletken Ltd.,Bileşen Tedarikçisi,Küresel Silikon Wafer Corp.,Ham Madde İthalatı,0.94,19000,Wafer,2026-02-06,17860.0,Ithalat_Manifestosu_W9,Üst kademe (Tier-2) ham madde darboğazı
+Delta Savunma Sistemleri A.Ş.,Üretim Kurumu,Marmara Yarı İletken Ltd.,Kritik Bileşen Tedariki,BOZUK_SKOR,BELIRSIZ_HACIM,Adet,2026-02-30,=E8*F8,Ham_Tablo_Hatali_Satir,Bu satır doğrulama motorunun satır bazlı hata yakalamasını test eder
+,Belirsiz,Kuzey Lojistik A.Ş.,Taşıma,0.55,1200,Adet,2026-02-07,=E9*F9,Eksik_Kayit_Girisi,Varlık adı boş bırakılmış satır

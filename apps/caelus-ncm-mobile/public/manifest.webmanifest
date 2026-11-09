@@ -1,0 +1,12 @@
+{
+  "name": "CAELUS NCM-3 Mobile",
+  "short_name": "CAELUS NCM-3",
+  "description": "Yerel kanıt motoru, Truth Gate ve deterministik Rust/WASM ScenarioPack doğrulayıcısı",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#05070a",
+  "theme_color": "#05070a",
+  "lang": "tr"
+}

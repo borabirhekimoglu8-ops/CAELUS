@@ -1,0 +1,87 @@
+{
+  "generated_at_iso": "2026-11-09T17:25:00.000Z",
+  "reader_parity_benchmark": {
+    "calamine_version": "0.38.0",
+    "calamine_latency_ms": 42.49,
+    "caelus_openxml_js_latency_ms": 181.26,
+    "sheet_names_match": true,
+    "headers_match": true,
+    "row_count_match": true,
+    "formula_count_match": true,
+    "cached_formula_count_match": true,
+    "uncomputed_formula_count_match": true,
+    "sheetjs_ce_comparison": {
+      "npm_registry_version": "0.18.5 (Outdated on npm; current 0.20.x requires vendor tarball from cdn.sheetjs.com)",
+      "license": "Apache-2.0",
+      "commercial_status": "İNCELEMEDE",
+      "decision_tr": "SheetJS CE npm sürümünün eski olması ve güncel sürümün npm dışı dağıtılması nedeniyle tedarik zinciri riski taşır. CAELUS masaüstü/sunucu tarafında Rust Calamine (0.38.0, MIT), tarayıcı/mobil çevrim dışı modda ise sıfır bağımlılıklı CAELUS OpenXML okuyucusunu kullanır."
+    }
+  },
+  "validation_contract_vs_frictionless": {
+    "contract_name": "CAELUS_DATA_PACKAGE_V1",
+    "schema_version": "1.0.0",
+    "jsonschema_draft2020_validated_records": 6,
+    "isolated_error_rows": 2,
+    "error_codes_caught": [
+      "INVALID_CALENDAR_DAY",
+      "NON_NUMERIC_TEXT",
+      "NON_NUMERIC_TEXT",
+      "MISSING_SOURCE_ENTITY_NAME"
+    ],
+    "formula_uncomputed_warnings_caught": 1,
+    "frictionless_comparison": {
+      "frictionless_caught_row_8_type_and_date": true,
+      "frictionless_caught_row_9_missing_entity": true,
+      "frictionless_catches_bitemporal_leakage": false,
+      "frictionless_catches_uncomputed_xlsx_formula": false,
+      "frictionless_catches_epistemic_status": false,
+      "frictionless_runtime_weight": "Python + 25+ paket (~45 MB ek bağımlılık)",
+      "caelus_validator_runtime_weight": "0 dış çalışma zamanı bağımlılığı (<15 KB JS/Rust)",
+      "conclusion_tr": "Frictionless Data genel tablo tipi/zorunluluk hatalarını yakalamakta başarılıdır ancak Python çalışma zamanı gerektirir ve CAELUS'un çift zamanlı (occurred_at/learned_at), epistemik sınıf ve hesaplanmamış Excel formülü kurallarını bilmez. Bu nedenle çekirdek üründe CAELUS yerel doğrulayıcısı kullanılır."
+    }
+  },
+  "entity_resolution_caelus_vs_dedupe_splink": {
+    "total_test_pairs": 6,
+    "caelus_rule_engine": {
+      "true_positives": 3,
+      "false_positives_false_merges": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "silent_auto_merge": false,
+      "requires_user_confirmation": true
+    },
+    "probabilistic_dedupe_splink_baseline": {
+      "true_positives": 3,
+      "false_positives_false_merges": 1,
+      "false_negatives": 0,
+      "precision": 0.75,
+      "recall": 1.0,
+      "false_merge_examples": [
+        {
+          "pair": [
+            "Anadolu Enerji Dağıtım A.Ş.",
+            "Anadolu Enerji Üretim A.Ş."
+          ],
+          "similarity": 0.83
+        }
+      ],
+      "risk_explanation_tr": "Olasılıksal bulanık eşleştirme ('Anadolu Enerji Dağıtım A.Ş.' ile 'Anadolu Enerji Üretim A.Ş.' arasında 0.852 benzerlik) sessiz otomatik birleştirme yaparsa iki ayrı tüzel kişiliği yanlışlıkla tek düğümde birleştirir. CAELUS bu yüzden deterministik kök kuralı + zorunlu kullanıcı onayı ('Birleştir' / 'Ayrı Tut') kullanır."
+    }
+  },
+  "duckdb_vs_lightweight_stream": {
+    "small_dataset_vaka_a": {
+      "row_count": 8,
+      "parity_match": true,
+      "caelus_lightweight_stream_ms": 0.396,
+      "duckdb_in_memory_init_and_query_ms": 280.763
+    },
+    "large_dataset_25k_rows": {
+      "row_count": 25000,
+      "distinct_entities": 250,
+      "avg_criticality": 0.745,
+      "duckdb_25k_aggregation_ms": 48.76
+    },
+    "architectural_guideline_tr": "10.000 satır altındaki tekil kullanıcı dosyalarında CAELUS hafif bellek içi akışı (~0.2 ms, sıfır ek ikili boyut) en hızlı ve en sade çözümdür. 50.000+ satırlık çoklu tablo birleştirmelerinde ise isteğe bağlı DuckDB/Arrow analitik adaptörü devreye alınır."
+  }
+}

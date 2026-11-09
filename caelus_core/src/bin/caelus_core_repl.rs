@@ -20,8 +20,8 @@
 use std::io::{self, BufRead, Write};
 
 use caelus_core::{
-    CausalEngine, Edge, EngineSnapshot, FeedbackLoop, Hysteresis, Lever, LeverOutcome, Node,
-    NodeKind, FP_ONE,
+    CausalEngine, Edge, EngineSnapshot, FeedbackLoop, Hysteresis, IntelBinding, IntelBindingMode,
+    Lever, LeverOutcome, Node, NodeKind, FP_ONE,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +82,13 @@ impl Json {
         match self {
             Json::Str(s) => s,
             _ => "",
+        }
+    }
+    fn as_f(&self, def: f64) -> f64 {
+        match self {
+            Json::Float(f) => *f,
+            Json::Int(i) => *i as f64,
+            _ => def,
         }
     }
     fn arr(&self) -> &[Json] {
@@ -319,12 +326,66 @@ fn parse_outcome(v: &Json) -> LeverOutcome {
     }
 }
 
+#[derive(Clone)]
+struct ReplayIntelEvent {
+    tick: u64,
+    friction_coeff: f64,
+    crisis_level: i32,
+    memo: String,
+}
+
+struct ReplaySchedule {
+    events: Vec<ReplayIntelEvent>,
+    cursor: usize,
+}
+
+impl ReplaySchedule {
+    fn from_root(root: &Json) -> Self {
+        let tick_minutes = root.get("meta").get("tick_minutes").as_i(15);
+        let safe_min = if tick_minutes > 0 { tick_minutes } else { 15 };
+        let tph = (60 / safe_min).max(1) as u64;
+        let mut events = Vec::new();
+        for ev in root
+            .get("v1_engine_bridge")
+            .get("intel_feed_sequence")
+            .arr()
+        {
+            let t_hour = ev.get("t_hour").as_i(0).max(0) as u64;
+            events.push(ReplayIntelEvent {
+                tick: t_hour.saturating_mul(tph),
+                friction_coeff: ev.get("friction_coefficient").as_f(0.0),
+                crisis_level: ev.get("crisis_level").as_i(0) as i32,
+                memo: ev.get("memo").as_s().to_string(),
+            });
+        }
+        events.sort_by_key(|e| e.tick);
+        ReplaySchedule { events, cursor: 0 }
+    }
+
+    fn dispatch_up_to(&mut self, eng: &mut CausalEngine, now_tick: u64) {
+        while self.cursor < self.events.len() && self.events[self.cursor].tick <= now_tick {
+            let ev = &self.events[self.cursor];
+            eng.inject_intel(ev.friction_coeff, ev.crisis_level, &ev.memo);
+            self.cursor += 1;
+        }
+    }
+
+    fn dispatch_exact(&self, eng: &mut CausalEngine, now_tick: u64) {
+        for ev in &self.events {
+            if ev.tick == now_tick {
+                eng.inject_intel(ev.friction_coeff, ev.crisis_level, &ev.memo);
+            }
+        }
+    }
+}
+
 fn apply_pack(root: &Json, eng: &mut CausalEngine) -> Vec<PackLever> {
     let cm = root.get("extended_causal_model");
     let mut pack_levers = Vec::new();
 
     eng.reset();
 
+    let mut parsed_nodes: Vec<Node> = Vec::new();
     for nv in cm.get("nodes").arr() {
         let state_fp = nv.get("state_fp").as_i(0);
         let n = Node {
@@ -344,9 +405,26 @@ fn apply_pack(root: &Json, eng: &mut CausalEngine) -> Vec<PackLever> {
                 FP_ONE
             },
             deadline_tick: nv.get("deadline_tick").as_i(-1) as i32,
+            deadline_min_state_fp: nv.get("deadline_min_state_fp").as_i(0),
             deadline_missed: false,
             irrecoverable: nv.get("irrecoverable").as_b(false),
         };
+        parsed_nodes.push(n);
+    }
+
+    for dv in cm.get("hard_deadlines").arr() {
+        let nid = dv.get("node_id").as_s();
+        let at = dv.get("at_tick").as_i(-1) as i32;
+        if let Some(node) = parsed_nodes.iter_mut().find(|n| n.id == nid) {
+            node.deadline_tick = at;
+            if dv.has("min_state_fp") {
+                node.deadline_min_state_fp = dv.get("min_state_fp").as_i(node.deadline_min_state_fp);
+            }
+        }
+    }
+
+    let node_ids: Vec<String> = parsed_nodes.iter().map(|n| n.id.clone()).collect();
+    for n in parsed_nodes {
         eng.add_node(n);
     }
 
@@ -413,7 +491,28 @@ fn apply_pack(root: &Json, eng: &mut CausalEngine) -> Vec<PackLever> {
             threshold_tick: hv.get("threshold_tick").as_i(0) as i32,
             reversible: hv.get("reversible").as_b(true),
             permanent_loss_fp: hv.get("permanent_loss_fp").as_i(0),
+            min_friction_fp: hv.get("min_friction_fp").as_i(0),
+            condition_node_id: hv.get("condition_node_id").as_s().to_string(),
+            min_node_state_fp: hv.get("min_node_state_fp").as_i(0),
             flipped: false,
+        });
+    }
+
+    for bv in cm.get("intel_bindings").arr() {
+        let nid = bv.get("node_id").as_s();
+        if !node_ids.iter().any(|existing| existing == nid) {
+            continue;
+        }
+        eng.add_intel_binding(IntelBinding {
+            node_id: nid.to_string(),
+            mode: if bv.get("mode").as_s() == "add" {
+                IntelBindingMode::Add
+            } else {
+                IntelBindingMode::Max
+            },
+            scale_fp: bv.get("scale_fp").as_i(FP_ONE),
+            crisis_step_fp: bv.get("crisis_step_fp").as_i(0),
+            min_crisis_level: bv.get("min_crisis_level").as_i(0) as i32,
         });
     }
 
@@ -454,7 +553,7 @@ fn emit_snapshot_json(
     let prefix = if json_stdout { "" } else { "[REPL_JSON] " };
     let _ = writeln!(
         out,
-        "{}{{\"type\":\"snapshot\",\"scenario_id\":\"{}\",\"current_tick\":{},\"last_snapshot_tick\":{},\"raw_friction\":{:.6},\"clamped_friction\":{:.6},\"live_multiplier\":{:.6},\"regime_exceeded\":{},\"outage_active\":{},\"deadline_missed\":{},\"hysteresis_flip\":{},\"throughput_ratio_fp\":{},\"throughput_ratio\":{:.6},\"summary\":\"{}\"}}",
+        "{}{{\"type\":\"snapshot\",\"scenario_id\":\"{}\",\"current_tick\":{},\"last_snapshot_tick\":{},\"raw_friction\":{:.6},\"clamped_friction\":{:.6},\"live_multiplier\":{:.6},\"regime_exceeded\":{},\"outage_active\":{},\"deadline_missed\":{},\"hysteresis_flip\":{},\"throughput_ratio_fp\":{},\"throughput_ratio\":{:.6},\"intel_events_total\":{},\"intel_events_unbound\":{},\"summary\":\"{}\"}}",
         prefix,
         json_escape(scenario_id),
         eng.current_tick(),
@@ -468,6 +567,8 @@ fn emit_snapshot_json(
         snap.any_hysteresis_flip,
         snap.throughput_ratio_fp,
         snap.throughput_ratio,
+        eng.intel_events_total(),
+        eng.intel_events_unbound(),
         json_escape(&snap.summary),
     );
 }
@@ -557,7 +658,11 @@ fn main() {
         i += 1;
     }
 
-    let pack_path = format!("scenarios/{scenario_id}.json");
+    let pack_path = if scenario_id.ends_with(".json") {
+        scenario_id.clone()
+    } else {
+        format!("scenarios/{scenario_id}.json")
+    };
     let content = match std::fs::read_to_string(&pack_path) {
         Ok(c) => c,
         Err(e) => {
@@ -578,11 +683,14 @@ fn main() {
         eng.set_prng_seed(0xCAE1_05DE_ADBE_EF00);
     }
     let pack_levers = apply_pack(&root, &mut eng);
+    let mut replay = ReplaySchedule::from_root(&root);
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
     // C++ main akışı: 1 baseline tick → sentetik intel → 2 tick → t=3
+    let tick0 = eng.current_tick();
+    replay.dispatch_up_to(&mut eng, tick0);
     let mut last_snap = eng.tick();
     eng.inject_intel(
         0.82,
@@ -590,6 +698,8 @@ fn main() {
         "GENERIC_FIELD_SIGNAL: Actor_Alpha elevated friction",
     );
     for _ in 0..2 {
+        let now = eng.current_tick();
+        replay.dispatch_up_to(&mut eng, now);
         last_snap = eng.tick();
     }
 
@@ -644,6 +754,8 @@ fn main() {
                     None => 0,
                 };
                 for _ in 0..n {
+                    let now = eng.current_tick();
+                    replay.dispatch_up_to(&mut eng, now);
                     last_snap = eng.tick();
                 }
                 let _ = writeln!(out, "[REPL] {n} tick tamamlandi.");
@@ -683,8 +795,118 @@ fn main() {
                     meta.cost_ticks,
                     remaining_cost
                 );
+                let now = eng.current_tick();
+                replay.dispatch_up_to(&mut eng, now);
                 last_snap = eng.tick();
                 emit_snapshot_text(&mut out, &eng, &last_snap);
+            }
+            "compare_lever" | "counterfactual" => {
+                let lever_id = parts.next().unwrap_or("");
+                if lever_id.is_empty() {
+                    let _ = writeln!(out, "[REPL] Kullanim: compare_lever <id> [horizon_ticks] [seed]");
+                    continue;
+                }
+                let meta = match pack_levers.iter().find(|l| l.id == lever_id) {
+                    Some(m) => m,
+                    None => {
+                        let _ = writeln!(
+                            out,
+                            "[REPL] Kaldirac bulunamadi: {lever_id} (liste icin: list levers)"
+                        );
+                        continue;
+                    }
+                };
+                let mut horizon_ticks: u32 = parts
+                    .next()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(24);
+                if horizon_ticks == 0 {
+                    horizon_ticks = 1;
+                }
+                if horizon_ticks > 2000 {
+                    horizon_ticks = 2000;
+                }
+                let custom_seed: u64 = parts
+                    .next()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+
+                let mut branch_a = eng.clone();
+                let mut branch_b = eng.clone();
+                let tick_start = eng.current_tick();
+                let effective_seed = if custom_seed != 0 {
+                    custom_seed
+                } else if eng.prng_seed() != 0 {
+                    eng.prng_seed().wrapping_add(tick_start)
+                } else if tick_start != 0 {
+                    tick_start
+                } else {
+                    1
+                };
+
+                let lever_applied_ok = branch_b.apply_lever(lever_id, effective_seed);
+                let mut snap_a = last_snap.clone();
+                let mut snap_b = last_snap.clone();
+                let mut sum_tp_a = 0.0f64;
+                let mut sum_tp_b = 0.0f64;
+                let mut outage_ticks_a = 0u32;
+                let mut outage_ticks_b = 0u32;
+
+                for _ in 0..horizon_ticks {
+                    let ta = branch_a.current_tick();
+                    let tb = branch_b.current_tick();
+                    replay.dispatch_exact(&mut branch_a, ta);
+                    replay.dispatch_exact(&mut branch_b, tb);
+                    snap_a = branch_a.tick();
+                    snap_b = branch_b.tick();
+                    sum_tp_a += snap_a.throughput_ratio;
+                    sum_tp_b += snap_b.throughput_ratio;
+                    if snap_a.outage_active {
+                        outage_ticks_a += 1;
+                    }
+                    if snap_b.outage_active {
+                        outage_ticks_b += 1;
+                    }
+                }
+
+                let avg_tp_a = sum_tp_a / (horizon_ticks as f64);
+                let avg_tp_b = sum_tp_b / (horizon_ticks as f64);
+                let delta_tp = avg_tp_b - avg_tp_a;
+                let _ = meta;
+
+                let _ = writeln!(
+                    out,
+                    "[REPL_COUNTERFACTUAL] {{\"type\":\"counterfactual_result\",\"scenario_id\":\"{}\",\"lever_id\":\"{}\",\"lever_success\":{},\"seed\":{},\"tick_start\":{},\"horizon_ticks\":{},\"baseline_end_friction\":{:.6},\"intervention_end_friction\":{:.6},\"baseline_end_throughput\":{:.6},\"intervention_end_throughput\":{:.6},\"baseline_avg_throughput\":{:.6},\"intervention_avg_throughput\":{:.6},\"delta_avg_throughput\":{:.6},\"baseline_outage_ticks\":{},\"intervention_outage_ticks\":{},\"baseline_end_outage\":{},\"intervention_end_outage\":{},\"branch_a\":{{\"tick\":{},\"throughput_ratio\":{:.6},\"clamped_friction\":{:.6},\"outage_active\":{},\"deadline_missed\":{},\"any_hysteresis_flip\":{}}},\"branch_b\":{{\"tick\":{},\"throughput_ratio\":{:.6},\"clamped_friction\":{:.6},\"outage_active\":{},\"deadline_missed\":{},\"any_hysteresis_flip\":{}}}}}",
+                    json_escape(&scenario_id),
+                    json_escape(lever_id),
+                    lever_applied_ok,
+                    effective_seed,
+                    tick_start,
+                    horizon_ticks,
+                    snap_a.clamped_friction_d(),
+                    snap_b.clamped_friction_d(),
+                    snap_a.throughput_ratio,
+                    snap_b.throughput_ratio,
+                    avg_tp_a,
+                    avg_tp_b,
+                    delta_tp,
+                    outage_ticks_a,
+                    outage_ticks_b,
+                    snap_a.outage_active,
+                    snap_b.outage_active,
+                    branch_a.current_tick(),
+                    snap_a.throughput_ratio,
+                    snap_a.clamped_friction_d(),
+                    snap_a.outage_active,
+                    snap_a.any_deadline_missed,
+                    snap_a.any_hysteresis_flip,
+                    branch_b.current_tick(),
+                    snap_b.throughput_ratio,
+                    snap_b.clamped_friction_d(),
+                    snap_b.outage_active,
+                    snap_b.any_deadline_missed,
+                    snap_b.any_hysteresis_flip
+                );
             }
             "list" => {
                 let what = parts.next().unwrap_or("").to_lowercase();

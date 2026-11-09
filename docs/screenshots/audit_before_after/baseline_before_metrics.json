@@ -1,0 +1,453 @@
+{
+  "desktop": {
+    "requests": [
+      {
+        "url": "/vendor/cesium/Widgets/widgets.css",
+        "status": 200,
+        "bytes": 30151
+      },
+      {
+        "url": "/vendor/vis-timeline/vis-timeline-graph2d.min.css",
+        "status": 200,
+        "bytes": 19837
+      },
+      {
+        "url": "/",
+        "status": 200,
+        "bytes": 732002
+      },
+      {
+        "url": "/vendor/open-props/open-props.caelus.min.css",
+        "status": 200,
+        "bytes": 5278
+      },
+      {
+        "url": "/vendor/webawesome/caelus-webawesome.css",
+        "status": 200,
+        "bytes": 9894
+      },
+      {
+        "url": "/vendor/maplibre-gl/maplibre-gl.css",
+        "status": 200,
+        "bytes": 69422
+      },
+      {
+        "url": "/assets/caelus-logo.png",
+        "status": 200,
+        "bytes": 97982
+      },
+      {
+        "url": "/vendor/carbon-charts/styles.min.css",
+        "status": 200,
+        "bytes": 231279
+      },
+      {
+        "url": "/vendor/floating-ui/floating-ui.dom.umd.min.js",
+        "status": 200,
+        "bytes": 9761
+      },
+      {
+        "url": "/vendor/floating-ui/floating-ui.core.umd.min.js",
+        "status": 200,
+        "bytes": 12432
+      },
+      {
+        "url": "/vendor/motion/motion.min.js",
+        "status": 200,
+        "bytes": 63808
+      },
+      {
+        "url": "/vendor/theatre/theatre-core.min.js",
+        "status": 200,
+        "bytes": 107593
+      },
+      {
+        "url": "/vendor/paper-shaders/paper-shaders.min.js",
+        "status": 200,
+        "bytes": 53942
+      },
+      {
+        "url": "/vendor/vis-timeline/vis-timeline-graph2d.min.js",
+        "status": 200,
+        "bytes": 569230
+      },
+      {
+        "url": "/vendor/lucide/lucide.min.js",
+        "status": 200,
+        "bytes": 481206
+      },
+      {
+        "url": "/vendor/echarts/echarts.min.js",
+        "status": 200,
+        "bytes": 662026
+      },
+      {
+        "url": "/vendor/carbon-charts/carbon-charts.min.js",
+        "status": 200,
+        "bytes": 403171
+      },
+      {
+        "url": "/vendor/perspective/caelus-perspective.min.js",
+        "status": 200,
+        "bytes": 2483
+      },
+      {
+        "url": "/vendor/three-stack/caelus-three-stack.min.js",
+        "status": 200,
+        "bytes": 950459
+      },
+      {
+        "url": "/living_world_model.js",
+        "status": 200,
+        "bytes": 138460
+      },
+      {
+        "url": "/discovery_value_engine.js",
+        "status": 200,
+        "bytes": 78362
+      },
+      {
+        "url": "/vendor/cytoscape/cytoscape.min.js",
+        "status": 200,
+        "bytes": 435649
+      },
+      {
+        "url": "/spatial_experience.js",
+        "status": 200,
+        "bytes": 20652
+      },
+      {
+        "url": "/vendor/spacekit/spacekit.js",
+        "status": 200,
+        "bytes": 747254
+      },
+      {
+        "url": "/first_real_task_engine.js",
+        "status": 200,
+        "bytes": 152092
+      },
+      {
+        "url": "/vendor/maplibre-gl/maplibre-gl.js",
+        "status": 200,
+        "bytes": 910801
+      },
+      {
+        "url": "/scenario_compiler.js",
+        "status": 200,
+        "bytes": 1502603
+      },
+      {
+        "url": "/app.js",
+        "status": 200,
+        "bytes": 1259117
+      },
+      {
+        "url": "/vendor/deckgl/deckgl.min.js",
+        "status": 200,
+        "bytes": 2078081
+      },
+      {
+        "url": "/vendor/cesium/Cesium.js",
+        "status": 200,
+        "bytes": 4974668
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/tilemapresource.xml",
+        "status": 200,
+        "bytes": 780
+      },
+      {
+        "url": "/vendor/spacekit/assets/sprites/smallparticle.png",
+        "status": 200,
+        "bytes": 439
+      },
+      {
+        "url": "/vendor/spacekit/assets/sprites/lensflare0.png",
+        "status": 200,
+        "bytes": 78758
+      },
+      {
+        "url": "/vendor/cesium/Assets/approximateTerrainHeights.json",
+        "status": 200,
+        "bytes": 299471
+      },
+      {
+        "url": "http://127.0.0.1:11434/api/tags",
+        "status": 200,
+        "bytes": 867
+      },
+      {
+        "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson",
+        "status": 200,
+        "bytes": 57892
+      },
+      {
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=38.44&longitude=27.15&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure&wind_speed_unit=ms",
+        "status": 200,
+        "bytes": 568
+      },
+      {
+        "url": "https://marine-api.open-meteo.com/v1/marine?latitude=38.44&longitude=27.15&current=wave_height,wave_direction,wave_period,wind_wave_height,swell_wave_height",
+        "status": 200,
+        "bytes": 492
+      },
+      {
+        "url": "blob:/a3e98d7f-8c81-4417-b8ca-d82a51fcc44d",
+        "status": 200,
+        "bytes": 143
+      },
+      {
+        "url": "blob:/a1ffb61d-1678-45e6-8b49-be18b66a44dd",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "blob:/c9526ed5-e163-4a6e-84d5-8362b796c43e",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/4237d80a-b9fe-4a3c-b6d6-cf37b3089cad",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/58480d25-0b4f-4ab6-86ac-1d31fe430133",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/de5988df-b2e4-47f3-a66f-ea082afda697",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "blob:/b30ea8c4-ea2e-40c8-ad29-a11864279819",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "blob:/ab28ffe9-d8a8-4abb-a71b-6e3666d41b15",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "blob:/53b30912-c990-4849-8ae8-aae9d2d12cb3",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/9a5ed22d-6ae2-4639-b20c-dfd5acc3b645",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/514ee2da-8b2d-4d7c-8fdb-6689bd6cb75a",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/f07430a1-c002-4cf6-aae5-5e3827865ee1",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "blob:/2b6778ed-c829-45f6-829c-04fbf6aa899b",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/49408e84-0220-4a0d-82b1-23b2ed58b2b8",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "/vendor/cesium/Assets/IAU2006_XYS/IAU2006_XYS_18.json",
+        "status": 200,
+        "bytes": 65310
+      },
+      {
+        "url": "/vendor/cesium/Assets/Images/ion-credit.png",
+        "status": 200,
+        "bytes": 6028
+      },
+      {
+        "url": "blob:/c95d1db6-4ea3-407c-962b-75269166ba0a",
+        "status": 200,
+        "bytes": 135
+      },
+      {
+        "url": "blob:/1e989db1-1607-4d74-80a4-2ed5a06b7cb7",
+        "status": 200,
+        "bytes": 148
+      },
+      {
+        "url": "blob:/f0e1bc1b-6586-479d-bc47-c3813606d745",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/5c53f633-b294-4bd2-b4ba-eb418656dbe6",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "blob:/1097f057-67c4-4b6b-b557-a9fcd3b1aab5",
+        "status": 200,
+        "bytes": 136
+      },
+      {
+        "url": "blob:/a22aab11-be2e-448f-9600-c224c5cbfa50",
+        "status": 200,
+        "bytes": 820225
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/0/1/0.jpg",
+        "status": 200,
+        "bytes": 14055
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/0/0/0.jpg",
+        "status": 200,
+        "bytes": 12067
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/0/3.jpg",
+        "status": 200,
+        "bytes": 10341
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/2/3.jpg",
+        "status": 200,
+        "bytes": 14940
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/1/0/1.jpg",
+        "status": 200,
+        "bytes": 11399
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/1/1/1.jpg",
+        "status": 200,
+        "bytes": 13142
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/1/1/0.jpg",
+        "status": 200,
+        "bytes": 10652
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/3/3.jpg",
+        "status": 200,
+        "bytes": 10754
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/3/2.jpg",
+        "status": 200,
+        "bytes": 11678
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/4/3.jpg",
+        "status": 200,
+        "bytes": 11888
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/4/2.jpg",
+        "status": 200,
+        "bytes": 16477
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/5/3.jpg",
+        "status": 200,
+        "bytes": 11877
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/5/2.jpg",
+        "status": 200,
+        "bytes": 16112
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/6/3.jpg",
+        "status": 200,
+        "bytes": 12756
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/1/3.jpg",
+        "status": 200,
+        "bytes": 15862
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/7/3.jpg",
+        "status": 200,
+        "bytes": 11859
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/2/2.jpg",
+        "status": 200,
+        "bytes": 12262
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/6/2.jpg",
+        "status": 200,
+        "bytes": 16411
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/3/1.jpg",
+        "status": 200,
+        "bytes": 10234
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/2/5/1.jpg",
+        "status": 200,
+        "bytes": 10274
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/1/2/1.jpg",
+        "status": 200,
+        "bytes": 15312
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/1/3/1.jpg",
+        "status": 200,
+        "bytes": 13262
+      },
+      {
+        "url": "/vendor/cesium/Assets/Textures/NaturalEarthII/1/2/0.jpg",
+        "status": 200,
+        "bytes": 9643
+      }
+    ],
+    "totalBytes": 25817179,
+    "byType": {
+      ".css": 365861,
+      "other": 8937551,
+      ".png": 183207,
+      ".js": 15613850,
+      ".xml": 780,
+      ".json": 364781,
+      ".geojson": 57892,
+      ".jpg": 293257
+    },
+    "consoleErrors": [
+      "WebSocket connection to 'ws://127.0.0.1:50586/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "WebSocket connection to 'ws://127.0.0.1:50586/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+      "WebSocket connection to 'ws://127.0.0.1:50586/' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    ],
+    "pageErrors": [],
+    "loadMs": 3822,
+    "calloutContextBleedBefore": {
+      "name": "Rıhtım Trafo ve Reefer Enerji Beslemesi",
+      "hypotheses": "Düşüncenin Değişimi: v1 (HYP-ERCOT-ONLY: Sadece Elektrik Kesintisi) → v2 (HYP-CLEANROOM-REQUAL: Temiz Oda & UPW Kalifikasyonu)\n      En Yüksek Bilgi Değeri (VoI): Tesis içi alt-sayaç telemetrisi ve temiz oda parti bazlı kalifikasyon süresi"
+    }
+  },
+  "mobile": {
+    "requests": [],
+    "totalBytes": 17190010,
+    "byType": {},
+    "consoleErrors": [],
+    "pageErrors": [],
+    "horizontalOverflow": false,
+    "loadMs": 2733
+  }
+}

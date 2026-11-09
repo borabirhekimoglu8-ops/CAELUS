@@ -1,0 +1,7 @@
+Kurum_Adi;Kurum_Turu;Bagimli_Altyapi;Bagimlilik_Tipi;Kapasite_Payi;Yedeklilik_Saati;Birim;Olay_Tarihi;Kaynak_Belge;Aciklama
+Ulusal Veri Merkezi A.Ş.;Kritik Bilişim Kurumu;Bölgesel Trafo Merkezi TR-04;Birincil Elektrik Beslemesi;0.85;18;Saat;2026-03-01;Altyapi_Topoloji_Raporu_2026;Ana sunucu salonu yüksek gerilim hattı
+ULUSAL VERI MERKEZI AS;Kritik Bilişim Kurumu;Fiber Omurga Hattı FB-01;Veri İletişim Omurgası;0.92;4;Saat;2026-03-02;Btk_Hat_Haritasi_V3;Yedek uydu bağlantısı düşük bant genişlikli
+Merkez Şehir Hastanesi;Sağlık Kurumu;Bölgesel Trafo Merkezi TR-04;Yoğun Bakım Enerji Hattı;0.95;24;Saat;2026-03-03;Saglik_Afet_Plani_2026;Jeneratör yakıt tamponu 24 saat
+Merkez Şehir Hastanesi;Sağlık Kurumu;Endüstriyel Su Arıtma Tesisi SA-02;Sterilizasyon ve Soğutma Suyu;0.78;12;Saat;2026-03-04;Belediye_Su_Sebekesi_Kaydi;Diyaliz ve soğutma kulesi su bağımlılığı
+Endüstriyel Su Arıtma Tesisi SA-02;Altyapı Tesisi;Bölgesel Trafo Merkezi TR-04;Pompa İstasyonu Enerjisi;0.89;6;Saat;2026-03-05;Pompa_Istasyonu_SCADA;Trafo kesintisinde 6 saat sonra su basıncı düşer
+Bölgesel Lojistik Merkezi;Lojistik Kurumu;Fiber Omurga Hattı FB-01;Otomasyon ve Gümrük Sorgu Ağı;0.74;8;Saat;2026-03-06;Lojistik_Agi_Denetimi;Fiber kesintisinde gümrük kapısı manuel moda düşer

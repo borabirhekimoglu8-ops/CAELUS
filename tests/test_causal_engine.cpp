@@ -87,7 +87,7 @@ caelus::JsonVal parse_json(const std::string& text) {
 
 // Pinned trust anchor (matches CAELUS_TRUSTED_PUBKEY in scenario_pack.h).
 const char* kTrustedPubHex =
-    "9bb1dbd039043670b7bf2c5d7533777866135b92f9b38fe6cd8d9735a04fa802";
+    "a11b528e5344d9aa7147473bf16ce9e9c977f89608958b586359414cc7e97e7f";
 const char* kUntrustedPubHex =
     "0000000000000000000000000000000000000000000000000000000000000000";
 const std::string kSigHex(128, 'a');
@@ -1354,7 +1354,7 @@ TEST_CASE("ScenarioPack load_from_memory matches the file loader") {
     // this is the value the neural/audit commitments hash.
     std::string expected_payload;
     REQUIRE(caelus::ScenarioPack::canonical_signed_payload_from_json(
-        content, expected_payload));
+        content, expected_payload, nullptr, 3));
     CHECK(from_memory.verified_canonical_payload() == expected_payload);
 
     // Rejection path: tampered signature math must fail closed.
@@ -1409,4 +1409,206 @@ TEST_CASE("neural model load_from_memory enforces the same trust chain") {
         CHECK(!package.trusted());
         CHECK(package.status() == ModelLoadStatus::SignerUntrusted);
     }
+}
+// ─── JsonParser sınır vakaları (güvenlik yüzeyi: untrusted senaryo JSON'u) ───
+
+static bool json_parses(const std::string& doc) {
+    caelus::JsonVal root;
+    caelus::JsonParser parser(doc.data(), doc.size());
+    return parser.parse(root);
+}
+
+TEST_CASE("JsonParser rejects truncated documents without crashing") {
+    CHECK(!json_parses(""));
+    CHECK(!json_parses("   \n\t "));
+    CHECK(!json_parses("{"));
+    CHECK(!json_parses("["));
+    CHECK(!json_parses("{\"k\""));
+    CHECK(!json_parses("{\"k\":"));
+    CHECK(!json_parses("{\"k\":1,"));
+    CHECK(!json_parses("[1,2,"));
+    CHECK(!json_parses("\"unterminated"));
+    CHECK(!json_parses("\"escape at end\\"));
+    CHECK(!json_parses("{\"k\":\"\\u00\"}"));
+    CHECK(!json_parses("-"));
+    CHECK(!json_parses("1e"));
+    CHECK(!json_parses("1e+"));
+}
+
+TEST_CASE("JsonParser rejects trailing garbage after a valid document") {
+    CHECK(!json_parses("{} {}"));
+    CHECK(!json_parses("[1,2] x"));
+    CHECK(!json_parses("1 2"));
+    CHECK(json_parses("  {\"k\":1}  "));  // çevre boşluğu serbest
+}
+
+TEST_CASE("JsonParser rejects malformed literals and number grammar") {
+    CHECK(!json_parses("tru"));
+    CHECK(!json_parses("TRUE"));
+    CHECK(!json_parses("nul"));
+    CHECK(!json_parses("None"));
+    CHECK(!json_parses("+1"));
+    CHECK(!json_parses("01"));       // öncü sıfır yasak (RFC 8259)
+    CHECK(!json_parses("-01"));
+    CHECK(!json_parses(".5"));
+    CHECK(!json_parses("1."));
+    CHECK(!json_parses("0x10"));
+    CHECK(json_parses("-0"));
+    CHECK(json_parses("0.5"));
+    CHECK(json_parses("1e10"));
+    CHECK(json_parses("-1.25E-3"));
+}
+
+TEST_CASE("JsonParser rejects raw control characters inside strings") {
+    std::string raw_nl = "{\"s\":\"a\nb\"}";
+    CHECK(!json_parses(raw_nl));
+    std::string raw_nul("{\"s\":\"a\0b\"}", 12);
+    CHECK(!json_parses(raw_nul));
+    std::string raw_tab = "{\"s\":\"a\tb\"}";
+    CHECK(!json_parses(raw_tab));
+    CHECK(json_parses("{\"s\":\"a\\n\\t\\u0000b\"}"));  // escape'li halleri serbest
+    CHECK(!json_parses("{\"s\":\"bad\\x escape\"}"));
+}
+
+TEST_CASE("JsonParser recursion limit is an exact boundary") {
+    auto nested_arrays = [](int levels) {
+        std::string doc(static_cast<size_t>(levels), '[');
+        doc += "0";
+        doc.append(static_cast<size_t>(levels), ']');
+        return doc;
+    };
+    CHECK(json_parses(nested_arrays(64)));   // MAX_RECURSION_DEPTH tam sınırda
+    CHECK(!json_parses(nested_arrays(65)));  // bir fazlası reddedilir
+
+    // Nesne + dizi karışık derinlik de aynı limite tabidir.
+    std::string mixed;
+    for (int i = 0; i < 40; ++i) mixed += "{\"k\":[";
+    mixed += "0";
+    for (int i = 0; i < 40; ++i) mixed += "]}";
+    CHECK(!json_parses(mixed));  // 80 seviye
+}
+
+TEST_CASE("JsonParser survives adversarial small inputs (fuzz corpus)") {
+    // Sabit tohumlu xoshiro benzeri LCG ile üretilmiş rastgele baytlar:
+    // amaç çökmemek ve tutarlı kabul/ret vermek, belirli bir sonuç değil.
+    uint64_t s = 0xC0FFEE1234567890ULL;
+    auto next = [&s]() {
+        s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+        return static_cast<unsigned char>(s & 0xFF);
+    };
+    for (int round = 0; round < 500; ++round) {
+        std::string doc;
+        const int len = 1 + static_cast<int>(next() % 48);
+        for (int i = 0; i < len; ++i) {
+            static const char alphabet[] = "{}[]\":,0123456789.eE+-\\utrflans \n\x01\x7f";
+            doc += alphabet[next() % (sizeof(alphabet) - 1)];
+        }
+        caelus::JsonVal root;
+        caelus::JsonParser parser(doc.data(), doc.size());
+        (void)parser.parse(root);  // çökmediği ve UB üretmediği sürece geçerli
+    }
+    CHECK(true);
+}
+
+TEST_CASE("WsEmitter strict local Origin validation blocks null and prefix bypasses") {
+    using caelus::WsEmitter;
+    // Allowed loopback origins
+    CHECK(WsEmitter::is_allowed_local_origin(""));
+    CHECK(WsEmitter::is_allowed_local_origin("file:///C:/Users/Lenovo/index.html"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://127.0.0.1"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://127.0.0.1:47809"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://localhost"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://localhost:47809"));
+    CHECK(WsEmitter::is_allowed_local_origin("https://localhost:8443"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://[::1]:47809"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://[::1]"));
+
+    // Rejected: Origin: null (sandboxed iframe CSWSH vector) by default
+    CHECK(!WsEmitter::is_allowed_local_origin("null", false));
+    CHECK(WsEmitter::is_allowed_local_origin("null", true));
+
+    // Rejected: prefix & subdomain spoofing, userinfo, invalid ports
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost.evil.example"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost.evil.example:47809"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://127.0.0.1.evil.com"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://127.0.0.1.evil.com:47809"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://[::1].evil.com"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost@evil.com"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:0"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:65536"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:abc"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:47809/path"));
+}
+
+TEST_CASE("Conditional deadline and hysteresis allow proactive lever to prevent outage") {
+    auto build_cond_engine = []() {
+        CausalEngine eng;
+        Node n;
+        n.id = "CRITICAL_NODE";
+        n.kind = NodeKind::Perishable;
+        n.state_fp = 850'000LL;
+        n.reported_state_fp = 850'000LL;
+        n.trust_fp = FP_ONE;
+        n.weight_fp = 500'000LL;
+        n.capacity_fp = FP_ONE;
+        n.deadline_tick = 3;
+        n.deadline_min_state_fp = 700'000LL; // Only trips if state_fp >= 0.70 at tick >= 3
+        eng.add_node(n);
+
+        Hysteresis h;
+        h.id = "HYS_CRITICAL";
+        h.threshold_tick = 3;
+        h.reversible = false;
+        h.permanent_loss_fp = 500'000LL;
+        h.condition_node_id = "CRITICAL_NODE";
+        h.min_node_state_fp = 700'000LL;
+        eng.add_hysteresis(h);
+
+        Lever lv;
+        lv.id = "MITIGATE_CRITICAL";
+        lv.target = "CRITICAL_NODE";
+        lv.success_p_fp = FP_ONE; // 100% deterministic
+        lv.cost_ticks = 4;
+        lv.lockout_ticks = 4;
+        lv.on_success.target_node_id = "CRITICAL_NODE";
+        lv.on_success.state_delta_fp = -500'000LL; // Drops state from 0.85 to 0.35 (< 0.70)
+        eng.add_lever(lv);
+        return eng;
+    };
+
+    // Branch A: Without intervention -> state stays 0.85 >= 0.70 -> outage latches at tick 3
+    CausalEngine branch_a = build_cond_engine();
+    EngineSnapshot snap_a = branch_a.run_ticks(5);
+    CHECK(snap_a.any_deadline_missed);
+    CHECK(snap_a.any_hysteresis_flip);
+    CHECK(snap_a.outage_active);
+    CHECK(snap_a.throughput_ratio_fp == 0LL);
+
+    // Branch B: With intervention before tick 3 -> state drops to 0.35 < 0.70 -> outage prevented!
+    CausalEngine branch_b = build_cond_engine();
+    CHECK(branch_b.apply_lever("MITIGATE_CRITICAL", 42u));
+    EngineSnapshot snap_b = branch_b.run_ticks(5);
+    CHECK(!snap_b.any_deadline_missed);
+    CHECK(!snap_b.any_hysteresis_flip);
+    CHECK(!snap_b.outage_active);
+    CHECK(snap_b.throughput_ratio_fp > 0LL);
+}
+
+TEST_CASE("ScenarioPack canonical_signed_payload supports V2 and V3 deterministically") {
+    std::string raw_json = R"({
+        "schema_version": "2.0.0",
+        "id": "TEST-V3",
+        "blackswan_class": "OPERATIONAL_CONTINUITY",
+        "sector": "energy_grid",
+        "min_caelus_engine": "1.0.0",
+        "meta": {"title": "Grid Test", "tick_minutes": 15, "horizon_hours": 48},
+        "extended_causal_model": {"nodes": [{"id": "N1", "state_fp": 500000}]}
+    })";
+    std::string p2, p3;
+    CHECK(caelus::ScenarioPack::canonical_signed_payload_from_json(raw_json, p2, nullptr, 2));
+    CHECK(caelus::ScenarioPack::canonical_signed_payload_from_json(raw_json, p3, nullptr, 3));
+    CHECK(p2.rfind("CAELUS_SCENARIO_PACK_V2\n", 0) == 0);
+    CHECK(p3.rfind("CAELUS_SCENARIO_PACK_V3\n", 0) == 0);
+    CHECK(p3.find("sector=\"energy_grid\"") != std::string::npos);
+    CHECK(p3.find("\"tick_minutes\":15") != std::string::npos);
 }

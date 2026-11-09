@@ -2,29 +2,29 @@
 setlocal EnableDelayedExpansion
 chcp 65001 > nul 2>&1
 
-:: =============================================================================
-::  CAELUS OS — Blackbox Build Automation Script (Windows)
-::  Air-Gapped · Offline-First · Single Static Executable
-::
-::  Aşama 1: UI Varlık Karartma   → ui_payload.h  (hex byte array)
-::  Aşama 2: Rust Derlemesi       → caelus_network.lib (LTO + opt-z)
-::  Aşama 3: C++ Linkleme         → caelus_os.exe (static + strip)
-::
-::  Env override'lari:
-::    CAELUS_CXX=GCC|MSVC|g++|cl.exe|C:\...\g++  C++ derleyici secimi
-::    CAELUS_RUST_TARGET=x86_64-pc-windows-gnu   Rust ABI target override
-::    CAELUS_USE_CMAKE=0|1                       CMake yolunu zorla/ac-kapat
-::    CAELUS_SKIP_CMAKE=1                        CMake yolunu atla
-::    CAELUS_DOCKER=1                            Container/non-interactive mod notu
-::    CAELUS_SKIP_UI_EMBED=1                     UI header uretimini atla
-:: =============================================================================
+REM =============================================================================
+REM  CAELUS OS ------- Blackbox Build Automation Script (Windows)
+REM  Air-Gapped ---- Offline-First ---- Single Static Executable
+REM
+REM  Asama 1: UI Varlik Karartma   -> ui_payload.h  (hex byte array)
+REM  Asama 2: Rust Derlemesi       -> caelus_network.lib (LTO + opt-z)
+REM  Asama 3: C++ Linkleme         -> caelus_os.exe (static + strip)
+REM
+REM  Env overrides:
+REM    CAELUS_CXX=GCC / MSVC / g++ / cl.exe       C++ derleyici secimi
+REM    CAELUS_RUST_TARGET=x86_64-pc-windows-gnu   Rust ABI target override
+REM    CAELUS_USE_CMAKE=0 or 1                    CMake yolunu zorla/ac-kapat
+REM    CAELUS_SKIP_CMAKE=1                        CMake yolunu atla
+REM    CAELUS_DOCKER=1                            Container/non-interactive mod notu
+REM    CAELUS_SKIP_UI_EMBED=1                     UI header uretimini atla
+REM =============================================================================
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 set "PAYLOAD_H=%ROOT%\include\ui_payload.h"
 :: RUST_TARGET / RUST_LIB are selected AFTER C++ compiler detection so the Rust
 :: ABI matches the linker. Mixing a MSVC-ABI Rust lib with MinGW g++ (or vice
-:: versa) causes undefined references like __CxxFrameHandler3 / __chkstk — this
+:: versa) causes undefined references like __CxxFrameHandler3 / __chkstk ------- this
 :: was the real bug that the old "-Wl,--allow-multiple-definition" hack masked.
 set "RUST_TARGET="
 set "RUST_LIB=%ROOT%\target\release\caelus_network.lib"
@@ -51,7 +51,7 @@ if /I "%CAELUS_SKIP_UI_EMBED%"=="1" (
 set "CORES=%NUMBER_OF_PROCESSORS%"
 if not defined CORES set "CORES=4"
 if /I "%CAELUS_DOCKER%"=="1" (
-    echo [INFO] CAELUS_DOCKER=1 — WMIC kullanmadan non-interactive build modu.
+    echo [INFO] CAELUS_DOCKER=1 ------- WMIC kullanmadan non-interactive build modu.
 ) else (
     where wmic > nul 2>&1
     if not errorlevel 1 (
@@ -60,20 +60,20 @@ if /I "%CAELUS_DOCKER%"=="1" (
 )
 
 echo.
-echo ╔══════════════════════════════════════════════════════════╗
-echo ║    CAELUS OS — Blackbox Build System v1.0.0              ║
-echo ║    Air-Gapped · Offline-First · Target: ^<50 MB EXE      ║
-echo ╚══════════════════════════════════════════════════════════╝
+echo ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo --------    CAELUS OS ------- Blackbox Build System v1.0.0              --------
+echo --------    Air-Gapped ---- Offline-First ---- Target: ^<50 MB EXE      --------
+echo -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 echo.
 
-:: ─────────────────────────────────────────────────────────────────────────────
-:: Ön Kontrol: Kritik araçların varlığını doğrula
-:: ─────────────────────────────────────────────────────────────────────────────
-echo [PREFLIGHT] Araç bağımlılıkları kontrol ediliyor...
+:: -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+:: -----n Kontrol: Kritik ara----lar----n varl------------n---- do----rula
+:: -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo [PREFLIGHT] Ara---- ba--------ml----l----klar---- kontrol ediliyor...
 
 cargo --version > nul 2>&1
 if errorlevel 1 (
-    echo [HATA] 'cargo' bulunamadı. Rust toolchain kurulumu gerekli.
+    echo [HATA] 'cargo' bulunamad----. Rust toolchain kurulumu gerekli.
     exit /b 1
 )
 echo [OK] cargo: mevcut
@@ -240,7 +240,7 @@ if "%RUST_TARGET_OK%"=="0" (
     )
     echo [HATA] Rust target preflight basarisiz: %RUST_TARGET%
     if "%GNU_TARGET%"=="1" echo        x86_64-w64-mingw32-gcc veya Rust GNU target kurulumu eksik olabilir.
-    if "%MSVC_TARGET%"=="1" echo        Rust MSVC target veya Visual Studio Build Tools ortamı eksik olabilir.
+    if "%MSVC_TARGET%"=="1" echo        Rust MSVC target veya Visual Studio Build Tools ortam---- eksik olabilir.
     exit /b 1
 )
 
@@ -248,7 +248,7 @@ echo [OK] C++ derleyici: %CXX_CMD% ^(%CXX_TOOL%^) ^| Rust target: %RUST_TARGET%
 
 cmake --version > nul 2>&1
 if errorlevel 1 (
-    echo [UYARI] cmake bulunamadı. Doğrudan g++/cl.exe ile derleme yapılacak.
+    echo [UYARI] cmake bulunamad----. Do----rudan g++/cl.exe ile derleme yap----lacak.
     set "USE_CMAKE=0"
 ) else (
     echo [OK] cmake: mevcut
@@ -260,10 +260,10 @@ if defined CAELUS_USE_CMAKE (
 )
 if /I "%CAELUS_SKIP_CMAKE%"=="1" (
     set "USE_CMAKE=0"
-    echo [INFO] CAELUS_SKIP_CMAKE=1 — CMake yolu atlandi.
+    echo [INFO] CAELUS_SKIP_CMAKE=1 ------- CMake yolu atlandi.
 )
 
-:: CAELUS_PRODUCTION=1 → dev/demo kapilari derleme-disi (-DCAELUS_PRODUCTION).
+:: CAELUS_PRODUCTION=1 -------- dev/demo kapilari derleme-disi (-DCAELUS_PRODUCTION).
 :: CMake yolu atlanir: makro dogrudan derleme satirina garantili uygulanir
 :: (CMakeLists.txt bu bayragi henuz tasimiyor; yarim-kapili binary riski sifirlanir).
 set "PROD_DEFINE_GCC="
@@ -272,22 +272,26 @@ if /I "%CAELUS_PRODUCTION%"=="1" (
     set "PROD_DEFINE_GCC=-DCAELUS_PRODUCTION"
     set "PROD_DEFINE_MSVC=/DCAELUS_PRODUCTION"
     set "USE_CMAKE=0"
-    echo [INFO] CAELUS_PRODUCTION=1 — dev/demo kapilari derleme-disi birakilacak; dogrudan derleme kullanilacak.
+    echo [INFO] CAELUS_PRODUCTION=1 ------- dev/demo kapilari derleme-disi birakilacak; dogrudan derleme kullanilacak.
 )
 
 :: Verify UI source files exist
 if "%EMBED_UI%"=="1" (
     if not exist "%ROOT%\ui\index.html" (
-        echo [HATA] ui\index.html bulunamadı.
+        echo [HATA] ui\index.html bulunamad----.
         exit /b 1
     )
     if not exist "%ROOT%\ui\app.js" (
-        echo [HATA] ui\app.js bulunamadı.
+        echo [HATA] ui\app.js bulunamad----.
         exit /b 1
     )
-    echo [OK] UI kaynak dosyaları: mevcut
+    if not exist "%ROOT%\ui\scenario_compiler.js" (
+        echo [HATA] ui\scenario_compiler.js bulunamad----.
+        exit /b 1
+    )
+    echo [OK] UI kaynak dosyalar----: mevcut
 ) else (
-    echo [INFO] CAELUS_SKIP_UI_EMBED=1 — UI header uretimi ve embed define atlandi.
+    echo [INFO] CAELUS_SKIP_UI_EMBED=1 ------- UI header uretimi ve embed define atlandi.
 )
 echo.
 
@@ -296,33 +300,33 @@ if not exist "%ROOT%\include" mkdir "%ROOT%\include"
 if not exist "%ROOT%\dist"    mkdir "%ROOT%\dist"
 
 :: =============================================================================
-:: AŞAMA 1 — UI Varlık Karartma (Asset Obfuscation & Embedding)
-:: ui/index.html + ui/app.js → include/ui_payload.h
+:: A----AMA 1 ------- UI Varl----k Karartma (Asset Obfuscation & Embedding)
+:: ui/index.html + ui/scenario_compiler.js + ui/app.js -------- include/ui_payload.h
 :: =============================================================================
-echo ══════════════════════════════════════════════════════════════
-echo [AŞAMA 1/3] UI Gomme (Asset Embedding — gizleme/sifreleme DEGIL)
-echo ══════════════════════════════════════════════════════════════
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo [A----AMA 1/3] UI Gomme (Asset Embedding ------- gizleme/sifreleme DEGIL)
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 :: Eski payload silinerek baslanir: dosya kilitliyse (es zamanli converter/build)
 :: sessizce APPEND edip cift-tanim ureten eski davranis yerine SERT HATA verilir.
 if "%EMBED_UI%"=="1" if exist "%PAYLOAD_H%" (
     del /f "%PAYLOAD_H%" 2>nul
     if exist "%PAYLOAD_H%" (
-        echo [HATA] ui_payload.h kilitli — es zamanli bir build/converter calisiyor olabilir.
+        echo [HATA] ui_payload.h kilitli ------- es zamanli bir build/converter calisiyor olabilir.
         exit /b 1
     )
 )
 if "%EMBED_UI%"=="1" (
-    echo // AUTO-GENERATED — DO NOT EDIT > "%PAYLOAD_H%"
-    echo // CAELUS OS — UI Payload Header >> "%PAYLOAD_H%"
-    echo // Generated by build.bat (Phase 1: Asset Obfuscation) >> "%PAYLOAD_H%"
+    echo // AUTO-GENERATED ------- DO NOT EDIT > "%PAYLOAD_H%"
+    echo // CAELUS OS ------- UI Payload Header >> "%PAYLOAD_H%"
+    echo // Generated by build.bat ^(Phase 1: Asset Embedding^) >> "%PAYLOAD_H%"
     echo // All UI assets embedded as byte arrays for Air-Gapped single-binary build. >> "%PAYLOAD_H%"
     echo #pragma once >> "%PAYLOAD_H%"
     echo #include ^<cstddef^> >> "%PAYLOAD_H%"
     echo. >> "%PAYLOAD_H%"
 
     :: Use PowerShell to convert files to C hex byte arrays (no xxd on Windows by default)
-    echo [1/3] index.html → hex byte dizisi...
+    echo [1/3] index.html -------- hex byte dizisi...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$bytes = [System.IO.File]::ReadAllBytes('%ROOT%\ui\index.html');" ^
         "$hex = ($bytes | ForEach-Object { '0x{0:x2}' -f $_ }) -join ', ';" ^
@@ -332,12 +336,27 @@ if "%EMBED_UI%"=="1" (
         "Add-Content '%PAYLOAD_H%' ('static const std::size_t   CAELUS_UI_HTML_LEN = ' + $len + ';');" ^
         "Add-Content '%PAYLOAD_H%' '';"
     if errorlevel 1 (
-        echo [HATA] index.html dönüştürülemedi.
+        echo [HATA] index.html d----n--------t----r----lemedi.
         exit /b 1
     )
-    echo [OK] index.html gömüldü.
+    echo [OK] index.html g----m----ld----.
 
-    echo [1/3] app.js → hex byte dizisi...
+    echo [2/3] scenario_compiler.js -------- hex byte dizisi...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$bytes = [System.IO.File]::ReadAllBytes('%ROOT%\ui\scenario_compiler.js');" ^
+        "$hex = ($bytes | ForEach-Object { '0x{0:x2}' -f $_ }) -join ', ';" ^
+        "$len = $bytes.Length;" ^
+        "Add-Content '%PAYLOAD_H%' ('// Embedded: ui/scenario_compiler.js  (' + $len + ' bytes)');" ^
+        "Add-Content '%PAYLOAD_H%' ('static const unsigned char CAELUS_SCENARIO_COMPILER_JS[] = {' + $hex + ', 0x00};');" ^
+        "Add-Content '%PAYLOAD_H%' ('static const std::size_t   CAELUS_SCENARIO_COMPILER_JS_LEN = ' + $len + ';');" ^
+        "Add-Content '%PAYLOAD_H%' '';"
+    if errorlevel 1 (
+        echo [HATA] scenario_compiler.js d----n--------t----r----lemedi.
+        exit /b 1
+    )
+    echo [OK] scenario_compiler.js g----m----ld----.
+
+    echo [3/3] app.js -------- hex byte dizisi...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$bytes = [System.IO.File]::ReadAllBytes('%ROOT%\ui\app.js');" ^
         "$hex = ($bytes | ForEach-Object { '0x{0:x2}' -f $_ }) -join ', ';" ^
@@ -346,26 +365,26 @@ if "%EMBED_UI%"=="1" (
         "Add-Content '%PAYLOAD_H%' ('static const unsigned char CAELUS_UI_JS[]   = {' + $hex + ', 0x00};');" ^
         "Add-Content '%PAYLOAD_H%' ('static const std::size_t   CAELUS_UI_JS_LEN = ' + $len + ';');"
     if errorlevel 1 (
-        echo [HATA] app.js dönüştürülemedi.
+        echo [HATA] app.js d----n--------t----r----lemedi.
         exit /b 1
     )
-    echo [OK] app.js gömüldü.
-    echo [AŞAMA 1] Tamamlandı → %PAYLOAD_H%
+    echo [OK] app.js g----m----ld----.
+    echo [A----AMA 1] Tamamland---- -------- %PAYLOAD_H%
 ) else (
-    echo [AŞAMA 1] Atlandı — CAELUS_SKIP_UI_EMBED=1
+    echo [A----AMA 1] Atland---- ------- CAELUS_SKIP_UI_EMBED=1
 )
 echo.
 
 :: =============================================================================
-:: AŞAMA 2 — Rust Shadow-Mesh Derlemesi (Size Optimization)
-:: cargo build --release → target/release/caelus_network.lib
+:: A----AMA 2 ------- Rust Shadow-Mesh Derlemesi (Size Optimization)
+:: cargo build --release -------- target/release/caelus_network.lib
 :: =============================================================================
-echo ══════════════════════════════════════════════════════════════
-echo [AŞAMA 2/3] Rust Shadow-Mesh Derlemesi (LTO + opt-z)
-echo ══════════════════════════════════════════════════════════════
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo [A----AMA 2/3] Rust Shadow-Mesh Derlemesi (LTO + opt-z)
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 :: Hedef ABI belirtilmisse staticlib --lib ile derlenir: [[bin]] signer CLI'si o
-:: aşamada DERLENMEZ, cunku bazi MinGW dagitimlari (orn. scoop gcc) Rust
+:: a----amada DERLENMEZ, cunku bazi MinGW dagitimlari (orn. scoop gcc) Rust
 :: windows-gnu bin linkinin bekledigi libgcc_eh.a arsivini icermez. Signer,
 :: lib basarili olursa host ABI'sinde ayrica derlenir; exe ABI'den bagimsizdir.
 pushd "%ROOT%"
@@ -380,7 +399,7 @@ if not errorlevel 1 if defined RUST_TARGET (
     cargo build --release --locked --bin caelus_sign_scenario
 )
 if errorlevel 1 (
-    echo [HATA] Rust derlemesi başarısız. Yukarıdaki hata çıktısını inceleyin.
+    echo [HATA] Rust derlemesi ba----ar----s----z. Yukar----daki hata --------kt----s----n---- inceleyin.
     if "!CXX_TOOL!"=="GCC" (
         echo        GNU ABI secildi: !RUST_TARGET!
         if "!GNU_LINKER_HINT!"=="1" (
@@ -398,10 +417,10 @@ if errorlevel 1 (
 popd
 
 if not exist "%RUST_LIB%" (
-    echo [HATA] Beklenen statik kütüphane bulunamadı: %RUST_LIB%
+    echo [HATA] Beklenen statik k----t----phane bulunamad----: %RUST_LIB%
     exit /b 1
 )
-echo [AŞAMA 2] Tamamlandı → %RUST_LIB%
+echo [A----AMA 2] Tamamland---- -------- %RUST_LIB%
 
 :: Report Rust lib size
 for %%F in ("%RUST_LIB%") do (
@@ -411,11 +430,11 @@ for %%F in ("%RUST_LIB%") do (
 echo.
 
 :: =============================================================================
-:: AŞAMA 3 — C++ Linkleme ve Mühürleme (Static Link + Strip)
+:: A----AMA 3 ------- C++ Linkleme ve M----h----rleme (Static Link + Strip)
 :: =============================================================================
-echo ══════════════════════════════════════════════════════════════
-echo [AŞAMA 3/3] C++ Linkleme ve Mühürleme
-echo ══════════════════════════════════════════════════════════════
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo [A----AMA 3/3] C++ Linkleme ve M----h----rleme
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 set "CPP_SOURCES=%ROOT%\core_engine.cpp %ROOT%\src\intel_core.cpp"
 set "INCLUDE_FLAGS=-I"%ROOT%" -I"%ROOT%\include" -I"%ROOT%\src""
@@ -441,13 +460,17 @@ if "%USE_CMAKE%"=="1" (
     if "!BUILD_OK!"=="1" (
         copy /Y "%BUILD_DIR%\caelus_os.exe" "%OUT_EXE%" > nul 2>&1
         copy /Y "%BUILD_DIR%\Release\caelus_os.exe" "%OUT_EXE%" > nul 2>&1
+        :: Multi-config generatorler (Visual Studio) CMakeLists'in dist/ hedefini
+        :: dist\Release\ altina yazar; bu kopya olmadan eski dist exe sessizce
+        :: "build ciktisi" saniliyordu (Windows CI'da bayat-binary olarak yakalandi).
+        if exist "%ROOT%\dist\Release\caelus_os.exe" copy /Y "%ROOT%\dist\Release\caelus_os.exe" "%OUT_EXE%" > nul
     ) else (
-        echo [UYARI] CMake kullanilamadi ^(generator/make yok?^) — dogrudan derlemeye geciliyor.
+        echo [UYARI] CMake kullanilamadi ^(generator/make yok?^) ------- dogrudan derlemeye geciliyor.
     )
 )
 
 :: Direct GCC build (also produces the BLACKBOX / embedded-UI binary).
-:: NOTE: no "-Wl,--allow-multiple-definition" — with the ABI-matched gnu Rust lib
+:: NOTE: no "-Wl,--allow-multiple-definition" ------- with the ABI-matched gnu Rust lib
 :: there are no duplicate symbols to suppress. ws2_32 is required by the UDP
 :: multicast discovery loops.
 if not "!BUILD_OK!"=="1" if "%CXX_TOOL%"=="GCC" (
@@ -464,37 +487,37 @@ if not "!BUILD_OK!"=="1" if "%CXX_TOOL%"=="GCC" (
 :: Direct MSVC build.
 if not "!BUILD_OK!"=="1" if "%CXX_TOOL%"=="MSVC" (
     echo [3/3] MSVC cl.exe ile derleme...
-    "%CXX_CMD%" /std:c++17 /O2 /GL /EHsc %EMBED_DEFINE:-D=/D% %PROD_DEFINE_MSVC% %INCLUDE_FLAGS% %CPP_SOURCES% /Fe:"%OUT_EXE%" /link /LTCG /INCREMENTAL:NO "%RUST_LIB%" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
+    "%CXX_CMD%" /std:c++17 /O2 /GL /EHsc /utf-8 /DNOMINMAX %EMBED_DEFINE:-D=/D% %PROD_DEFINE_MSVC% %INCLUDE_FLAGS% %CPP_SOURCES% /Fe:"%OUT_EXE%" /link /LTCG /INCREMENTAL:NO "%RUST_LIB%" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
     if errorlevel 1 ( echo [HATA] MSVC cl.exe derleme basarisiz. & exit /b 1 )
     set "BUILD_OK=1"
 )
 
 if not exist "%OUT_EXE%" (
-    echo [HATA] Çıktı dosyası oluşturulamadı: %OUT_EXE%
+    echo [HATA] ---------kt---- dosyas---- olu----turulamad----: %OUT_EXE%
     exit /b 1
 )
 
-:: ── Strip debug symbols (tersine mühendislik engellemesi) ─────────────────────
+:: -------------- Strip debug symbols (tersine m----hendislik engellemesi) ---------------------------------------------------------------------------------------------------------------------------------------------------
 echo [3/3] Debug sembolleri siliniyor (strip)...
 strip.exe --strip-all "%OUT_EXE%" > nul 2>&1
 if errorlevel 1 (
-    :: strip.exe not available or MSVC binary — try llvm-strip or accept no-strip
+    :: strip.exe not available or MSVC binary ------- try llvm-strip or accept no-strip
     llvm-strip.exe --strip-all "%OUT_EXE%" > nul 2>&1
     if errorlevel 1 (
-        echo [UYARI] 'strip' aracı bulunamadı. Debug sembolleri silinmedi.
-        echo          MSVC: dumpbin /PDBPATH ile PDB ayrı tutulmuş olabilir.
+        echo [UYARI] 'strip' arac---- bulunamad----. Debug sembolleri silinmedi.
+        echo          MSVC: dumpbin /PDBPATH ile PDB ayr---- tutulmu---- olabilir.
     ) else (
         echo [OK] llvm-strip ile debug sembolleri silindi.
     )
 ) else (
-    echo [OK] strip --strip-all tamamlandı.
+    echo [OK] strip --strip-all tamamland----.
 )
 
-:: ── Final binary report + <50 MB HARD size guard (MSVC & MinGW) ──────────────
+:: -------------- Final binary report + <50 MB HARD size guard (MSVC & MinGW) --------------------------------------------------------------------------------------------------
 :: Toolchain-agnostic: this runs after strip on whichever leg produced OUT_EXE
 :: (CMake/g++/cl.exe), so the SAME <50 MB ceiling is enforced for both the MSVC
 :: and the MinGW/GCC matrix legs. A breach is a HARD build failure (exit /b 1),
-:: not just a warning — T-22 requires a guaranteed sub-50 MB single static binary.
+:: not just a warning ------- T-22 requires a guaranteed sub-50 MB single static binary.
 set "MAX_BYTES=52428800"
 set "EXE_BYTES=0"
 for %%F in ("%OUT_EXE%") do (
@@ -503,24 +526,24 @@ for %%F in ("%OUT_EXE%") do (
     set /a "EXE_SIZE_MB=%%~zF/1048576"
 )
 echo.
-echo ══════════════════════════════════════════════════════════════
-echo [TAMAMLANDI] CAELUS OS Blackbox Binary Üretildi
-echo ══════════════════════════════════════════════════════════════
-echo Çıktı     : %OUT_EXE%
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo [TAMAMLANDI] CAELUS OS Blackbox Binary ----retildi
+echo ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo ---------kt----     : %OUT_EXE%
 echo Boyut     : ~!EXE_SIZE_KB! KB  (~!EXE_SIZE_MB! MB)  [!EXE_BYTES! bayt]
 echo Toolchain : %CXX_TOOL%  ^|  Rust target: %RUST_TARGET%
 if /I "%CAELUS_PRODUCTION%"=="1" echo PRODUCTION GATES: COMPILED-OUT  ^(CAELUS_PRODUCTION — SELF_SIGNED_DEV / plugin dev-bypass / pin-bypass derleme-disi^)
 if !EXE_BYTES! GEQ %MAX_BYTES% (
     echo Hedef     : ^<50 MB ✗  AŞILDI  ^(!EXE_BYTES! ^> %MAX_BYTES% bayt^)
     echo.
-    echo [HATA] Statik binary 50 MB sinirini asti — build BASARISIZ.
+    echo [HATA] Statik binary 50 MB sinirini asti ------- build BASARISIZ.
     echo        Boyut dusurme onerileri:
     echo          - MSVC : /O1 + /OPT:REF /OPT:ICF + statik CRT /MT
     echo          - MinGW: -Os -s ^(strip^) + gereksiz bagimliliklari ayikla
     echo          - Son care: UPX ile sikistirma.
     exit /b 1
 )
-echo Hedef     : ^<50 MB ✓  BAŞARILI
+echo Hedef     : ^<50 MB -------  BA----ARILI
 echo.
 echo [NOT] UI varliklari binary'ye gomuldu (hex bayt dizisi). Bu bir SIFRELEME
 echo        ya da gizleme DEGILDIR: 'strings' benzeri araclarla HTML/JS aynen

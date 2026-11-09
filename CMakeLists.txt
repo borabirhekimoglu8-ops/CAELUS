@@ -46,7 +46,9 @@ if(MSVC)
     # asserts in the release image.
     # NOTE: /GS (stack buffer-overflow canaries) is LEFT ON deliberately — the old
     # "/GS-" disabled stack canaries on a binary that parses untrusted input.
-    add_compile_options(/O2 /GL /EHsc /DNDEBUG)
+    # /utf-8: sources are UTF-8 (Turkish string literals); /DNOMINMAX keeps
+    # windows.h from macro-clobbering std::min/max/numeric_limits.
+    add_compile_options(/O2 /GL /EHsc /utf-8 /DNOMINMAX /DNDEBUG)
     # /LTCG pairs with /GL; /INCREMENTAL:NO + /OPT:REF + /OPT:ICF shrink the image
     # (drop unreferenced funcs/data and fold identical COMDATs).
     add_link_options(/LTCG /INCREMENTAL:NO /OPT:REF /OPT:ICF)

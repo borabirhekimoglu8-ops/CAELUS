@@ -1093,8 +1093,8 @@ TEST_CASE("mobile stateless crypto helpers") {
         CHECK(payload.find("\"type\":\"CAELUS_MOBILE_TRUST_ANCHORS_V1\"") !=
               std::string::npos);
         // The exact pinned production anchors (public key material only).
-        CHECK(payload.find("\"scenario_pubkey\":\"9bb1dbd039043670b7bf2c5d7533"
-                           "777866135b92f9b38fe6cd8d9735a04fa802\"") !=
+        CHECK(payload.find("\"scenario_pubkey\":\"a11b528e5344d9aa7147473bf16ce9e9"
+                           "c977f89608958b586359414cc7e97e7f\"") !=
               std::string::npos);
         CHECK(payload.find("\"neural_pubkey\":\"c8527f9105465967aea81d07514ea1"
                            "1f597f32fedc7d6f8f9e7d182f999fc51f\"") !=

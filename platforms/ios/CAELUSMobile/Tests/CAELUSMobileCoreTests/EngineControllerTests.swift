@@ -38,8 +38,8 @@ final class EngineControllerTests: XCTestCase {
         XCTAssertEqual(anchors.abiVersion, 1)
         XCTAssertEqual(
             anchors.scenarioPublicKeyHex,
-            "9bb1dbd039043670b7bf2c5d75337778"
-                + "66135b92f9b38fe6cd8d9735a04fa802")
+            "a11b528e5344d9aa7147473bf16ce9e9"
+                + "c977f89608958b586359414cc7e97e7f")
         XCTAssertEqual(
             anchors.neuralPublicKeyHex,
             "c8527f9105465967aea81d07514ea11f"

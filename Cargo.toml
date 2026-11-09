@@ -51,6 +51,9 @@ libc = "=0.2.186"
 [target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "watchos"))'.dependencies]
 blake3 = { version = "=1.8.2", features = ["pure"] }
 
+[dev-dependencies]
+proptest = "1.5"
+
 [profile.release]
 # Minimize binary size — target < 50MB static binary
 opt-level = "z"          # Optimize for size

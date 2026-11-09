@@ -1,0 +1,22 @@
+[package]
+name = "caelus_wasm"
+version = "0.1.0"
+edition = "2021"
+
+# CAELUS OS — Tarayıcı-içi motor (WebAssembly)
+# caelus_core (no_std nedensel çekirdek) → wasm32; War Room UI'ını BİLGİSAYARDAN
+# BAĞIMSIZ çalıştırır: motor tarayıcının içinde koşar, sunucu/ağ gerekmez.
+# Bağımsız crate — kök caelus_network build'ine dokunmaz; kendi target'ını kullanır.
+
+[dependencies]
+caelus_core = { path = "../caelus_core" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "s"     # boyut (base64 gömülü olacak)
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,15 +1,8 @@
 target/
 caelus_core/target/
-build_tests/
-__pycache__/
 *.py[cod]
-*.log
-*.tmp
-*.sig.tmp
-dist/caelus_os
 
 # Private signing material must be generated/stored outside the repository.
-tools/caelus_signing.key
 tools/caelus_neural_signing.key
 
 # Full synthetic datasets and unsigned training outputs stay external.
@@ -17,6 +10,38 @@ caelus_ml/generated/
 
 # SwiftPM build artifacts and host-built native archives.
 platforms/ios/CAELUSMobile/.build/
-dist/host/
-dist/ios/
-dist/test_mobile_bridge
+*.log
+*.tmp
+*.sig.tmp
+dist/
+
+# Generated build trees and bytecode
+build_cmake/
+build_tests/
+__pycache__/
+*.pyc
+
+# War Room UI extracted at runtime from the embedded binary (deleted on clean
+# exit; source of truth is ui/index.html + ui/app.js).
+caelus_ui.html
+caelus_app.js
+
+# Committed test fixtures are exempt from the *.log rule above.
+!tests/fixtures/*.log
+
+# Private signing material must be generated/stored outside the repository.
+tools/caelus_signing.key
+
+# Per-device identity seed — generate locally; never commit.
+caelus_identity.key
+
+# WASM ve yardımcı araç build çıktıları (üretilmiş)
+caelus_wasm/target/
+tools/caelus_xlsx_engine/target/
+
+# Yerel yedekleme klasörleri ve geçici arşivler
+backups/
+*.prev.json
+CAELUS_v8_Gorselli_Tam_Paket.zip
+_chrome_profile_*
+**/_chrome_profile_*/

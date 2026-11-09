@@ -33,7 +33,7 @@ class NeuralWarRoomContractTests(unittest.TestCase):
         self.assertIn("Rejected estimates are not applied", self.html)
 
     def test_router_handles_neural_observations(self) -> None:
-        self.assertIn("case 'neural_observation':", self.javascript)
+        self.assertIn("if (evType === 'neural_observation')", self.javascript)
         self.assertIn("applyNeuralObservation(data);", self.javascript)
         self.assertIn("function applyNeuralObservation(data)", self.javascript)
 

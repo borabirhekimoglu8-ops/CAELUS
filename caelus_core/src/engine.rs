@@ -58,6 +58,7 @@ pub struct Node {
     pub reported_state_fp: i64,
     pub trust_fp: i64,
     pub deadline_tick: i32,
+    pub deadline_min_state_fp: i64,
     pub deadline_missed: bool,
     pub irrecoverable: bool,
 }
@@ -73,6 +74,7 @@ impl Default for Node {
             reported_state_fp: 0,
             trust_fp: FP_ONE,
             deadline_tick: -1,
+            deadline_min_state_fp: 0,
             deadline_missed: false,
             irrecoverable: false,
         }
@@ -151,7 +153,43 @@ pub struct Hysteresis {
     pub threshold_tick: i32,
     pub reversible: bool,
     pub permanent_loss_fp: i64,
+    pub min_friction_fp: i64,
+    pub condition_node_id: String,
+    pub min_node_state_fp: i64,
     pub flipped: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IntelBindingMode {
+    Max = 0,
+    Add = 1,
+}
+
+impl Default for IntelBindingMode {
+    fn default() -> Self {
+        IntelBindingMode::Max
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IntelBinding {
+    pub node_id: String,
+    pub mode: IntelBindingMode,
+    pub scale_fp: i64,
+    pub crisis_step_fp: i64,
+    pub min_crisis_level: i32,
+}
+
+impl Default for IntelBinding {
+    fn default() -> Self {
+        IntelBinding {
+            node_id: String::new(),
+            mode: IntelBindingMode::Max,
+            scale_fp: FP_ONE,
+            crisis_step_fp: 0,
+            min_crisis_level: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -188,6 +226,9 @@ pub struct CausalEngine {
     loops: Vec<FeedbackLoop>,
     levers: Vec<Lever>,
     hysts: Vec<Hysteresis>,
+    intel_bindings: Vec<IntelBinding>,
+    intel_events_total: u64,
+    intel_events_unbound: u64,
 
     tick_: u64,
     friction_fp: i64,
@@ -211,6 +252,9 @@ impl CausalEngine {
             loops: Vec::new(),
             levers: Vec::new(),
             hysts: Vec::new(),
+            intel_bindings: Vec::new(),
+            intel_events_total: 0,
+            intel_events_unbound: 0,
             tick_: 0,
             friction_fp: FP_ONE,
             permanent_friction_fp: 0,
@@ -237,11 +281,28 @@ impl CausalEngine {
     pub fn add_hysteresis(&mut self, h: Hysteresis) {
         self.hysts.push(h);
     }
+    pub fn add_intel_binding(&mut self, b: IntelBinding) {
+        self.intel_bindings.push(b);
+    }
+
+    pub fn intel_bindings(&self) -> &[IntelBinding] {
+        &self.intel_bindings
+    }
+    pub fn intel_events_total(&self) -> u64 {
+        self.intel_events_total
+    }
+    pub fn intel_events_unbound(&self) -> u64 {
+        self.intel_events_unbound
+    }
 
     /// Deterministik lever zarı için PRNG tohumu (0 = gerçek CSPRNG yolu yok;
     /// bu çekirdek hostsuz olduğundan 0 → tick tabanlı tohum kullanılır).
     pub fn set_prng_seed(&mut self, seed: u64) {
         self.prng_seed = seed;
+    }
+
+    pub fn prng_seed(&self) -> u64 {
+        self.prng_seed
     }
 
     /// Graf + çalışma zamanı durumunu sıfırla. prng_seed KORUNUR (C++ ile aynı).
@@ -251,6 +312,9 @@ impl CausalEngine {
         self.loops.clear();
         self.levers.clear();
         self.hysts.clear();
+        self.intel_bindings.clear();
+        self.intel_events_total = 0;
+        self.intel_events_unbound = 0;
         self.tick_ = 0;
         self.friction_fp = FP_ONE;
         self.permanent_friction_fp = 0;
@@ -265,6 +329,7 @@ impl CausalEngine {
         self.loops.clear();
         self.levers.clear();
         self.hysts.clear();
+        self.intel_bindings.clear();
         self.tick_ = 0;
         self.friction_fp = FP_ONE;
         self.regime_exceeded = false;
@@ -289,39 +354,76 @@ impl CausalEngine {
         mk("Buffer_Node", NodeKind::Buffer, 0.25);
     }
 
-    // ── Saha verisi enjeksiyonu (evrensel düğüm adları; paket graflarında no-op) ──
+    // ── Saha verisi enjeksiyonu (C++ include/causal_engine.h birebir) ────────
 
-    pub fn inject_intel(&mut self, field_coeff: f64, crisis_level: i32, _memo: &str) {
+    pub fn inject_intel(&mut self, field_coeff: f64, crisis_level: i32, memo: &str) -> usize {
         let field_coeff = field_coeff.clamp(0.0, 1.0);
-        self.inject_intel_fp(d_to_fp(field_coeff), crisis_level, _memo);
+        self.inject_intel_fp(d_to_fp(field_coeff), crisis_level, memo)
     }
 
-    pub fn inject_intel_fp(&mut self, field_coeff_fp: i64, crisis_level: i32, _memo: &str) {
+    pub fn inject_intel_fp(&mut self, field_coeff_fp: i64, crisis_level: i32, _memo: &str) -> usize {
         let field_coeff_fp = fp_clamp(field_coeff_fp, 0, FP_ONE);
         let crisis_level = crisis_level.clamp(0, 3);
+        let mut applied: usize = 0;
 
-        if let Some(actor) = self.get_node_mut("Actor_Alpha") {
-            if field_coeff_fp > actor.state_fp {
-                actor.state_fp = field_coeff_fp;
+        if !self.intel_bindings.is_empty() {
+            for bi in 0..self.intel_bindings.len() {
+                let min_cl = self.intel_bindings[bi].min_crisis_level;
+                if crisis_level < min_cl {
+                    continue;
+                }
+                let node_id = self.intel_bindings[bi].node_id.clone();
+                let scale_fp = self.intel_bindings[bi].scale_fp;
+                let crisis_step_fp = self.intel_bindings[bi].crisis_step_fp;
+                let mode = self.intel_bindings[bi].mode;
+                if let Some(n) = self.get_node_mut(&node_id) {
+                    let signal = fp_add_saturating(
+                        fp_mul(field_coeff_fp, scale_fp),
+                        fp_mul((crisis_level as i64) * FP_ONE, crisis_step_fp),
+                    );
+                    let next = match mode {
+                        IntelBindingMode::Add => fp_add_saturating(n.state_fp, signal),
+                        IntelBindingMode::Max => core::cmp::max(n.state_fp, signal),
+                    };
+                    n.state_fp = fp_clamp(next, 0, n.capacity_fp);
+                    n.reported_state_fp = n.state_fp;
+                    applied += 1;
+                }
             }
-            actor.reported_state_fp = actor.state_fp;
-        }
-        if let Some(gate) = self.get_node_mut("Regulatory_Gate") {
-            let bump = d_to_fp(crisis_level as f64 * 0.10);
-            gate.state_fp = fp_clamp(fp_add_saturating(gate.state_fp, bump), 0, gate.capacity_fp);
-            gate.reported_state_fp = gate.state_fp;
-        }
-        if crisis_level >= 3 {
-            if let Some(transit) = self.get_node_mut("Transit_Node") {
-                let bump = d_to_fp(0.20);
-                transit.state_fp = fp_clamp(
-                    fp_add_saturating(transit.state_fp, bump),
-                    0,
-                    transit.capacity_fp,
-                );
-                transit.reported_state_fp = transit.state_fp;
+        } else {
+            if let Some(actor) = self.get_node_mut("Actor_Alpha") {
+                if field_coeff_fp > actor.state_fp {
+                    actor.state_fp = field_coeff_fp;
+                }
+                actor.reported_state_fp = actor.state_fp;
+                applied += 1;
+            }
+            if let Some(gate) = self.get_node_mut("Regulatory_Gate") {
+                let bump = d_to_fp(crisis_level as f64 * 0.10);
+                gate.state_fp =
+                    fp_clamp(fp_add_saturating(gate.state_fp, bump), 0, gate.capacity_fp);
+                gate.reported_state_fp = gate.state_fp;
+                applied += 1;
+            }
+            if crisis_level >= 3 {
+                if let Some(transit) = self.get_node_mut("Transit_Node") {
+                    let bump = d_to_fp(0.20);
+                    transit.state_fp = fp_clamp(
+                        fp_add_saturating(transit.state_fp, bump),
+                        0,
+                        transit.capacity_fp,
+                    );
+                    transit.reported_state_fp = transit.state_fp;
+                    applied += 1;
+                }
             }
         }
+
+        self.intel_events_total += 1;
+        if applied == 0 {
+            self.intel_events_unbound += 1;
+        }
+        applied
     }
 
     // ── Tick yayılımı ────────────────────────────────────────────────────────
@@ -641,19 +743,37 @@ impl CausalEngine {
 
     fn check_hysteresis(&mut self) {
         let mut latch = false;
-        for h in &mut self.hysts {
-            let threshold = if h.threshold_tick <= 0 {
+        let current_friction = self.friction_fp;
+        for hi in 0..self.hysts.len() {
+            let threshold = if self.hysts[hi].threshold_tick <= 0 {
                 0
             } else {
-                h.threshold_tick as u64
+                self.hysts[hi].threshold_tick as u64
             };
-            if h.flipped || self.tick_ < threshold {
+            if self.hysts[hi].flipped || self.tick_ < threshold {
                 continue;
             }
-            h.flipped = true;
-            if !h.reversible {
-                self.permanent_friction_fp =
-                    fp_add_saturating(self.permanent_friction_fp, h.permanent_loss_fp);
+            if self.hysts[hi].min_friction_fp > 0
+                && current_friction < self.hysts[hi].min_friction_fp
+            {
+                continue;
+            }
+            if !self.hysts[hi].condition_node_id.is_empty() {
+                let min_ns = self.hysts[hi].min_node_state_fp;
+                let cond_ok = self
+                    .get_node(&self.hysts[hi].condition_node_id)
+                    .map(|cn| cn.state_fp >= min_ns)
+                    .unwrap_or(false);
+                if !cond_ok {
+                    continue;
+                }
+            }
+            self.hysts[hi].flipped = true;
+            if !self.hysts[hi].reversible {
+                self.permanent_friction_fp = fp_add_saturating(
+                    self.permanent_friction_fp,
+                    self.hysts[hi].permanent_loss_fp,
+                );
                 latch = true;
             }
         }
@@ -669,6 +789,9 @@ impl CausalEngine {
                 continue;
             }
             if self.tick_ >= node.deadline_tick as u64 {
+                if node.deadline_min_state_fp > 0 && node.state_fp < node.deadline_min_state_fp {
+                    continue;
+                }
                 node.deadline_missed = true;
                 if node.kind == NodeKind::Perishable {
                     // Perishable deadline → açık recovery'ye dek LATCHED outage.
@@ -862,5 +985,75 @@ mod tests {
         let _ = eng.run_ticks(2);
         assert!(eng.apply_lever("L", 0));
         assert_eq!(eng.get_node("N").unwrap().state_fp, 200_000);
+    }
+
+    #[test]
+    fn intel_binding_routes_signal_to_custom_nodes_and_tracks_unbound() {
+        let mut eng = CausalEngine::new();
+        let mut n = Node::default();
+        n.id = String::from("CUSTOM_NODE");
+        n.capacity_fp = FP_ONE;
+        n.state_fp = 100_000;
+        n.reported_state_fp = 100_000;
+        n.weight_fp = 500_000;
+        eng.add_node(n);
+
+        // Without bindings, custom node is untouched and event is counted as unbound.
+        assert_eq!(eng.inject_intel(0.80, 2, "unbound"), 0);
+        assert_eq!(eng.intel_events_total(), 1);
+        assert_eq!(eng.intel_events_unbound(), 1);
+        assert_eq!(eng.get_node("CUSTOM_NODE").unwrap().state_fp, 100_000);
+
+        // With IntelBinding (mode=Add, scale=0.5, crisis_step=0.1), signal = 0.8*0.5 + 2*0.1 = 0.6.
+        eng.add_intel_binding(IntelBinding {
+            node_id: String::from("CUSTOM_NODE"),
+            mode: IntelBindingMode::Add,
+            scale_fp: 500_000,
+            crisis_step_fp: 100_000,
+            min_crisis_level: 1,
+        });
+        assert_eq!(eng.inject_intel(0.80, 2, "bound"), 1);
+        assert_eq!(eng.intel_events_total(), 2);
+        assert_eq!(eng.intel_events_unbound(), 1);
+        assert_eq!(eng.get_node("CUSTOM_NODE").unwrap().state_fp, 700_000);
+    }
+
+    #[test]
+    fn conditional_deadline_and_hysteresis_prevent_outage_when_mitigated() {
+        let mut eng = CausalEngine::new();
+        let mut n = Node::default();
+        n.id = String::from("PERISHABLE_COOLING");
+        n.kind = NodeKind::Perishable;
+        n.capacity_fp = FP_ONE;
+        n.state_fp = 800_000;
+        n.reported_state_fp = 800_000;
+        n.weight_fp = 500_000;
+        n.deadline_tick = 3;
+        n.deadline_min_state_fp = 600_000; // only misses deadline if state >= 0.60
+        eng.add_node(n);
+
+        let mut h = Hysteresis::default();
+        h.id = String::from("HYST_COND");
+        h.threshold_tick = 4;
+        h.reversible = false;
+        h.permanent_loss_fp = 300_000;
+        h.condition_node_id = String::from("PERISHABLE_COOLING");
+        h.min_node_state_fp = 600_000;
+        eng.add_hysteresis(h);
+
+        let mut lev = Lever::default();
+        lev.id = String::from("MITIGATE");
+        lev.success_p_fp = FP_ONE;
+        lev.on_success.target_node_id = String::from("PERISHABLE_COOLING");
+        lev.on_success.state_delta_fp = -500_000; // drops state from 0.80 to 0.30 (< 0.60)
+        eng.add_lever(lev);
+
+        // Apply mitigation before deadline_tick=3
+        let _ = eng.run_ticks(1);
+        assert!(eng.apply_lever("MITIGATE", 1));
+        let snap = eng.run_ticks(5);
+        assert!(!snap.any_deadline_missed, "mitigated node should not miss conditional deadline");
+        assert!(!snap.any_hysteresis_flip, "mitigated node should not flip conditional hysteresis");
+        assert!(!snap.outage_active, "outage prevented by proactive intervention");
     }
 }
