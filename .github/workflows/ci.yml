@@ -32,16 +32,6 @@ jobs:
           chmod +x build.sh ci.sh
           ./ci.sh
 
-      - name: Validate universal browser scenario compiler & NCM-2 against native Linux binary
-        env:
-          CAELUS_OFFLINE_ONLY: "1"
-        run: |
-          node --check ui/scenario_compiler.js
-          node --check ui/app.js
-          node --test tests/universal_scenario_compiler.test.mjs
-          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
-          node --test tests/universal_wasm_scenario.test.mjs
-
       - name: Extract deterministic CDET block
         run: |
           rm -f caelus_audit_0000000000000000.log
@@ -61,6 +51,19 @@ jobs:
           name: caelus_os-linux
           path: dist/caelus_os
           if-no-files-found: error
+
+      - name: Validate universal browser scenario compiler & NCM-2 against native Linux binary
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
+        run: |
+          CAELUS_SKIP_RUST=1 ./build.sh
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          node --check ui/scenario_compiler.js
+          node --check ui/app.js
+          node --test tests/universal_scenario_compiler.test.mjs
+          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
 
   windows:
     name: Windows full pipeline (ci.bat, MSVC)
@@ -107,6 +110,8 @@ jobs:
         env:
           CAELUS_OFFLINE_ONLY: "1"
         run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
           node --check ui/scenario_compiler.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
