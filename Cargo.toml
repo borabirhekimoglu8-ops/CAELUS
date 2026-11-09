@@ -35,6 +35,9 @@ zeroize = { version = "1.7", features = ["derive"] }
 # Blake3 for fast deterministic hashing of OTP slots
 blake3 = "1.5"
 
+[dev-dependencies]
+proptest = "1.5"
+
 [profile.release]
 # Minimize binary size — target < 50MB static binary
 opt-level = "z"          # Optimize for size

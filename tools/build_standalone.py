@@ -30,13 +30,26 @@ SIG_RE = re.compile(r"^ed25519:([0-9a-fA-F]{64}):([0-9a-fA-F]{128})$")
 
 def main() -> int:
     if not WASM.exists():
-        print(f"HATA: {WASM} yok. Önce wasm'ı derleyin:\n"
-              f"  cargo build --release --target wasm32-unknown-unknown "
-              f"--manifest-path caelus_wasm/Cargo.toml", file=sys.stderr)
-        return 1
+        existing_standalone = ROOT / "dist/caelus_standalone.html"
+        if existing_standalone.exists():
+            raw_st = existing_standalone.read_text(encoding="utf-8")
+            m_wasm = re.search(r'window\.CAELUS_WASM_B64\s*=\s*"([^"]+)"', raw_st)
+            if m_wasm:
+                WASM.parent.mkdir(parents=True, exist_ok=True)
+                WASM.write_bytes(base64.b64decode(m_wasm.group(1)))
+                print(f"[BİLGİ] {WASM} mevcut dist/caelus_standalone.html içinden geri yüklendi.")
+        if not WASM.exists():
+            print(f"HATA: {WASM} yok. Önce wasm'ı derleyin:\n"
+                  f"  cargo build --release --target wasm32-unknown-unknown "
+                  f"--manifest-path caelus_wasm/Cargo.toml", file=sys.stderr)
+            return 1
 
     idx = (ROOT / "ui/index.html").read_text(encoding="utf-8")
     compilerjs = (ROOT / "ui/scenario_compiler.js").read_text(encoding="utf-8")
+    lwmjs_path = ROOT / "ui/living_world_model.js"
+    lwmjs = lwmjs_path.read_text(encoding="utf-8") if lwmjs_path.exists() else ""
+    dvejs_path = ROOT / "ui/discovery_value_engine.js"
+    dvejs = dvejs_path.read_text(encoding="utf-8") if dvejs_path.exists() else ""
     appjs = (ROOT / "ui/app.js").read_text(encoding="utf-8")
     wasm_b64 = base64.b64encode(WASM.read_bytes()).decode("ascii")
     trusted_pubkey = (ROOT / "tools/caelus_trusted_pubkey.txt").read_text(encoding="ascii").strip().lower()
@@ -72,11 +85,22 @@ def main() -> int:
               "window.CAELUS_SCENARIOS=" + json.dumps(scen) + ";\n"
               "window.CAELUS_BUILD_SHA=" + json.dumps(build_sha) + ";\n"
               "</script>\n")
-    out = idx.replace(
-        '<script src="scenario_compiler.js"></script>\n<script src="app.js"></script>',
-        inject
-        + "<script>\n" + compilerjs + "\n</script>\n"
-        + "<script>\n" + appjs + "\n</script>",
+    logo_path = ROOT / "ui/assets/caelus-logo.png"
+    if logo_path.exists():
+        logo_b64 = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+        idx = idx.replace('src="/assets/caelus-logo.png"', f'src="data:image/png;base64,{logo_b64}"')
+
+    out = re.sub(
+        r'<script src="scenario_compiler\.js"></script>[\s\S]*?<script src="app\.js"></script>',
+        lambda _: (
+            inject
+            + "<script>\n" + compilerjs + "\n</script>\n"
+            + ("<script>\n" + lwmjs + "\n</script>\n" if lwmjs else "")
+            + ("<script>\n" + dvejs + "\n</script>\n" if dvejs else "")
+            + "<script>\n" + appjs + "\n</script>"
+        ),
+        idx,
+        count=1,
     )
     if '<script src="app.js"></script>' in out:
         print("HATA: standalone JS gömme işaretçisi bulunamadı", file=sys.stderr)

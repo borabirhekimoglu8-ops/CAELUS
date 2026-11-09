@@ -25,7 +25,7 @@ test("mobil kanıt arayüzü ve geliştirme metadatası render edilir", async ()
   assert.match(html, developmentPreviewMeta);
   assert.match(html, /CAELUS/);
   assert.match(html, /NCM/);
-  assert.match(html, /GROUNDED CAUSAL ENGINE/);
+  assert.match(html, /CAELUS Mekânsal Pusula ve Çalışma Alanları/);
   assert.match(html, /KANIT MOTORU YEREL/);
   assert.match(html, /LLM \/ BULUT ÇIKARIM YOK/);
   assert.match(html, /AÇIK KAYNAK → YEREL KASA/);

@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { compileNeuralScenario, observeTemporalSnapshot } from "../lib/neurocausal.mjs";
 
+test("NCM-3 açık zaman kesimini sessizce yok saymak yerine reddeder", () => {
+  assert.throws(
+    () => compileNeuralScenario("Bir enerji kesintisi tedarik zincirini nasıl etkiler?", { decisionCutoffTimeIso: "2026-02-01T00:00:00Z" }),
+    /zaman kesimli analiz henüz desteklenmiyor/,
+  );
+});
+
 const PROMPTS = {
   maritime: "Saat 08.00’de başlayan fırtına nedeniyle Kuşadası–Samos feribot seferleri 48 saat durduruldu. Yolcu sayısı, otel doluluğu ve alternatif sefer bilgisi verilmedi. Etki nedir?",
   cyber: "Siber saldırı yok. Planlı bakım nedeniyle API 20 dakika salt okunur olacak; veri kaybı olmayacak. Etki nedir?",

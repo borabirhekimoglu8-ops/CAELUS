@@ -342,16 +342,13 @@ export default function Home() {
 
   return (
     <main className="mobile-app">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">GROUNDED CAUSAL ENGINE</p>
-          <h1>CAELUS <span>NCM</span></h1>
-        </div>
+      <div className="spatial-top-cluster">
+        <BottomNav active={activeTab} onChange={setActiveTab} leverCount={resolvedLevers.length} sourceCount={vaultRecords.length + automaticRecords.length} />
         <div className={`status-orb status-orb--${engineStatus}`} aria-label={`Motor durumu: ${engineStatus}`}>
           <i />
-          <span>{engineStatus === "loading" ? "YÜKLENİYOR" : engineStatus === "error" ? "HATA" : "YEREL"}</span>
+          <span>{engineStatus === "loading" ? "YÜKLENİYOR" : engineStatus === "error" ? "HATA" : "YEREL ÇEKİRDEK"}</span>
         </div>
-      </header>
+      </div>
 
       <section className="trust-strip" aria-label="Çalışma sınırları">
         <span><i className="trust-dot" /> KANIT MOTORU YEREL</span>
@@ -471,8 +468,6 @@ export default function Home() {
           </section>
         ) : null}
       </section>
-
-      <BottomNav active={activeTab} onChange={setActiveTab} leverCount={resolvedLevers.length} sourceCount={vaultRecords.length + automaticRecords.length} />
     </main>
   );
 }

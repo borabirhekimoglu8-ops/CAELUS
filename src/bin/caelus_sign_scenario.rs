@@ -309,6 +309,84 @@ fn canonical_signed_payload_from_json(content: &str) -> Result<String, String> {
     Ok(payload)
 }
 
+fn canonical_signed_payload_v2_from_json(content: &str) -> Result<String, String> {
+    let root = JsonParser::new(content).parse()?;
+    let JsonVal::Obj(members) = root else {
+        return Err("JSON kökü nesne değil".to_string());
+    };
+
+    let id = find_member(&members, "id").unwrap_or(&JsonVal::Null);
+    let sector = find_member(&members, "sector").unwrap_or(&JsonVal::Null);
+    let meta = find_member(&members, "meta").unwrap_or(&JsonVal::Null);
+    let cm = find_member(&members, "extended_causal_model")
+        .ok_or_else(|| "extended_causal_model eksik".to_string())?;
+    let bridge = find_member(&members, "v1_engine_bridge").unwrap_or(&JsonVal::Null);
+
+    let mut payload = String::new();
+    payload.push_str("CAELUS_SCENARIO_PACK_V2\n");
+    payload.push_str("id=");
+    payload.push_str(&canonical_json(id));
+    payload.push('\n');
+    payload.push_str("sector=");
+    payload.push_str(&canonical_json(sector));
+    payload.push('\n');
+    payload.push_str("meta=");
+    payload.push_str(&canonical_json(meta));
+    payload.push('\n');
+    payload.push_str("extended_causal_model=");
+    payload.push_str(&canonical_json(cm));
+    payload.push('\n');
+    payload.push_str("v1_engine_bridge=");
+    payload.push_str(&canonical_json(bridge));
+    payload.push('\n');
+    Ok(payload)
+}
+
+fn canonical_signed_payload_v3_from_json(content: &str) -> Result<String, String> {
+    let root = JsonParser::new(content).parse()?;
+    let JsonVal::Obj(members) = root else {
+        return Err("JSON kökü nesne değil".to_string());
+    };
+
+    let schema_ver = find_member(&members, "schema_version").unwrap_or(&JsonVal::Null);
+    let id = find_member(&members, "id").unwrap_or(&JsonVal::Null);
+    let bs_class = find_member(&members, "blackswan_class").unwrap_or(&JsonVal::Null);
+    let sector = find_member(&members, "sector").unwrap_or(&JsonVal::Null);
+    let min_eng = find_member(&members, "min_caelus_engine").unwrap_or(&JsonVal::Null);
+    let meta = find_member(&members, "meta").unwrap_or(&JsonVal::Null);
+    let cm = find_member(&members, "extended_causal_model")
+        .ok_or_else(|| "extended_causal_model eksik".to_string())?;
+    let bridge = find_member(&members, "v1_engine_bridge").unwrap_or(&JsonVal::Null);
+
+    let mut payload = String::new();
+    payload.push_str("CAELUS_SCENARIO_PACK_V3\n");
+    payload.push_str("schema_version=");
+    payload.push_str(&canonical_json(schema_ver));
+    payload.push('\n');
+    payload.push_str("id=");
+    payload.push_str(&canonical_json(id));
+    payload.push('\n');
+    payload.push_str("blackswan_class=");
+    payload.push_str(&canonical_json(bs_class));
+    payload.push('\n');
+    payload.push_str("sector=");
+    payload.push_str(&canonical_json(sector));
+    payload.push('\n');
+    payload.push_str("min_caelus_engine=");
+    payload.push_str(&canonical_json(min_eng));
+    payload.push('\n');
+    payload.push_str("meta=");
+    payload.push_str(&canonical_json(meta));
+    payload.push('\n');
+    payload.push_str("extended_causal_model=");
+    payload.push_str(&canonical_json(cm));
+    payload.push('\n');
+    payload.push_str("v1_engine_bridge=");
+    payload.push_str(&canonical_json(bridge));
+    payload.push('\n');
+    Ok(payload)
+}
+
 fn find_member<'a>(members: &'a [(String, JsonVal)], key: &str) -> Option<&'a JsonVal> {
     members
         .iter()
@@ -640,6 +718,7 @@ fn run() -> Result<(), String> {
     let mut key: Option<String> = None;
     let mut generate_key = false;
     let mut write = false;
+    let mut payload_version: u8 = 1;
     let mut idx = 0usize;
     while idx < args.len() {
         match args[idx].as_str() {
@@ -657,6 +736,18 @@ fn run() -> Result<(), String> {
             }
             "--generate-key" => generate_key = true,
             "--write" => write = true,
+            "--v1" => payload_version = 1,
+            "--v2" => payload_version = 2,
+            "--v3" => payload_version = 3,
+            "--payload-version" => {
+                idx += 1;
+                match args.get(idx).map(|s| s.as_str()) {
+                    Some("3") | Some("v3") | Some("V3") => payload_version = 3,
+                    Some("2") | Some("v2") | Some("V2") => payload_version = 2,
+                    Some("1") | Some("v1") | Some("V1") => payload_version = 1,
+                    _ => return Err("--payload-version 1, 2 veya 3 olmalı".to_string()),
+                }
+            }
             other => return Err(format!("bilinmeyen argüman: {other}\n{}", usage())),
         }
         idx += 1;
@@ -681,7 +772,11 @@ fn run() -> Result<(), String> {
     // ── Senaryo imzalama modu (mevcut davranış) ───────────────────────────────
     let json_path = json_path.ok_or_else(|| format!("--json zorunlu\n{}", usage()))?;
     let content = fs::read_to_string(&json_path).map_err(|e| format!("JSON okunamadı: {e}"))?;
-    let payload = canonical_signed_payload_from_json(&content)?;
+    let payload = match payload_version {
+        3 => canonical_signed_payload_v3_from_json(&content)?,
+        2 => canonical_signed_payload_v2_from_json(&content)?,
+        _ => canonical_signed_payload_from_json(&content)?,
+    };
     let seed = load_or_generate_seed(&key, generate_key)?;
     let (pubkey, signature) = sign_payload(payload.as_bytes(), &seed)?;
     let signature_text = format!("ed25519:{}:{}", hex_encode(&pubkey), hex_encode(&signature));
@@ -772,5 +867,57 @@ v1_engine_bridge={\"a\":0.34999999999999998,\"z\":true}\n"
             sig.as_ptr(),
         );
         assert_eq!(bad, 0);
+    }
+
+    #[test]
+    fn canonical_payload_v2_includes_meta_id_and_sector() {
+        let json = r#"{
+          "id": "BS-99",
+          "sector": "MARITIME",
+          "meta": {"tick_minutes": 15, "horizon_hours": 96},
+          "signature": "SELF_SIGNED_DEV",
+          "v1_engine_bridge": {"z": true},
+          "extended_causal_model": {"a": 1}
+        }"#;
+        let payload = canonical_signed_payload_v2_from_json(json).unwrap();
+        assert_eq!(
+            payload,
+            "CAELUS_SCENARIO_PACK_V2\n\
+id=\"BS-99\"\n\
+sector=\"MARITIME\"\n\
+meta={\"horizon_hours\":96,\"tick_minutes\":15}\n\
+extended_causal_model={\"a\":1}\n\
+v1_engine_bridge={\"z\":true}\n"
+        );
+    }
+
+    #[test]
+    fn canonical_payload_v2_and_v3_allow_omitting_v1_engine_bridge() {
+        let json = r#"{
+          "schema_version": "2.0.0",
+          "id": "FIN-01",
+          "blackswan_class": "LIQUIDITY_SPIRAL",
+          "sector": "FINANCE",
+          "min_caelus_engine": "2.0.0",
+          "meta": {"tick_minutes": 5, "horizon_hours": 48},
+          "signature": "SELF_SIGNED_DEV",
+          "extended_causal_model": {"nodes": []}
+        }"#;
+        let payload_v2 = canonical_signed_payload_v2_from_json(json).unwrap();
+        assert!(payload_v2.ends_with("v1_engine_bridge=null\n"));
+
+        let payload_v3 = canonical_signed_payload_v3_from_json(json).unwrap();
+        assert_eq!(
+            payload_v3,
+            "CAELUS_SCENARIO_PACK_V3\n\
+schema_version=\"2.0.0\"\n\
+id=\"FIN-01\"\n\
+blackswan_class=\"LIQUIDITY_SPIRAL\"\n\
+sector=\"FINANCE\"\n\
+min_caelus_engine=\"2.0.0\"\n\
+meta={\"horizon_hours\":48,\"tick_minutes\":5}\n\
+extended_causal_model={\"nodes\":[]}\n\
+v1_engine_bridge=null\n"
+        );
     }
 }

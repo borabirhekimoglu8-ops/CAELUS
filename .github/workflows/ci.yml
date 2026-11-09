@@ -27,14 +27,10 @@ jobs:
           g++ --version | head -1
           python3 --version
 
-      - name: Validate universal browser scenario compiler
+      - name: Run full CI pipeline (builds dist/caelus_os and verifies C++/Rust core)
         run: |
-          node --check ui/scenario_compiler.js
-          node --check ui/app.js
-          node --test tests/universal_scenario_compiler.test.mjs
-
-      - name: Run full CI pipeline
-        run: ./ci.sh
+          chmod +x build.sh ci.sh
+          ./ci.sh
 
       - name: Extract deterministic CDET block
         run: |
@@ -55,6 +51,25 @@ jobs:
           name: caelus_os-linux
           path: dist/caelus_os
           if-no-files-found: error
+
+      - name: Validate universal browser scenario compiler & NCM-2 against native Linux binary
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
+          CAELUS_REQUIRE_NATIVE_BIN: "1"
+        run: |
+          CAELUS_SKIP_RUST=1 ./build.sh
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          node --check ui/scenario_compiler.js
+          node --check ui/living_world_model.js
+          node --check ui/discovery_value_engine.js
+          node --check ui/app.js
+          node --test tests/universal_scenario_compiler.test.mjs
+          node --test tests/living_world_model.test.mjs
+          node --test tests/discovery_value_engine.test.mjs
+          node --test tests/spatial_interface.test.mjs
+          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
 
   windows:
     name: Windows full pipeline (ci.bat, MSVC)
@@ -95,6 +110,25 @@ jobs:
           CAELUS_CXX: MSVC
           PYTHONUTF8: "1"
         run: ci.bat
+
+      - name: Validate universal browser scenario compiler & NCM-2 against native Windows binary
+        shell: pwsh
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
+          CAELUS_REQUIRE_NATIVE_BIN: "1"
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          node --check ui/scenario_compiler.js
+          node --check ui/living_world_model.js
+          node --check ui/discovery_value_engine.js
+          node --check ui/app.js
+          node --test tests/universal_scenario_compiler.test.mjs
+          node --test tests/living_world_model.test.mjs
+          node --test tests/discovery_value_engine.test.mjs
+          node --test tests/spatial_interface.test.mjs
+          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
 
       - name: Determinism diagnostics
         if: failure()

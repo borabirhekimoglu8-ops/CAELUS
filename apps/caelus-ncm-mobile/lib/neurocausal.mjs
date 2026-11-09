@@ -3,6 +3,7 @@ import { parseSituation } from "./ncm2/frame-parser.mjs";
 import {
   buildNeuralGate,
   buildSemanticGraph,
+  NCM2_EPISTEMIC_CATEGORIES,
   runTemporalObserver,
   snapshotStates,
   TEMPORAL_MODEL_INFO,
@@ -391,6 +392,14 @@ function relationNarrative(edge, nodeByKey) {
     to: to?.label || edge.to,
     confidence: edge.confidenceFp / 1_000_000,
     relation: edge.relation,
+    relationPresentationLabel: edge.relationPresentationLabel || `${edge.relation} (Kural Önerisi / Hipotez — Kanıtlanmış Nedensellik Değildir)`,
+    epistemicCategory: edge.epistemicCategory || (edge.fallback ? NCM2_EPISTEMIC_CATEGORIES.MODEL_HYPOTHESIS : NCM2_EPISTEMIC_CATEGORIES.RULE_BASED_INFERENCE),
+    epistemicCategoryCode: edge.epistemicCategoryCode || (edge.fallback ? "MODEL_HYPOTHESIS" : "RULE_BASED_INFERENCE"),
+    fallback: Boolean(edge.fallback),
+    empiricalCausalityProven: false,
+    isCalibratedProbability: false,
+    scoreType: edge.scoreType || (edge.fallback ? "FALLBACK_SYNTHETIC_DEFAULT_SCORE" : "UNCALIBRATED_HEURISTIC_RULE_SCORE"),
+    scoreFormula: edge.scoreFormula || "edge.confidenceFp / 1000000",
     mechanism: edge.mechanism,
     lagTicks: edge.lagTicks,
     polarity: edge.polarity,
@@ -398,7 +407,7 @@ function relationNarrative(edge, nodeByKey) {
   };
 }
 
-export function compileNcm2ScenarioInternal(input) {
+export function compileNcm2ScenarioInternal(input, options = {}) {
   const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 600);
   if (sourceText.length < 8) throw new Error("NCM-2 için aktör, olay veya süre içeren daha açıklayıcı bir durum yazın.");
 
@@ -563,6 +572,117 @@ export function compileNcm2ScenarioInternal(input) {
   };
 
   const strongestRelations = positiveEdges.slice(0, 5).map((edge) => relationNarrative(edge, nodeByKey));
+
+  function parseStrictIsoDate(val) {
+    if (val === null || val === undefined || typeof val === "boolean" || typeof val === "object") {
+      return { valid: false, missing: true, ms: NaN };
+    }
+    const str = String(val).trim();
+    if (!str) return { valid: false, missing: true, ms: NaN };
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:Z|([+-]\d{2}:?\d{2}))?)?$/.exec(str);
+    if (!m) return { valid: false, missing: false, ms: NaN };
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return { valid: false, missing: false, ms: NaN };
+    const calCheck = new Date(Date.UTC(year, month - 1, day));
+    if (calCheck.getUTCFullYear() !== year || calCheck.getUTCMonth() !== month - 1 || calCheck.getUTCDate() !== day) {
+      return { valid: false, missing: false, ms: NaN };
+    }
+    const ms = Date.parse(str);
+    if (!Number.isFinite(ms)) return { valid: false, missing: false, ms: NaN };
+    return { valid: true, missing: false, ms };
+  }
+
+  const hasExplicitBitemporalOpts = Boolean(
+    options && (
+      "eventValidTimeIso" in options ||
+      "systemLearnedTimeIso" in options ||
+      "decisionCutoffTimeIso" in options ||
+      "availableAtSourceTimeIso" in options ||
+      options.strictBitemporal === true
+    )
+  );
+
+  const eventValidTimeIso = hasExplicitBitemporalOpts
+    ? (options.eventValidTimeIso !== undefined && options.eventValidTimeIso !== null ? String(options.eventValidTimeIso) : "")
+    : "2026-01-01T00:00:00.000Z";
+  const systemLearnedTimeIso = hasExplicitBitemporalOpts
+    ? (options.systemLearnedTimeIso !== undefined && options.systemLearnedTimeIso !== null ? String(options.systemLearnedTimeIso) : "")
+    : eventValidTimeIso;
+  const decisionCutoffTimeIso = hasExplicitBitemporalOpts
+    ? (options.decisionCutoffTimeIso !== undefined && options.decisionCutoffTimeIso !== null ? String(options.decisionCutoffTimeIso) : "")
+    : systemLearnedTimeIso;
+  const availableAtSourceTimeIso = options && options.availableAtSourceTimeIso !== undefined && options.availableAtSourceTimeIso !== null
+    ? String(options.availableAtSourceTimeIso)
+    : null;
+
+  const validParsed = parseStrictIsoDate(eventValidTimeIso);
+  const learnedParsed = parseStrictIsoDate(systemLearnedTimeIso);
+  const cutoffParsed = parseStrictIsoDate(decisionCutoffTimeIso);
+  const sourcePubParsed = availableAtSourceTimeIso !== null ? parseStrictIsoDate(availableAtSourceTimeIso) : null;
+
+  let lookAheadViolation = false;
+  let dateValidationFailed = false;
+  let lookAheadStatus = "ALLOWED_NO_FUTURE_LEAKAGE";
+
+  if (!validParsed.valid || !learnedParsed.valid || !cutoffParsed.valid || (sourcePubParsed && !sourcePubParsed.valid)) {
+    lookAheadViolation = true;
+    dateValidationFailed = true;
+    if (validParsed.missing) lookAheadStatus = "BLOCKED_MISSING_EVENT_VALID_TIME";
+    else if (!validParsed.valid) lookAheadStatus = "BLOCKED_INVALID_EVENT_VALID_TIME";
+    else if (learnedParsed.missing) lookAheadStatus = "BLOCKED_MISSING_LEARNED_TIME";
+    else if (!learnedParsed.valid) lookAheadStatus = "BLOCKED_INVALID_LEARNED_TIME";
+    else if (cutoffParsed.missing) lookAheadStatus = "BLOCKED_MISSING_DECISION_CUTOFF_TIME";
+    else if (!cutoffParsed.valid) lookAheadStatus = "BLOCKED_INVALID_DECISION_CUTOFF_TIME";
+    else lookAheadStatus = "BLOCKED_INVALID_SOURCE_PUBLICATION_TIME";
+  } else if (validParsed.ms > cutoffParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_VALID_AFTER_DECISION_CUTOFF";
+  } else if (learnedParsed.ms > cutoffParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_LEARNED_AFTER_DECISION_CUTOFF";
+  } else if (sourcePubParsed && sourcePubParsed.ms > cutoffParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_SOURCE_PUBLISHED_AFTER_DECISION_CUTOFF";
+  } else if (validParsed.ms > learnedParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_TEMPORAL_PARADOX_VALID_AFTER_LEARNED";
+  }
+
+  const epistemicDiscipline = {
+    schema: "caelus.ncm2.epistemic_discipline.v1",
+    categoriesCatalog: NCM2_EPISTEMIC_CATEGORIES,
+    confidenceIsCalibratedProbability: false,
+    empiricalCausalityProven: false,
+    confidenceDerivationFormula: "clamp(0.45 + coverage*0.30 + min(0.18, explicitCount*0.03) + maxDomainProb*0.12 - negationPenalty, 0.38, 0.96)",
+    causalityDisclaimerTr: "Bu katmandaki bağlantılar ('CAUSES', 'TRIGGERS', vb.) ontoloji kuralları ve yerel nöro-sezgisel ağırlıklardan üretilen hipotezlerdir; istatistiksel olarak kalibre edilmiş olasılık veya ampirik kanıtlanmış nedensellik değildir.",
+    countsByCategory: {
+      sourceClaims: concepts.filter((c) => c.explicit).length,
+      measurementsOrObservations: Number(options.observedRecordCount || 0),
+      ruleBasedInferences: semanticEdges.filter((e) => !e.fallback).length + concepts.filter((c) => !c.explicit).length,
+      modelHypotheses: semanticEdges.filter((e) => e.fallback).length,
+      conditionalCausalConclusions: deep.counterfactuals.length,
+      simulationResults: deep.horizons.length,
+      counterEvidenceOrContradictions: situation.negatedEvents.length,
+      unknownsOrInsufficientData: deep.unknowns.length + (dateValidationFailed ? 1 : 0),
+      correctedOrExpiredRecords: Number(options.correctedRecordCount || 0),
+    },
+    fallbackEdgesCount: semanticEdges.filter((e) => e.fallback).length,
+    nonFallbackEdgesCount: semanticEdges.filter((e) => !e.fallback).length,
+  };
+
+  const bitemporalContext = {
+    eventValidTimeIso,
+    systemLearnedTimeIso,
+    decisionCutoffTimeIso,
+    availableAtSourceTimeIso,
+    dateValidationFailed,
+    lookAheadBlocked: lookAheadViolation,
+    canEnterDeterministicCoreAsFact: false,
+    lookAheadStatus,
+  };
+
   const observerProposal = {
     schema: "ncm-observer/2",
     modelVersion: NCM2_VERSION,
@@ -572,6 +692,8 @@ export function compileNcm2ScenarioInternal(input) {
     edges: semanticEdges,
     forecasts,
     gateAudit,
+    epistemicDiscipline,
+    bitemporalContext,
     initialStatesFp: nodes.map((node) => node.state_fp),
   };
 
@@ -585,6 +707,8 @@ export function compileNcm2ScenarioInternal(input) {
       sectorLabel: deep.domainLabel,
       activeDomains: situation.activeDomains.map((row) => row.sector),
       confidence: situation.confidence,
+      confidenceIsCalibratedProbability: false,
+      confidenceScoreType: "UNCALIBRATED_HEURISTIC_COVERAGE_SCORE",
       severity: situation.severity,
       synopsis: deep.executiveSummary,
       executiveSummary: deep.executiveSummary,
@@ -597,6 +721,8 @@ export function compileNcm2ScenarioInternal(input) {
       unknowns: deep.unknowns,
       criticalSignals: deep.criticalSignals,
       gateAudit,
+      epistemicDiscipline,
+      bitemporalContext,
       evidence: deep.evidence,
       observerProposal,
       observerTick: 0,
@@ -787,6 +913,13 @@ function groundedLabels(grounding) {
 }
 
 export function compileNeuralScenario(input, options = {}) {
+  // NCM-3 has not yet implemented point-in-time evidence reconstruction.
+  // Reject explicit cutoffs rather than silently ignoring the caller's dates
+  // and returning a result that could contain knowledge from the future.
+  const temporalOptions = ["eventValidTimeIso", "systemLearnedTimeIso", "decisionCutoffTimeIso", "availableAtSourceTimeIso", "strictBitemporal"];
+  if (temporalOptions.some((key) => Object.hasOwn(options, key))) {
+    throw new Error("NCM-3 zaman kesimli analiz henüz desteklenmiyor; ileri tarihli bilgi sızıntısını önlemek için işlem durduruldu.");
+  }
   const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 1_200);
   if (sourceText.length < 8) throw new Error("NCM-3 için olay, miktar, süre veya karar sorusu içeren daha açıklayıcı bir durum yazın.");
 

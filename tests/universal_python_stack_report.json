@@ -1,0 +1,287 @@
+{
+  "schema": "caelus.universal_python_stack_verification.v1",
+  "generated_at_utc": "2026-11-08T21:16:41Z",
+  "host": {
+    "os": "Windows 10 (10.0.19044)",
+    "python_version": "3.14.3",
+    "cpu": "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz",
+    "gpu": "Intel(R) UHD Graphics 620 (No NVIDIA CUDA)",
+    "ram_gb": 16
+  },
+  "modules": {
+    "sqlite_and_duckdb": {
+      "status": "ENTEGRE VE GERÇEK TEST",
+      "sqlite_version": "3.50.4",
+      "duckdb_version": "2.0.0",
+      "sqlite_rows_verified": 4,
+      "duckdb_aggregation": [
+        {
+          "mode": "CONTROLLED_PLAN",
+          "avg_tp": 80.5,
+          "avg_stress": 61.5,
+          "avg_friction": 1.315
+        },
+        {
+          "mode": "STANDARD_COMPARE",
+          "avg_tp": 70.5,
+          "avg_stress": 73.5,
+          "avg_friction": 1.515
+        }
+      ],
+      "duration_ms": 510.07
+    },
+    "h3_spatial_index": {
+      "status": "ENTEGRE VE GERÇEK TEST",
+      "h3_version": "4.5.0",
+      "resolution": 6,
+      "cells": {
+        "istanbul": "861ec9027ffffff",
+        "ankara": "862d3332fffffff",
+        "izmir": "863f66a47ffffff"
+      },
+      "istanbul_k1_neighbor_count": 7,
+      "grid_distance_istanbul_ankara": 53,
+      "cell_proximity_implies_causality_or_damage": false,
+      "duration_ms": 5.38
+    },
+    "oxigraph_rdf_sparql": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "pyoxigraph_version": "0.5.13",
+      "quad_count": 8,
+      "sparql_solutions": [
+        {
+          "node": "<https://caelus.local/ontology#Entity_GridCore>",
+          "label": "\"Ana Enerji İletim Omurgası\"",
+          "downstream": "<https://caelus.local/ontology#Entity_PortHub>",
+          "source": "<https://caelus.local/ontology#Source_USGS_Live>"
+        },
+        {
+          "node": "<https://caelus.local/ontology#Entity_PortHub>",
+          "label": "\"Kıyı Lojistik ve Liman Düğümü\"",
+          "downstream": "<https://caelus.local/ontology#Entity_ColdChain>",
+          "source": "<https://caelus.local/ontology#Source_OpenMeteo_Live>"
+        }
+      ],
+      "duration_ms": 43.17
+    },
+    "ortools_optimization": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "ortools_version": "9.15.6755",
+      "optimal_case": {
+        "solver_status": "OPTIMAL",
+        "objective_value": 535.0,
+        "allocation": {
+          "reserve_grid": 85,
+          "reserve_port": 45,
+          "reserve_water": 30
+        }
+      },
+      "infeasible_case": {
+        "solver_status": "INFEASIBLE",
+        "user_facing_explanation": "Kısıtlar birbiriyle çelişiyor (talep edilen minimum rezerv toplamı 130 birim, üst bütçe sınırı 80 birim)."
+      },
+      "duration_ms": 122.03
+    },
+    "fmpy_fmu_governance": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "fmpy_version": "0.3.32",
+      "fmi_version": "2.0",
+      "model_name": "CaelusThermalSubstationFMU",
+      "guid": "{8c4e810f-3df3-4a00-8276-176fa3c9f9e0}",
+      "variables": [
+        {
+          "name": "ambient_temp_c",
+          "causality": "input",
+          "type": "Real"
+        },
+        {
+          "name": "load_ratio",
+          "causality": "input",
+          "type": "Real"
+        },
+        {
+          "name": "winding_temp_c",
+          "causality": "output",
+          "type": "Real"
+        }
+      ],
+      "native_dll_security_gate": "UNSIGNED_NATIVE_BINARIES_BLOCKED_BY_DEFAULT",
+      "thermal_trajectory": [
+        {
+          "step": 1,
+          "winding_temp_c": 53.59
+        },
+        {
+          "step": 2,
+          "winding_temp_c": 55.07
+        },
+        {
+          "step": 3,
+          "winding_temp_c": 56.45
+        },
+        {
+          "step": 4,
+          "winding_temp_c": 57.74
+        },
+        {
+          "step": 5,
+          "winding_temp_c": 58.95
+        },
+        {
+          "step": 6,
+          "winding_temp_c": 60.07
+        }
+      ],
+      "duration_ms": 113.36
+    },
+    "mesa_abm": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "mesa_version": "3.5.2",
+      "seed": 20261108,
+      "agent_count": 40,
+      "deterministic_reproducibility_verified": true,
+      "trajectory": [
+        {
+          "step": 1,
+          "evacuated": 0,
+          "avg_progress": 13.177
+        },
+        {
+          "step": 2,
+          "evacuated": 0,
+          "avg_progress": 25.905
+        },
+        {
+          "step": 3,
+          "evacuated": 0,
+          "avg_progress": 38.638
+        },
+        {
+          "step": 4,
+          "evacuated": 0,
+          "avg_progress": 51.552
+        },
+        {
+          "step": 5,
+          "evacuated": 0,
+          "avg_progress": 64.607
+        },
+        {
+          "step": 6,
+          "evacuated": 4,
+          "avg_progress": 77.346
+        },
+        {
+          "step": 7,
+          "evacuated": 15,
+          "avg_progress": 86.979
+        },
+        {
+          "step": 8,
+          "evacuated": 22,
+          "avg_progress": 92.765
+        }
+      ],
+      "duration_ms": 4.58
+    },
+    "dowhy_causal_inference": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "dowhy_version": "0.8",
+      "sample_size": 300,
+      "true_ate": -14.5,
+      "estimated_ate": -13.891,
+      "refutation_random_common_cause_new_effect": -13.894,
+      "assumptions_explicitly_reported": [
+        "Backdoor kriteri: seismic_intensity karıştırıcısı gözlemlenmiştir.",
+        "SUTVA: Birimler arası girişim (interference) bulunmamaktadır."
+      ],
+      "duration_ms": 4694.47
+    },
+    "mujoco_rigid_body": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "mujoco_version": "4.0.0",
+      "model_name": "caelus_port_crane_damper",
+      "nq": 2,
+      "nv": 2,
+      "trajectory_samples": [
+        {
+          "step": 1,
+          "time_s": 0.01,
+          "trolley_x_m": -0.0001,
+          "pendulum_angle_rad": 0.2499
+        },
+        {
+          "step": 10,
+          "time_s": 0.1,
+          "trolley_x_m": -0.0066,
+          "pendulum_angle_rad": 0.2422
+        },
+        {
+          "step": 25,
+          "time_s": 0.25,
+          "trolley_x_m": -0.038,
+          "pendulum_angle_rad": 0.2049
+        },
+        {
+          "step": 50,
+          "time_s": 0.5,
+          "trolley_x_m": -0.1375,
+          "pendulum_angle_rad": 0.0878
+        }
+      ],
+      "duration_ms": 48.79
+    },
+    "rebound_orbital_nbody": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "license_isolation": "GPL-3.0_OUT_OF_PROCESS_SUBPROCESS_JSON_BRIDGE",
+      "rebound_version": "5.2.2",
+      "integrator": "whfast",
+      "relative_energy_error": 8.055217184653386e-11,
+      "earth_pos_au": [
+        0.9833,
+        -9e-05,
+        0.0
+      ],
+      "mars_pos_au": [
+        -1.64146,
+        -0.27339,
+        0.0
+      ],
+      "duration_ms": 998.9
+    },
+    "spiceypy_ephemeris": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "spiceypy_version": "8.3.0",
+      "cspice_toolkit_version": "CSPICE_N0067",
+      "seconds_per_day": 86400.0,
+      "sample_z_rotation_matrix_r0": [
+        0.70711,
+        0.70711,
+        0.0
+      ],
+      "kernel_prerequisite_note": "Tam gezegen efemeris sorgusu için yerel .bsp/.tls NAIF kernel dosyası gerekir; çekirdek CSPICE matris/zaman fonksiyonları doğrulandı.",
+      "duration_ms": 1.68
+    },
+    "river_streaming_ml": {
+      "status": "ENTEGRE VE KONTROLLÜ TEST",
+      "river_version": "0.26.1",
+      "samples_processed": 120,
+      "final_mae": 29.64,
+      "adwin_drift_detected_at_step": 64,
+      "core_engine_isolation": "CORE_CAUSAL_ENGINE_WEIGHTS_NEVER_MUTATED_AUTOMATICALLY",
+      "duration_ms": 12.84
+    },
+    "ollama_local_llm": {
+      "status": "ENTEGRE VE GERÇEK TEST",
+      "endpoint": "http://127.0.0.1:11434",
+      "available_models": [
+        "qwen2.5:3b",
+        "qwen2.5:1.5b"
+      ],
+      "tested_model": "qwen2.5:1.5b",
+      "response_excerpt": "CAELUS, yerel nedensel dünya ve senaryo simülasyon platformudur.",
+      "duration_ms": 4274.56
+    }
+  },
+  "total_duration_ms": 10831.66
+}

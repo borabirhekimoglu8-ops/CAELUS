@@ -1,0 +1,296 @@
+{
+  "schema_version": "3.0",
+  "id": "EX-01_LIMAN_SOGUK_ZINCIR",
+  "blackswan_class": "cold_chain_power_cascade",
+  "sector": "maritime_cold_chain_logistics",
+  "min_caelus_engine": "2.0",
+  "signature": "ed25519:79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664:78e1c6fdf7ca5d6e9e68b0c6318b4e777a628e059b7a7435b8a9b6fd0f62c48a3538690e29fec8e7688b0d366c915b1f8d07404ce27251a6bea5c34c06851708",
+  "meta": {
+    "title": "Örnek Model 1 — Liman Reefer Enerji Koridoru ve Soğuk Zincir Kesinti Analizi",
+    "enterprise_code": "EX-PORT-CC-01",
+    "sector_label": "Liman & Soğuk Zincir Lojistiği (Örnek Model)",
+    "region": "SAMPLE_PORT_TERMINAL_B (Kurgu / Örnek Veri)",
+    "tick_minutes": 15,
+    "horizon_hours": 12,
+    "data_provenance": "FICTIONAL_SAMPLE",
+    "data_source_note": "ÖRNEK / KURGU VERİ — Çok sektörlü evrensel karar akışı doğrulaması için sentetik liman soğuk zincir modeli. Gerçek bir kurum veya canlı telemetri verisi değildir; V3 geliştirici test anahtarı ile imzalanmıştır.",
+    "compliance": "ÖRNEK MODEL — Soğuk Zincir Süreklilik & Gümrük Kapısı Stres Testi (Kurgu Veri)",
+    "synopsis": "Trafo barasındaki harmonik yüklenme (PORT_POWER_FEED) ve gümrük soğuk hava muayene kapısındaki gecikme (CUSTOMS_COLD_GATE), kapı sevkiyat kuyruğunu (GATE_DISPATCH_QUEUE) şişirerek ısıya duyarlı reefer ilaç/gıda konteynerlerini (REEFER_MED_CARGO) 12. tick (3. saat) termal bozulma eşiğine sürükler.",
+    "assumptions": [
+      "Her 1 tick = 15 dakika gerçek operasyon süresini temsil eder (1 saat = 4 tick).",
+      "REEFER_MED_CARGO düğüm yükü 12. tick'te (3. saat) >= 0.65 (650.000 FP) kalırsa termal bozulma kesintisi (outage) kilitlenir.",
+      "Toplam sürtünme >= 1.65x ve REEFER_MED_CARGO >= 0.65 iken 14. tick'te kalıcı soğuk zincir müşteri/yük kaybı (histerezis +0.25x) devreye girer.",
+      "Finansal birim maliyetler kurgu/örnek kalibrasyon değerleridir (120 reefer TEU/saat, 95.000 USD/saat duruş maliyeti)."
+    ],
+    "data_gaps": [
+      "Gerçek liman SCADA trafo telemetrisi ve konteyner içi IoT sıcaklık sensörü akışı bağlı değildir (kurgu/örnek başlangıç değerleri).",
+      "L-PORT-01 ve L-PORT-02 başarı olasılıkları (p=0.90 ve p=0.85) sentetik stres testi varsayımıdır."
+    ],
+    "financials": {
+      "currency": "USD",
+      "unit_label": "Reefer TEU/saat",
+      "baseline_units": 120.0,
+      "downtime_cost_per_hour_usd": 95000.0,
+      "sla_breach_penalty_usd": 850000.0,
+      "outage_threshold_ratio": 0.48,
+      "data_source": "FICTIONAL_SAMPLE"
+    }
+  },
+  "extended_causal_model": {
+    "nodes": [
+      {
+        "id": "PORT_POWER_FEED",
+        "label": "Rıhtım Trafo ve Reefer Enerji Besleme Hattı",
+        "category": "Enerji Altyapısı",
+        "kind": "Service",
+        "capacity_fp": 1000000,
+        "state_fp": 780000,
+        "weight_fp": 320000,
+        "reported_state_fp": 780000,
+        "trust_fp": 1000000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: Trafo B yedek fider arızası nedeniyle reefer priz koridorunda %78 yüklenme."
+      },
+      {
+        "id": "GATE_DISPATCH_QUEUE",
+        "label": "Terminal Kapı ve Tır Tahliye Kuyruğu",
+        "category": "Lojistik Akış",
+        "kind": "Queue",
+        "capacity_fp": 1000000,
+        "state_fp": 620000,
+        "weight_fp": 240000,
+        "reported_state_fp": 620000,
+        "trust_fp": 1000000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: Soğuk zincir tırlarının terminal çıkış kuyruğu yoğunluğu (%62)."
+      },
+      {
+        "id": "CUSTOMS_COLD_GATE",
+        "label": "Gümrük Soğuk Zincir Muayene Kapısı",
+        "category": "Regülasyon & Kontrol",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 700000,
+        "weight_fp": 220000,
+        "reported_state_fp": 500000,
+        "trust_fp": 820000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: Numune kontrol prosedürü kaynaklı gecikme; saha yükü %70, raporlanan %50."
+      },
+      {
+        "id": "REEFER_MED_CARGO",
+        "label": "Isıya Duyarlı İlaç/Gıda Reefer Konteyner Bloğu",
+        "category": "Kritik Varlık (Bozulabilir)",
+        "kind": "Perishable",
+        "capacity_fp": 1000000,
+        "state_fp": 720000,
+        "weight_fp": 260000,
+        "reported_state_fp": 720000,
+        "trust_fp": 1000000,
+        "deadline_tick": 12,
+        "deadline_min_state_fp": 650000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: 12. tick (3. saat) sonunda stres >= 0.65 kalırsa soğuk zincir kırılır ve kesinti (outage) başlar."
+      }
+    ],
+    "edges": [
+      {
+        "from": "PORT_POWER_FEED",
+        "to": "REEFER_MED_CARGO",
+        "multiplier_fp": 150000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Trafo besleme dalgalanması anında reefer iç kabin termal stresini artırır."
+      },
+      {
+        "from": "PORT_POWER_FEED",
+        "to": "GATE_DISPATCH_QUEUE",
+        "multiplier_fp": 200000,
+        "lag_ticks": 1,
+        "active": true,
+        "notes": "Elektrikli RTG vinç yavaşlaması 1 tick gecikmeyle kapı tahliye kuyruğunu büyütür."
+      },
+      {
+        "from": "CUSTOMS_COLD_GATE",
+        "to": "GATE_DISPATCH_QUEUE",
+        "multiplier_fp": 220000,
+        "lag_ticks": 1,
+        "active": true,
+        "notes": "Gümrük soğuk muayene beklemesi kapı kuyruğuna doğrudan eklenir."
+      },
+      {
+        "from": "GATE_DISPATCH_QUEUE",
+        "to": "REEFER_MED_CARGO",
+        "multiplier_fp": 120000,
+        "lag_ticks": 2,
+        "active": true,
+        "notes": "Tahliye edilemeyen reefer konteynerlerin sahada bekleme süresi termal riski yükseltir."
+      },
+      {
+        "from": "PORT_POWER_FEED",
+        "to": "",
+        "multiplier_fp": 240000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (PORT_POWER_FEED)."
+      },
+      {
+        "from": "GATE_DISPATCH_QUEUE",
+        "to": "",
+        "multiplier_fp": 180000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (GATE_DISPATCH_QUEUE)."
+      },
+      {
+        "from": "CUSTOMS_COLD_GATE",
+        "to": "",
+        "multiplier_fp": 160000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (CUSTOMS_COLD_GATE)."
+      },
+      {
+        "from": "REEFER_MED_CARGO",
+        "to": "",
+        "multiplier_fp": 200000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (REEFER_MED_CARGO)."
+      }
+    ],
+    "feedback_loops": [
+      {
+        "id": "FL_REEFER_CONGESTION",
+        "path": [
+          "PORT_POWER_FEED",
+          "GATE_DISPATCH_QUEUE",
+          "REEFER_MED_CARGO"
+        ],
+        "gain_fp": 1180000
+      }
+    ],
+    "levers": [
+      {
+        "id": "L-PORT-01_GEN_CORRIDOR",
+        "code": "L-PORT-01",
+        "label": "Mobil Dizel Jeneratör Koridoru & Yeşil Kapı Tahliyesi",
+        "target": "TERMINAL_OPS_COMMAND",
+        "success_p_fp": 900000,
+        "cost_ticks": 4,
+        "lockout_ticks": 8,
+        "cost_usd": 65000.0,
+        "data_source": "FICTIONAL_SAMPLE",
+        "on_success": {
+          "target_node_id": "REEFER_MED_CARGO",
+          "state_delta_fp": -620000,
+          "trust_delta_fp": 150000,
+          "friction_delta_fp": -220000,
+          "clear_irrecoverable": true
+        },
+        "on_failure": {
+          "target_node_id": "REEFER_MED_CARGO",
+          "state_delta_fp": 40000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 50000,
+          "clear_irrecoverable": false
+        },
+        "notes": "ÖRNEK MÜDAHALE: Mobil jeneratör bankasını reefer bloğuna bağlar ve öncelikli çıkış koridoru açar; REEFER_MED_CARGO stresini 0.65 eşiğinin altına indirerek 12. tick kesintisini önler."
+      },
+      {
+        "id": "L-PORT-02_GATE_SYNC",
+        "code": "L-PORT-02",
+        "label": "Gümrük Ön-Beyan Senkronizasyonu & Trafo Yük Atma",
+        "target": "PORT_GRID_CONTROL",
+        "success_p_fp": 850000,
+        "cost_ticks": 3,
+        "lockout_ticks": 6,
+        "cost_usd": 28000.0,
+        "data_source": "FICTIONAL_SAMPLE",
+        "on_success": {
+          "target_node_id": "PORT_POWER_FEED",
+          "state_delta_fp": -550000,
+          "trust_delta_fp": 100000,
+          "friction_delta_fp": -150000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "PORT_POWER_FEED",
+          "state_delta_fp": 30000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 30000,
+          "clear_irrecoverable": false
+        },
+        "notes": "ÖRNEK MÜDAHALE: Yalnızca ana trafo yükünü düşürür; reefer bloğundaki birikmiş ısı yükünü doğrudan boşaltmadığı için tek başına 12. tick kesintisini önlemeye yetmeyebilir."
+      }
+    ],
+    "hysteresis": [
+      {
+        "id": "HYST_COLD_CHAIN_SPOILAGE",
+        "threshold_tick": 14,
+        "reversible": false,
+        "permanent_loss_fp": 250000,
+        "min_friction_fp": 1650000,
+        "condition_node_id": "REEFER_MED_CARGO",
+        "min_node_state_fp": 650000,
+        "notes": "14. tick'te sürtünme >= 1.65x ve REEFER_MED_CARGO >= 0.65 ise soğuk zincir kontrat kaybı kalıcılaşır."
+      }
+    ],
+    "hard_deadlines": [
+      {
+        "node_id": "REEFER_MED_CARGO",
+        "at_tick": 12,
+        "min_state_fp": 650000,
+        "label": "REEFER_THERMAL_BREACH_3H",
+        "notes": "12. tick (3 saat) sonunda REEFER_MED_CARGO durumu >= 0.65 ise bozulabilir kargo kesintisi (outage) tetiklenir."
+      }
+    ],
+    "intel_bindings": [
+      {
+        "node_id": "PORT_POWER_FEED",
+        "mode": "max",
+        "scale_fp": 900000,
+        "crisis_step_fp": 40000,
+        "min_crisis_level": 1
+      },
+      {
+        "node_id": "CUSTOMS_COLD_GATE",
+        "mode": "add",
+        "scale_fp": 120000,
+        "crisis_step_fp": 20000,
+        "min_crisis_level": 2
+      }
+    ]
+  },
+  "v1_engine_bridge": {
+    "operational_risk_profile": {
+      "scenario_id": "EX-01_LIMAN_SOGUK_ZINCIR",
+      "region": "SAMPLE_PORT_TERMINAL_B",
+      "bureaucratic_complexity": 0.68,
+      "historical_delay_rate": 0.28,
+      "labor_action_probability": 0.22,
+      "route_congestion": 0.74,
+      "weather_severity": 0.45
+    },
+    "intel_feed_sequence": [
+      {
+        "t_hour": 0,
+        "friction_coefficient": 0.72,
+        "crisis_level": 1,
+        "memo": "ORNEK_SINYAL_T0: Trafo B harmonik yuklenme uyarisi (kurgu veri)"
+      },
+      {
+        "t_hour": 1,
+        "friction_coefficient": 0.84,
+        "crisis_level": 2,
+        "memo": "ORNEK_SINYAL_T1: Reefer koridoru sicaklik sapmasi ve gumruk kuyrugu artisi (kurgu veri)"
+      },
+      {
+        "t_hour": 2,
+        "friction_coefficient": 0.91,
+        "crisis_level": 3,
+        "memo": "ORNEK_SINYAL_T2: Kritik soguk zincir esigi yaklasiyor — mudahale penceresi (kurgu veri)"
+      }
+    ]
+  }
+}

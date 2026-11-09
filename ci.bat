@@ -2,36 +2,36 @@
 setlocal EnableDelayedExpansion
 chcp 65001 > nul
 
-:: ════════════════════════════════════════════════════════════════════════════
-::  CAELUS OS — Yerel CI / Determinizm Test Betiği  (ci.bat)
+:: ----------------------------------------------------------------------------
+::  CAELUS OS - Yerel CI / Determinizm Test Betig-i  (ci.bat)
 ::
-::  Yedi adım:
+::  Yedi adim:
 ::    1. Rust birim testleri  (cargo test)
 ::    2. C++ unit tests
-::    3. Connector entegrasyon smoke (MQTT + Zapier, loopback ağ AKTİF)
+::    3. Connector entegrasyon smoke (MQTT + Zapier, loopback ag- AKTI-F)
 ::         network -> pull_intel -> registry inject_intel -> CausalEngine graf
-::         düğümü. Bu adım --det-mode DIŞINDADIR: det-mode ağı atladığından
-::         connector sinyali ancak ağ açıkken graf düğümlerine ulaşır.
-::         --only-det bu adımı atlar; CAELUS_SKIP_CONNECTOR_SMOKE=1 kaçış kapısı.
-::    4. Binary boyut kontrolü  (< 50 MB)
-::    5. Deterministik çıktı doğrulama  (--det-mode)
-::         Aynı senaryo iki kez koşulur → CDET: blokları çıkartılır →
-::         SHA-256 özetleri karşılaştırılır → eşleşirse PASS.
-::    6. Negatif imza doğrulama (SIG-CI)  (--det-mode)
-::         İmzası kasıtlı bozulmuş senaryo kopyası dev kapısı kapalıyken
-::         reddedilir → motor çökmeden UNIVERSAL_BASELINE blank slate'e düşer.
-::    7. caelus_core diferansiyel golden (F1 — çift motor eşitliği)
-::         no_std Rust çekirdeği (caelus_core/) üç BS senaryosunda C++ motoruyla
-::         AYNI snapshot hash'lerini üretmek zorundadır.
-::         CAELUS_SKIP_CORE_DIFF=1 kaçış kapısı.
+::         du-g-u-mu-. Bu adim --det-mode DIS-INDADIR: det-mode ag-i atladig-indan
+::         connector sinyali ancak ag- ac-ikken graf du-g-u-mlerine ulas-ir.
+::         --only-det bu adimi atlar; CAELUS_SKIP_CONNECTOR_SMOKE=1 kac-is- kapisi.
+::    4. Binary boyut kontrolu-  (< 50 MB)
+::    5. Deterministik c-ikti dog-rulama  (--det-mode)
+::         Ayni senaryo iki kez kos-ulur - CDET: bloklari c-ikartilir -
+::         SHA-256 o-zetleri kars-ilas-tirilir - es-les-irse PASS.
+::    6. Negatif imza dog-rulama (SIG-CI)  (--det-mode)
+::         I-mzasi kasitli bozulmus- senaryo kopyasi dev kapisi kapaliyken
+::         reddedilir - motor c-o-kmeden UNIVERSAL_BASELINE blank slate'e du-s-er.
+::    7. caelus_core diferansiyel golden (F1 - c-ift motor es-itlig-i)
+::         no_std Rust c-ekirdeg-i (caelus_core/) u-c- BS senaryosunda C++ motoruyla
+::         AYNI snapshot hash'lerini u-retmek zorundadir.
+::         CAELUS_SKIP_CORE_DIFF=1 kac-is- kapisi.
 ::
-::  Kullanım:
+::  Kullanim:
 ::    ci.bat                    (tam CI)
 ::    ci.bat --skip-build       (sadece test, yeniden derleme yok)
 ::    ci.bat --only-det         (sadece determinizm testi)
 ::
-::  Çıkış kodu: 0 = TÜM TESTLER BAŞARILI / 1 = EN AZ BİR TEST BAŞARISIZ
-:: ════════════════════════════════════════════════════════════════════════════
+::  C-ikis- kodu: 0 = TU-M TESTLER BAS-ARILI / 1 = EN AZ BI-R TEST BAS-ARISIZ
+:: ----------------------------------------------------------------------------
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
@@ -52,8 +52,8 @@ for %%A in (%*) do (
 set "CI_PASS=0"
 set "STEP_FAIL="
 
-:: ── Renk yardımcıları (ANSI destekleniyorsa) ─────────────────────────────────
-:: Windows 10+ konsolu ANSI destekler; eski sürümlerde yoksayılır.
+:: -- Renk yardimcilari (ANSI destekleniyorsa) ---------------------------------
+:: Windows 10+ konsolu ANSI destekler; eski su-ru-mlerde yoksayilir.
 set "G=[92m"
 set "R=[91m"
 set "Y=[93m"
@@ -61,20 +61,20 @@ set "C=[96m"
 set "N=[0m"
 
 echo.
-echo %C%════════════════════════════════════════════════════════════%N%
-echo %C%   CAELUS OS — Yerel CI Betiği%N%
-echo %C%   Air-Gapped · Deterministik · Tek Statik Binary%N%
-echo %C%════════════════════════════════════════════════════════════%N%
+echo %C%------------------------------------------------------------%N%
+echo %C%   CAELUS OS - Yerel CI Betig-i%N%
+echo %C%   Air-Gapped - Deterministik - Tek Statik Binary%N%
+echo %C%------------------------------------------------------------%N%
 echo.
 
-:: ════════════════════════════════════════════════════════════════════════════
-:: ADIM 0: Ön kontroller
-:: ════════════════════════════════════════════════════════════════════════════
-echo %C%[CI] Ön kontrol: araçlar...%N%
+:: ----------------------------------------------------------------------------
+:: ADIM 0: O-n kontroller
+:: ----------------------------------------------------------------------------
+echo %C%[CI] O-n kontrol: arac-lar...%N%
 
 cargo --version > nul 2>&1
 if errorlevel 1 (
-    echo %R%[CI HATA] 'cargo' bulunamadı. Rust toolchain kurulumu gerekli.%N%
+    echo %R%[CI HATA] 'cargo' bulunamadi. Rust toolchain kurulumu gerekli.%N%
     exit /b 1
 )
 echo %G%[CI OK] cargo: mevcut%N%
@@ -88,7 +88,7 @@ if "%ONLY_DET%"=="0" (
         if not errorlevel 1 (
             set "CXX_TOOL=MSVC"
         ) else (
-            echo %R%[CI HATA] C++ derleyici bulunamadı ^(g++ veya cl.exe gerekli^).%N%
+            echo %R%[CI HATA] C++ derleyici bulunamadi ^(g++ veya cl.exe gerekli^).%N%
             exit /b 1
         )
     )
@@ -101,8 +101,8 @@ if "%ONLY_DET%"=="0" (
             if not errorlevel 1 set "PYTHON_CMD=python"
         )
         if not defined PYTHON_CMD (
-            echo %R%[CI HATA] Python bulunamadı ^(connector smoke için py -3 veya python gerekli^).%N%
-            echo          Atlamak için CAELUS_SKIP_CONNECTOR_SMOKE=1 ayarlayın.
+            echo %R%[CI HATA] Python bulunamadi ^(connector smoke ic-in py -3 veya python gerekli^).%N%
+            echo          Atlamak ic-in CAELUS_SKIP_CONNECTOR_SMOKE=1 ayarlayin.
             exit /b 1
         )
         echo %G%[CI OK] Python: !PYTHON_CMD!%N%
@@ -113,19 +113,19 @@ if "%ONLY_DET%"=="0" (
 
 certutil -? > nul 2>&1
 if errorlevel 1 (
-    echo %R%[CI HATA] 'certutil' bulunamadı ^(Windows yerleşik, SHA-256 için gerekli^).%N%
+    echo %R%[CI HATA] 'certutil' bulunamadi ^(Windows yerles-ik, SHA-256 ic-in gerekli^).%N%
     exit /b 1
 )
 echo %G%[CI OK] certutil: mevcut%N%
 echo.
 
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
 :: ADIM 1: Rust birim testleri
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
 if "%ONLY_DET%"=="0" (
-    echo %C%════════════════════════════════════════════════════════════%N%
-    echo %C%[CI] ADIM 1/7 — Rust Birim Testleri ^(cargo test^)%N%
-    echo %C%════════════════════════════════════════════════════════════%N%
+    echo %C%------------------------------------------------------------%N%
+    echo %C%[CI] ADIM 1/7 - Rust Birim Testleri ^(cargo test^)%N%
+    echo %C%------------------------------------------------------------%N%
     echo.
     pushd "%ROOT%"
     cargo test 2>&1
@@ -133,17 +133,17 @@ if "%ONLY_DET%"=="0" (
     popd
     if "!RUST_EC!" NEQ "0" (
         echo.
-        echo %R%[CI FAIL] Rust birim testleri BAŞARISIZ ^(çıkış kodu: !RUST_EC!^)%N%
+        echo %R%[CI FAIL] Rust birim testleri BAS-ARISIZ ^(c-ikis- kodu: !RUST_EC!^)%N%
         set "CI_PASS=1"
         set "STEP_FAIL=!STEP_FAIL! RUST_TESTS"
     ) else (
         echo.
-        echo %G%[CI OK] Rust birim testleri geçti%N%
+        echo %G%[CI OK] Rust birim testleri gec-ti%N%
     )
     echo.
 )
 
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
 ::: ADIM 2: C++ unit tests
 ::: --------------------------------------------------------------------------
 if "%ONLY_DET%"=="0" (
@@ -177,20 +177,20 @@ if "%ONLY_DET%"=="0" (
     echo.
 )
 
-:: ════════════════════════════════════════════════════════════════════════════
-:: ADIM 3: Connector entegrasyon smoke (--det-mode DIŞI, loopback ağ aktif)
-::   network -> pull_intel -> registry inject_intel -> CausalEngine graf düğümü.
-::   det-mode ağı atladığından bu adım det bloklarından AYRIDIR; --only-det atlar.
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
+:: ADIM 3: Connector entegrasyon smoke (--det-mode DIS-I, loopback ag- aktif)
+::   network -> pull_intel -> registry inject_intel -> CausalEngine graf du-g-u-mu-.
+::   det-mode ag-i atladig-indan bu adim det bloklarindan AYRIDIR; --only-det atlar.
+:: ----------------------------------------------------------------------------
 if "%ONLY_DET%"=="0" (
-    echo %C%════════════════════════════════════════════════════════════%N%
-    echo %C%[CI] ADIM 3/7 — Connector Entegrasyon Smoke ^(MQTT + Zapier, ag aktif^)%N%
-    echo %C%════════════════════════════════════════════════════════════%N%
+    echo %C%------------------------------------------------------------%N%
+    echo %C%[CI] ADIM 3/7 - Connector Entegrasyon Smoke ^(MQTT + Zapier, ag aktif^)%N%
+    echo %C%------------------------------------------------------------%N%
     echo.
     if "!SKIP_CONNECTOR_SMOKE!"=="1" (
-        echo %Y%[CI UYARI] Connector smoke atlandı: CAELUS_SKIP_CONNECTOR_SMOKE=1%N%
+        echo %Y%[CI UYARI] Connector smoke atlandi: CAELUS_SKIP_CONNECTOR_SMOKE=1%N%
     ) else if not exist "%ROOT%\tests\connector_smoke.py" (
-        echo %R%[CI FAIL] Connector smoke betiği bulunamadı: %ROOT%\tests\connector_smoke.py%N%
+        echo %R%[CI FAIL] Connector smoke betig-i bulunamadi: %ROOT%\tests\connector_smoke.py%N%
         set "CI_PASS=1"
         set "STEP_FAIL=!STEP_FAIL! CONNECTOR_SMOKE_MISSING"
     ) else (
@@ -198,38 +198,38 @@ if "%ONLY_DET%"=="0" (
         set "CONNECTOR_SMOKE_EC=!errorlevel!"
         if "!CONNECTOR_SMOKE_EC!" NEQ "0" (
             echo.
-            echo %R%[CI FAIL] Connector smoke testleri BAŞARISIZ ^(çıkış kodu: !CONNECTOR_SMOKE_EC!^)%N%
+            echo %R%[CI FAIL] Connector smoke testleri BAS-ARISIZ ^(c-ikis- kodu: !CONNECTOR_SMOKE_EC!^)%N%
             set "CI_PASS=1"
             set "STEP_FAIL=!STEP_FAIL! CONNECTOR_SMOKE"
         ) else (
             echo.
-            echo %G%[CI OK] Connector smoke testleri geçti%N%
+            echo %G%[CI OK] Connector smoke testleri gec-ti%N%
         )
     )
     echo.
 )
 
-:: ════════════════════════════════════════════════════════════════════════════
-:: ADIM 4: Binary boyut kontrolü (< 50 MB)
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
+:: ADIM 4: Binary boyut kontrolu- (< 50 MB)
+:: ----------------------------------------------------------------------------
 if "%ONLY_DET%"=="0" (
-    echo %C%════════════════════════════════════════════════════════════%N%
-    echo %C%[CI] ADIM 4/7 — Binary Boyut Kontrolü%N%
-    echo %C%════════════════════════════════════════════════════════════%N%
+    echo %C%------------------------------------------------------------%N%
+    echo %C%[CI] ADIM 4/7 - Binary Boyut Kontrolu-%N%
+    echo %C%------------------------------------------------------------%N%
     echo.
     if not exist "%EXE%" (
-        echo %Y%[CI UYARI] %EXE% bulunamadı.%N%
+        echo %Y%[CI UYARI] %EXE% bulunamadi.%N%
         if "%SKIP_BUILD%"=="0" (
             echo %C%[CI] build.bat ile derleniyor...%N%
             call "%ROOT%\build.bat"
             if errorlevel 1 (
-                echo %R%[CI FAIL] Derleme başarısız.%N%
+                echo %R%[CI FAIL] Derleme bas-arisiz.%N%
                 set "CI_PASS=1"
                 set "STEP_FAIL=!STEP_FAIL! BUILD"
                 goto :step4
             )
         ) else (
-            echo %R%[CI FAIL] --skip-build ayarlı ama binary yok. Önce build.bat çalıştırın.%N%
+            echo %R%[CI FAIL] --skip-build ayarli ama binary yok. O-nce build.bat c-alis-tirin.%N%
             set "CI_PASS=1"
             set "STEP_FAIL=!STEP_FAIL! BUILD"
             goto :step4
@@ -242,9 +242,9 @@ if "%ONLY_DET%"=="0" (
     )
     echo [CI] Binary boyutu: !EXE_KB! KB  ^(~!EXE_MB! MB^)
     if !EXE_MB! LSS 50 (
-        echo %G%[CI OK] Boyut hedefi karşılandı ^(^< 50 MB^)%N%
+        echo %G%[CI OK] Boyut hedefi kars-ilandi ^(^< 50 MB^)%N%
     ) else (
-        echo %R%[CI FAIL] Binary boyutu hedefi aştı ^(!EXE_MB! MB ^>= 50 MB^)%N%
+        echo %R%[CI FAIL] Binary boyutu hedefi as-ti ^(!EXE_MB! MB ^>= 50 MB^)%N%
         set "CI_PASS=1"
         set "STEP_FAIL=!STEP_FAIL! BINARY_SIZE"
     )
@@ -252,30 +252,30 @@ if "%ONLY_DET%"=="0" (
 )
 
 :step4
-:: ════════════════════════════════════════════════════════════════════════════
-:: ADIM 4: Deterministik çıktı doğrulama
-::   Aynı senaryo 2 kez koşulur; CDET: satırları çıkartılır; SHA-256 karşılaştırılır.
-::   Başarı: özetler eşleşiyor → motor deterministik.
-:: ════════════════════════════════════════════════════════════════════════════
-echo %C%════════════════════════════════════════════════════════════%N%
-echo %C%[CI] ADIM 5/7 — Deterministik Çıktı Doğrulama%N%
-echo %C%════════════════════════════════════════════════════════════%N%
+:: ----------------------------------------------------------------------------
+:: ADIM 4: Deterministik c-ikti dog-rulama
+::   Ayni senaryo 2 kez kos-ulur; CDET: satirlari c-ikartilir; SHA-256 kars-ilas-tirilir.
+::   Bas-ari: o-zetler es-les-iyor - motor deterministik.
+:: ----------------------------------------------------------------------------
+echo %C%------------------------------------------------------------%N%
+echo %C%[CI] ADIM 5/7 - Deterministik C-ikti Dog-rulama%N%
+echo %C%------------------------------------------------------------%N%
 echo.
 
 if not exist "%EXE%" (
-    echo %R%[CI FAIL] Binary bulunamadı: %EXE%%N%
-    echo          Önce build.bat çalıştırın.
+    echo %R%[CI FAIL] Binary bulunamadi: %EXE%%N%
+    echo          O-nce build.bat c-alis-tirin.
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! DET_MISSING_BIN"
     goto :report
 )
 
-:: ── Sabit CI ortamı — tüm rastgeleliği kilitler ─────────────────────────────
-:: Bu değerler gerçek sır değildir; sadece test vektörleridir.
+:: -- Sabit CI ortami - tu-m rastgelelig-i kilitler -----------------------------
+:: Bu deg-erler gerc-ek sir deg-ildir; sadece test vekto-rleridir.
 set "CAELUS_DET_SEED=0xCAE105DEADBEEF00"
 set "CAELUS_ENCLAVE_KEY=cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1cae1"
 
-:: Geçici dosyalar
+:: Gec-ici dosyalar
 set "OUT1=%TEMP%\caelus_ci_run1.txt"
 set "OUT2=%TEMP%\caelus_ci_run2.txt"
 set "BLK1=%TEMP%\caelus_ci_blk1.txt"
@@ -284,58 +284,58 @@ set "HSH1=%TEMP%\caelus_ci_h1.txt"
 set "HSH2=%TEMP%\caelus_ci_h2.txt"
 del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 
-:: ── Koşum 1 ─────────────────────────────────────────────────────────────────
-echo %C%[CI] Koşum 1/2 başlıyor...%N%
+:: -- Kos-um 1 -----------------------------------------------------------------
+echo %C%[CI] Kos-um 1/2 bas-liyor...%N%
 del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT1%" 2>&1
 set "EC1=!errorlevel!"
 if "!EC1!" NEQ "0" (
-    echo %R%[CI FAIL] Koşum 1 başarısız ^(çıkış kodu: !EC1!^)%N%
+    echo %R%[CI FAIL] Kos-um 1 bas-arisiz ^(c-ikis- kodu: !EC1!^)%N%
     echo.
-    echo --- Koşum 1 çıktısı ---
+    echo --- Kos-um 1 c-iktisi ---
     type "%OUT1%"
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! DET_RUN1"
     goto :report
 )
-echo %G%[CI OK] Koşum 1 tamamlandı%N%
+echo %G%[CI OK] Kos-um 1 tamamlandi%N%
 
-:: ── Koşum 2 ─────────────────────────────────────────────────────────────────
-echo %C%[CI] Koşum 2/2 başlıyor...%N%
+:: -- Kos-um 2 -----------------------------------------------------------------
+echo %C%[CI] Kos-um 2/2 bas-liyor...%N%
 del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT2%" 2>&1
 set "EC2=!errorlevel!"
 if "!EC2!" NEQ "0" (
-    echo %R%[CI FAIL] Koşum 2 başarısız ^(çıkış kodu: !EC2!^)%N%
+    echo %R%[CI FAIL] Kos-um 2 bas-arisiz ^(c-ikis- kodu: !EC2!^)%N%
     echo.
-    echo --- Koşum 2 çıktısı ---
+    echo --- Kos-um 2 c-iktisi ---
     type "%OUT2%"
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! DET_RUN2"
     goto :report
 )
-echo %G%[CI OK] Koşum 2 tamamlandı%N%
+echo %G%[CI OK] Kos-um 2 tamamlandi%N%
 
-:: ── CDET: bloğunu çıkart ─────────────────────────────────────────────────────
+:: -- CDET: blog-unu c-ikart -----------------------------------------------------
 findstr "CDET:" "%OUT1%" > "%BLK1%" 2>nul
 findstr "CDET:" "%OUT2%" > "%BLK2%" 2>nul
 
-:: Blok boş mu?
+:: Blok bos- mu?
 for %%F in ("%BLK1%") do set /a "BLK1_SZ=%%~zF"
 if "!BLK1_SZ!"=="0" (
-    echo %R%[CI FAIL] Koşum 1 çıktısında CDET: bloğu bulunamadı.%N%
-    echo          '--det-mode' çalışıyor mu? Tam çıktı:
+    echo %R%[CI FAIL] Kos-um 1 c-iktisinda CDET: blog-u bulunamadi.%N%
+    echo          '--det-mode' c-alis-iyor mu? Tam c-ikti:
     type "%OUT1%"
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! DET_NO_BLOCK"
     goto :report
 )
 
-:: ── SHA-256 hesapla ve karşılaştır ────────────────────────────────────────────
+:: -- SHA-256 hesapla ve kars-ilas-tir --------------------------------------------
 certutil -hashfile "%BLK1%" SHA256 > "%HSH1%" 2>nul
 certutil -hashfile "%BLK2%" SHA256 > "%HSH2%" 2>nul
 
-:: certutil çıktısı 3 satır; 2. satır hash değeridir.
+:: certutil c-iktisi 3 satir; 2. satir hash deg-eridir.
 set "HASH1="
 set "HASH2="
 set "LINE_N=0"
@@ -350,56 +350,56 @@ for /f "usebackq delims=" %%L in ("%HSH2%") do (
 )
 
 echo.
-echo [CI] CDET bloğu SHA-256:
-echo      Koşum 1: !HASH1!
-echo      Koşum 2: !HASH2!
+echo [CI] CDET blog-u SHA-256:
+echo      Kos-um 1: !HASH1!
+echo      Kos-um 2: !HASH2!
 echo.
 
 if "!HASH1!"=="!HASH2!" (
-    echo %G%[CI OK] DETERMİNİZM DOĞRULANDI — her iki özet eşleşiyor.%N%
+    echo %G%[CI OK] DETERMI-NI-ZM DOG-RULANDI - her iki o-zet es-les-iyor.%N%
     echo.
-    echo      Doğrulanan CDET bloğu:
+    echo      Dog-rulanan CDET blog-u:
     type "%BLK1%"
 ) else (
-    echo %R%[CI FAIL] DETERMİNİZM HATASI — özetler farklı!%N%
+    echo %R%[CI FAIL] DETERMI-NI-ZM HATASI - o-zetler farkli!%N%
     echo.
-    echo --- Koşum 1 CDET bloğu ---
+    echo --- Kos-um 1 CDET blog-u ---
     type "%BLK1%"
-    echo --- Koşum 2 CDET bloğu ---
+    echo --- Kos-um 2 CDET blog-u ---
     type "%BLK2%"
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! DETERMINISM"
 )
 
-:: ── Geçici dosyaları temizle ──────────────────────────────────────────────────
+:: -- Gec-ici dosyalari temizle --------------------------------------------------
 del /q "%OUT1%" "%OUT2%" "%BLK1%" "%BLK2%" "%HSH1%" "%HSH2%" > nul 2>&1
 
 echo.
-echo %C%[CI] Audit zincir + SEAL doğrulaması...%N%
+echo %C%[CI] Audit zincir + SEAL dog-rulamasi...%N%
 if not defined PYTHON_CMD (
     py -3 --version > nul 2>&1
     if not errorlevel 1 (set "PYTHON_CMD=py -3") else (set "PYTHON_CMD=python")
 )
 !PYTHON_CMD! "%ROOT%\tools\verify_audit_log.py" "%ROOT%\caelus_audit_0000000000000000.log"
 if errorlevel 1 (
-    echo %R%[CI FAIL] Audit doğrulaması başarısız.%N%
+    echo %R%[CI FAIL] Audit dog-rulamasi bas-arisiz.%N%
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! AUDIT_VERIFY"
 ) else (
-    echo %G%[CI OK] Audit zinciri ve SEAL doğrulandı%N%
+    echo %G%[CI OK] Audit zinciri ve SEAL dog-rulandi%N%
 )
 
 :step5
-:: ════════════════════════════════════════════════════════════════════════════
-:: ADIM 6: Negatif imza doğrulama (SIG-CI / SIGNED-CI)
-::   İmzası kasıtlı bozulmuş senaryo kopyası dev kapısı kapalıyken reddedilmeli
-::   (gerçek ed25519 doğrulama hatası). Motor crash etmeden UNIVERSAL_BASELINE
-::   blank slate + AWAITING_SCENARIO_INJECTION durumuna düşmeli.
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
+:: ADIM 6: Negatif imza dog-rulama (SIG-CI / SIGNED-CI)
+::   I-mzasi kasitli bozulmus- senaryo kopyasi dev kapisi kapaliyken reddedilmeli
+::   (gerc-ek ed25519 dog-rulama hatasi). Motor crash etmeden UNIVERSAL_BASELINE
+::   blank slate + AWAITING_SCENARIO_INJECTION durumuna du-s-meli.
+:: ----------------------------------------------------------------------------
 echo.
-echo %C%════════════════════════════════════════════════════════════%N%
-echo %C%[CI] ADIM 6/7 — Negatif İmza Doğrulama ^(SIG-CI^)%N%
-echo %C%════════════════════════════════════════════════════════════%N%
+echo %C%------------------------------------------------------------%N%
+echo %C%[CI] ADIM 6/7 - Negatif I-mza Dog-rulama ^(SIG-CI^)%N%
+echo %C%------------------------------------------------------------%N%
 echo.
 
 set "SIG_OUT=%TEMP%\caelus_ci_sig_negative.txt"
@@ -437,14 +437,14 @@ if defined OLD_CAELUS_ALLOW_DEV_SCENARIOS (
 
 set "SIG_STEP_FAIL=0"
 if "!SIG_EC!" NEQ "0" (
-    echo %R%[CI FAIL] SIG-CI koşumu çökmeden tamamlanmadı ^(çıkış kodu: !SIG_EC!^).%N%
+    echo %R%[CI FAIL] SIG-CI kos-umu c-o-kmeden tamamlanmadi ^(c-ikis- kodu: !SIG_EC!^).%N%
     set "SIG_STEP_FAIL=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_EXIT"
 )
 
 findstr /C:"SIGNATURE_MISMATCH" "%SIG_OUT%" > nul 2>&1
 if errorlevel 1 (
-    echo %R%[CI FAIL] SIG-CI çıktısında SIGNATURE_MISMATCH bulunamadı.%N%
+    echo %R%[CI FAIL] SIG-CI c-iktisinda SIGNATURE_MISMATCH bulunamadi.%N%
     set "SIG_STEP_FAIL=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_NO_SIGNATURE_MISMATCH"
 )
@@ -453,7 +453,7 @@ findstr /C:"UNIVERSAL_BASELINE" "%SIG_OUT%" > nul 2>&1
 if errorlevel 1 (
     findstr /C:"AWAITING_SCENARIO_INJECTION" "%SIG_OUT%" > nul 2>&1
     if errorlevel 1 (
-        echo %R%[CI FAIL] SIG-CI çıktısında UNIVERSAL_BASELINE/AWAITING fallback marker bulunamadı.%N%
+        echo %R%[CI FAIL] SIG-CI c-iktisinda UNIVERSAL_BASELINE/AWAITING fallback marker bulunamadi.%N%
         set "SIG_STEP_FAIL=1"
         set "STEP_FAIL=!STEP_FAIL! SIG_CI_NO_BASELINE_MARKER"
     )
@@ -461,30 +461,30 @@ if errorlevel 1 (
 
 findstr /C:"AWAITING_SCENARIO_INJECTION" "%SIG_OUT%" > nul 2>&1
 if errorlevel 1 (
-    echo %R%[CI FAIL] SIG-CI çıktısında AWAITING_SCENARIO_INJECTION bulunamadı.%N%
+    echo %R%[CI FAIL] SIG-CI c-iktisinda AWAITING_SCENARIO_INJECTION bulunamadi.%N%
     set "SIG_STEP_FAIL=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_NO_AWAITING"
 )
 
 findstr /C:"CDET: raw_friction=1.000000" "%SIG_OUT%" > nul 2>&1
 if errorlevel 1 (
-    echo %R%[CI FAIL] SIG-CI çıktısında blank slate raw_friction=1.000000 kanıtı bulunamadı.%N%
+    echo %R%[CI FAIL] SIG-CI c-iktisinda blank slate raw_friction=1.000000 kaniti bulunamadi.%N%
     set "SIG_STEP_FAIL=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_NO_NEUTRAL_RAW"
 )
 
 findstr /C:"CDET: final_friction=1.000000" "%SIG_OUT%" > nul 2>&1
 if errorlevel 1 (
-    echo %R%[CI FAIL] SIG-CI çıktısında blank slate final_friction=1.000000 kanıtı bulunamadı.%N%
+    echo %R%[CI FAIL] SIG-CI c-iktisinda blank slate final_friction=1.000000 kaniti bulunamadi.%N%
     set "SIG_STEP_FAIL=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_NO_NEUTRAL_FINAL"
 )
 
 if "!SIG_STEP_FAIL!"=="0" (
-    echo %G%[CI OK] SIG-CI doğrulandı: bozuk ed25519 imzalı paket reddedildi, motor blank slate'e düştü.%N%
+    echo %G%[CI OK] SIG-CI dog-rulandi: bozuk ed25519 imzali paket reddedildi, motor blank slate'e du-s-tu-.%N%
 ) else (
     echo.
-    echo --- SIG-CI çıktısı ---
+    echo --- SIG-CI c-iktisi ---
     type "%SIG_OUT%"
     set "CI_PASS=1"
 )
@@ -492,20 +492,20 @@ if "!SIG_STEP_FAIL!"=="0" (
 del /q "%SIG_OUT%" > nul 2>&1
 
 :step7
-:: ════════════════════════════════════════════════════════════════════════════
-:: ADIM 7: caelus_core diferansiyel golden (F1 — çift motor eşitliği)
-::   no_std Rust çekirdeği (caelus_core/) C++ motoruyla AYNI snapshot
-::   hash'lerini üretmek zorundadır. Sapma = motor portunda semantik kayma.
+:: ----------------------------------------------------------------------------
+:: ADIM 7: caelus_core diferansiyel golden (F1 - c-ift motor es-itlig-i)
+::   no_std Rust c-ekirdeg-i (caelus_core/) C++ motoruyla AYNI snapshot
+::   hash'lerini u-retmek zorundadir. Sapma = motor portunda semantik kayma.
 ::   CAELUS_SKIP_CORE_DIFF=1 ile atlanabilir.
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
 echo.
-echo %C%════════════════════════════════════════════════════════════%N%
-echo %C%[CI] ADIM 7/7 — caelus_core Diferansiyel Golden ^(Rust ↔ C++^)%N%
-echo %C%════════════════════════════════════════════════════════════%N%
+echo %C%------------------------------------------------------------%N%
+echo %C%[CI] ADIM 7/7 - caelus_core Diferansiyel Golden ^(Rust - C++^)%N%
+echo %C%------------------------------------------------------------%N%
 echo.
 
 if /I "%CAELUS_SKIP_CORE_DIFF%"=="1" (
-    echo %C%[CI] CAELUS_SKIP_CORE_DIFF=1 — diferansiyel adim atlandi.%N%
+    echo %C%[CI] CAELUS_SKIP_CORE_DIFF=1 - diferansiyel adim atlandi.%N%
     goto :report
 )
 
@@ -536,18 +536,18 @@ if errorlevel 1 (
 echo %C%[CI] Diferansiyel golden: Rust cekirdek, C++ golden hash'lerine karsi...%N%
 !PYTHON_CMD! "%ROOT%\tests\run_bs_exec_golden.py" --binary "%ROOT%\caelus_core\target\release\caelus_core_repl.exe"
 if errorlevel 1 (
-    echo %R%[CI FAIL] Diferansiyel golden FAIL — Rust cekirdegi C++ motorundan sapti.%N%
+    echo %R%[CI FAIL] Diferansiyel golden FAIL - Rust cekirdegi C++ motorundan sapti.%N%
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! CORE_DIFFERENTIAL"
 ) else (
     echo %G%[CI OK] Diferansiyel golden: Rust cekirdek = C++ motoru ^(3 senaryo, hash esit^)%N%
 )
 
-:: ── F2-4: Verus/Z3 makine-denetimli ispatlar (arac varsa zorunlu, yoksa atla) ─
+:: -- F2-4: Verus/Z3 makine-denetimli ispatlar (arac varsa zorunlu, yoksa atla) -
 :: caelus_core\verify\ altindaki HER .rs dosyasi bagimsiz dogrulanir:
-::   fp_proofs.rs       — P-1/P-4 tam sozlesmeler + aralik korunumu
-::   mul_div_safety.rs  — P-2a evrensel guvenlik (sonuc <= cap, tum u64)
-::   latch_machine.rs   — P-5a/P-5b latch iz teoremleri (T-20 evrensel)
+::   fp_proofs.rs       - P-1/P-4 tam sozlesmeler + aralik korunumu
+::   mul_div_safety.rs  - P-2a evrensel guvenlik (sonuc <= cap, tum u64)
+::   latch_machine.rs   - P-5a/P-5b latch iz teoremleri (T-20 evrensel)
 set "VERUS_EXE=%ROOT%\tools\verus\verus-x86-win\verus.exe"
 if exist "%VERUS_EXE%" (
     set "VERUS_FAIL=0"
@@ -566,23 +566,23 @@ if exist "%VERUS_EXE%" (
         echo %G%[CI OK] Verus ispatlari dogrulandi ^(P-1, P-2a, P-4, P-5a/b; Z3^)%N%
     )
 ) else (
-    echo %Y%[CI UYARI] Verus bulunamadi ^(tools\verus^) — ispat adimi atlandi.%N%
+    echo %Y%[CI UYARI] Verus bulunamadi ^(tools\verus^) - ispat adimi atlandi.%N%
 )
 
 :report
-:: ════════════════════════════════════════════════════════════════════════════
-:: SONUÇ
-:: ════════════════════════════════════════════════════════════════════════════
+:: ----------------------------------------------------------------------------
+:: SONUC-
+:: ----------------------------------------------------------------------------
 echo.
-echo %C%════════════════════════════════════════════════════════════%N%
+echo %C%------------------------------------------------------------%N%
 if "!CI_PASS!"=="0" (
-    echo %G%[CI] TÜM TESTLER BAŞARILI%N%
-    echo %C%════════════════════════════════════════════════════════════%N%
+    echo %G%[CI] TU-M TESTLER BAS-ARILI%N%
+    echo %C%------------------------------------------------------------%N%
     echo.
     exit /b 0
 ) else (
-    echo %R%[CI] BAŞARISIZ ADIMLAR: !STEP_FAIL!%N%
-    echo %C%════════════════════════════════════════════════════════════%N%
+    echo %R%[CI] BAS-ARISIZ ADIMLAR: !STEP_FAIL!%N%
+    echo %C%------------------------------------------------------------%N%
     echo.
     exit /b 1
 )

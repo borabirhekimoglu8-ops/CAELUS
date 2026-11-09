@@ -25,8 +25,8 @@ pub mod fp;
 
 pub use det_rng::DetRng;
 pub use engine::{
-    CausalEngine, Edge, EngineSnapshot, FeedbackLoop, Hysteresis, Lever, LeverOutcome, Node,
-    NodeKind,
+    CausalEngine, Edge, EngineSnapshot, FeedbackLoop, Hysteresis, IntelBinding, IntelBindingMode,
+    Lever, LeverOutcome, Node, NodeKind,
 };
 pub use fp::{
     d_to_fp, fp_add_saturating, fp_clamp, fp_div, fp_mul, fp_to_d, FP_ONE, FP_SCALE,

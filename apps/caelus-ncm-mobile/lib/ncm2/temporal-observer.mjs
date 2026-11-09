@@ -1,5 +1,17 @@
 import { RELATION_RULES } from "./ontology.mjs";
 
+export const NCM2_EPISTEMIC_CATEGORIES = Object.freeze({
+  SOURCE_CLAIM: "1. KAYNAKTAKİ İDDİA",
+  MEASUREMENT_OR_OBSERVATION: "2. ÖLÇÜM VEYA GÖZLEM",
+  RULE_BASED_INFERENCE: "3. KURAL TABANLI ÇIKARIM",
+  MODEL_HYPOTHESIS: "4. MODEL TARAFINDAN ÖNERİLEN HİPOTEZ",
+  CONDITIONAL_CAUSAL_CONCLUSION: "5. BELİRLİ VARSAYIMLARA BAĞLI NEDENSEL SONUÇ",
+  SIMULATION_RESULT: "6. SİMÜLASYON SONUCU",
+  COUNTER_EVIDENCE_OR_CONTRADICTION: "7. KARŞIT KANIT VEYA ÇELİŞKİ",
+  UNKNOWN_OR_INSUFFICIENT_DATA: "8. BİLİNMEYEN / YETERSİZ VERİ",
+  CORRECTED_OR_EXPIRED_RECORD: "9. DÜZELTİLMİŞ VEYA GEÇERLİLİĞİ SONA ERMİŞ KAYIT",
+});
+
 const FP = 1_000_000;
 const TEMPORAL_WEIGHTS = Object.freeze({
   version: "TGN-Q15-1.0.0",
@@ -33,6 +45,46 @@ function edgeEvidence(from, to, rule) {
   }];
 }
 
+function ensurePositiveChain(edges, concepts, hash32) {
+  const byType = (type) => concepts.find((concept) => concept.semanticType === type);
+  const ordered = [
+    byType("ACTOR") || concepts[0],
+    byType("GATE") || byType("SERVICE") || concepts[1],
+    byType("SERVICE") || concepts[2],
+    byType("DEMAND") || concepts[3],
+    byType("CAPACITY") || concepts[4],
+    byType("DEADLINE") || concepts[5],
+  ].filter(Boolean);
+  const existing = new Set(edges.map((edge) => `${edge.from}->${edge.to}`));
+  for (let index = 0; index < ordered.length - 1; index += 1) {
+    const from = ordered[index];
+    const to = ordered[index + 1];
+    if (!from || !to || from.key === to.key || existing.has(`${from.key}->${to.key}`)) continue;
+    const rawRelation = index === 3 ? "DEPLETES" : "CAUSES";
+    edges.push({
+      id: `E-FALLBACK-${index + 1}-${hash32(`${from.key}:${to.key}`).toString(16).slice(0, 6)}`,
+      from: from.key,
+      to: to.key,
+      relation: rawRelation,
+      relationPresentationLabel: `Sentetik Fallback Hipotezi (${rawRelation} — Kanıtlanmış Nedensellik Değildir)`,
+      epistemicCategory: NCM2_EPISTEMIC_CATEGORIES.MODEL_HYPOTHESIS,
+      epistemicCategoryCode: "MODEL_HYPOTHESIS",
+      polarity: 1,
+      strengthFp: 620_000 - index * 25_000,
+      confidenceFp: 610_000,
+      lagTicks: 1 + index,
+      mechanism: index === 3 ? "biriken talep tampon kapasiteyi tüketir" : "girdideki olay sırası bir sonraki sonucu tetikler",
+      evidence: [{ source: "ontology", text: `${from.label} → ${to.label}`, ruleId: "NCM2-MINIMUM-CAUSAL-PATH" }],
+      fallback: true,
+      empiricalCausalityProven: false,
+      isCalibratedProbability: false,
+      scoreType: "FALLBACK_SYNTHETIC_DEFAULT_SCORE",
+      scoreFormula: "constant(610000 / 1e6 = 0.61) for NCM2-MINIMUM-CAUSAL-PATH fallback completion",
+    });
+    existing.add(`${from.key}->${to.key}`);
+  }
+}
+
 export function buildSemanticGraph(situation, neural, hash32) {
   const concepts = situation.concepts;
   const suppressActor = situation.negatedEvents.includes("ATTACK") && !situation.frames.some((frame) => frame.event === "ATTACK" && !frame.negated);
@@ -47,11 +99,22 @@ export function buildSemanticGraph(situation, neural, hash32) {
       const explicitBonus = from.explicit && to.explicit ? 0.05 : 0;
       const crossBonus = crossDomain && situation.activeDomains.length > 1 ? 0.06 : 0;
       const confidence = Math.max(0.42, Math.min(0.94, rule.base * 0.70 + neuralStrength * 0.24 + explicitBonus + crossBonus));
+      const bothExplicit = Boolean(from.explicit && to.explicit);
+      const epistemicCode = bothExplicit ? "SOURCE_CLAIM" : "RULE_BASED_INFERENCE";
+      const epistemicLabel = bothExplicit
+        ? NCM2_EPISTEMIC_CATEGORIES.SOURCE_CLAIM
+        : NCM2_EPISTEMIC_CATEGORIES.RULE_BASED_INFERENCE;
+      const presentationLabel = rule.relation === "CAUSES"
+        ? "Kural Önerisi / Olası Etki Hipotezi (CAUSES — Ampirik Kanıtlanmış Nedensellik Değildir)"
+        : `Kural Tabanlı İlişki Önerisi (${rule.relation} — Kanıtlanmış Nedensellik Değildir)`;
       candidates.push({
         id: `E-${hash32(`${from.key}:${to.key}:${rule.relation}`).toString(16).toUpperCase().padStart(8, "0")}`,
         from: from.key,
         to: to.key,
         relation: rule.relation,
+        relationPresentationLabel: presentationLabel,
+        epistemicCategory: epistemicLabel,
+        epistemicCategoryCode: epistemicCode,
         polarity: rule.polarity,
         strengthFp: Math.round(confidence * FP),
         confidenceFp: Math.round(Math.min(confidence, situation.confidence) * FP),
@@ -59,6 +122,10 @@ export function buildSemanticGraph(situation, neural, hash32) {
         mechanism: rule.mechanism,
         evidence: edgeEvidence(from, to, rule),
         fallback: false,
+        empiricalCausalityProven: false,
+        isCalibratedProbability: false,
+        scoreType: "UNCALIBRATED_HEURISTIC_RULE_SCORE",
+        scoreFormula: "min(situation.confidence, clamp(rule.base*0.70 + neuralStrength*0.24 + explicitBonus + crossBonus, 0.42, 0.94))",
       });
     }
   }
@@ -74,6 +141,7 @@ export function buildSemanticGraph(situation, neural, hash32) {
     edges.push(edge);
     targetIncoming.set(edge.to, incoming + 1);
   }
+  ensurePositiveChain(edges, concepts, hash32);
   return edges;
 }
 

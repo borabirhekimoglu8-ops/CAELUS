@@ -19,7 +19,8 @@
  *   → REGIME_EXCEEDED: kenet öncesi yangın düğmesi — sessiz doyum yok.
  *
  * Sabit nokta aritmetiği:
- *   Tüm değerler int64_t, ölçek = 1_000_000 (1.0 = 1_000_000).
+ *   Tüm değerler int64_t, ondalık sabit-nokta ölçeği = 1_000_000 (10^6, 6 kesir basamağı).
+ *   Not: İkili Q32.32 (2^32) DEĞİLDİR; FP_SCALE = FP_ONE = 1_000_000 (1.0 = 1_000_000).
  *   • Çarpma: saturating((a * b) / FP_SCALE), ara çarpım taşması yok
  *   • Bölme:  saturating((a * FP_SCALE) / b), ara çarpım taşması yok
  *   → IEEE 754 platform farklarından bağımsız tam determinizm.
@@ -206,9 +207,10 @@ struct Node {
     int64_t     trust_fp       = FP_ONE;  ///< Veri güvenilirliği [0..1]
 
     // ── Zaman / kriz ──────────────────────────────────────────────────────
-    int32_t     deadline_tick  = -1;   ///< Deadline tick'i (-1=yok)
-    bool        deadline_missed = false;
-    bool        irrecoverable  = false; ///< true → düğüm geri kazanılamaz
+    int32_t     deadline_tick         = -1;   ///< Deadline tick'i (-1=yok)
+    int64_t     deadline_min_state_fp = 0LL;  ///< >0 ise yalnız state_fp >= deadline_min_state_fp iken deadline kaçırılır (0=koşulsuz)
+    bool        deadline_missed       = false;
+    bool        irrecoverable         = false; ///< true → düğüm geri kazanılamaz
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,10 +302,43 @@ struct Lever {
 struct Hysteresis {
     std::string id;
     int32_t     threshold_tick;
-    bool        reversible         = true;
-    int64_t     permanent_loss_fp  = 0LL;   ///< Kalıcı sürtünme artışı
+    bool        reversible          = true;
+    int64_t     permanent_loss_fp   = 0LL;   ///< Kalıcı sürtünme artışı
+    // ── Koşullu tetikleme (opsiyonel; varsayılan 0/"" = geriye uyumlu koşulsuz) ──
+    int64_t     min_friction_fp     = 0LL;   ///< >0 ise yalnız friction_fp_ >= min_friction_fp iken tetiklenir
+    std::string condition_node_id;           ///< Doluysa ilgili düğümün state_fp >= min_node_state_fp olması şarttır
+    int64_t     min_node_state_fp   = 0LL;   ///< condition_node_id için eşik durum değeri
     // ── Çalışma zamanı ──────────────────────────────────────────────────────
     bool        flipped = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IntelBinding — saha verisinin (intel olayı) hangi senaryo düğümüne nasıl
+// yansıyacağını paketin kendisinin bildirmesi.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * IntelBinding — ScenarioPack `extended_causal_model.intel_bindings[]`.
+ *
+ * Bağlama YOKSA motor eski davranışı korur: intel yalnız boş şablondaki
+ * Actor_Alpha / Regulatory_Gate / Transit_Node düğümlerine yazılır (paket
+ * graflarında bu düğümler yoksa olay hiçbir düğüme ulaşmaz ve sayaçta
+ * "bağlanmamış" olarak görünür).
+ *
+ * Bağlama VARSA olay yalnız bildirilen düğümlere uygulanır:
+ *   signal = coeff × scale_fp + crisis_level × crisis_step_fp
+ *   mode=Max → state = max(state, signal)
+ *   mode=Add → state = state + signal
+ * Sonuç [0, capacity] aralığına kenetlenir; reported_state = state.
+ * Bağlamalar extended_causal_model içinde olduğundan imzalı yüke dahildir.
+ */
+struct IntelBinding {
+    enum class Mode : uint8_t { Max = 0, Add = 1 };
+    std::string node_id;
+    Mode        mode             = Mode::Max;
+    int64_t     scale_fp         = FP_ONE;
+    int64_t     crisis_step_fp   = 0LL;
+    int32_t     min_crisis_level = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,10 +395,21 @@ public:
     void add_loop      (FeedbackLoop f) { loops_.push_back(std::move(f));   }
     void add_lever     (Lever l)        { levers_.push_back(std::move(l));  }
     void add_hysteresis(Hysteresis h)   { hysts_.push_back(std::move(h));   }
+    void add_intel_binding(IntelBinding b) { intel_bindings_.push_back(std::move(b)); }
 
     // ── Salt-okunur graf erişimi (War Room canlı snapshot yayını için) ──────
-    const std::vector<Node>& nodes() const noexcept { return nodes_; }
-    const std::vector<Edge>& edges() const noexcept { return edges_; }
+    const std::vector<Node>&         nodes()          const noexcept { return nodes_; }
+    const std::vector<Edge>&         edges()          const noexcept { return edges_; }
+    const std::vector<FeedbackLoop>& loops()          const noexcept { return loops_; }
+    const std::vector<Lever>&        levers()         const noexcept { return levers_; }
+    const std::vector<Hysteresis>&   hysteresis()     const noexcept { return hysts_; }
+    const std::vector<IntelBinding>& intel_bindings() const noexcept { return intel_bindings_; }
+    uint64_t                         prng_seed()      const noexcept { return prng_seed_; }
+
+    /// Motorun aldığı intel olayı sayısı ve bunlardan hiçbir düğüme
+    /// yansımayanların sayısı (sessiz no-op'u görünür kılar).
+    uint64_t intel_events_total()   const noexcept { return intel_events_total_; }
+    uint64_t intel_events_unbound() const noexcept { return intel_events_unbound_; }
 
     /** Deterministik lever olasılık hesabı için PRNG tohumu (0 = gerçek CSPRNG). */
     void set_prng_seed(uint64_t seed) noexcept { prng_seed_ = seed; }
@@ -389,6 +435,7 @@ public:
      */
     void load_universal_blank_slate() {
         nodes_.clear(); edges_.clear(); loops_.clear(); levers_.clear(); hysts_.clear();
+        intel_bindings_.clear();
         tick_ = 0; friction_fp_ = FP_ONE; regime_exceeded_ = false; outage_ = false;
         permanent_friction_fp_ = 0LL;
 
@@ -419,49 +466,80 @@ public:
     /**
      * inject_intel
      *
-     * Sahadan gelen IntelFeedPacket değerlerini evrensel graf düğümlerine
-     * yansıtır (sektör-agnostik). Düğüm adları boş şablondaki soyut isimlerdir;
-     * bir senaryo paketi farklı düğüm adları kullanıyorsa ilgili güncelleme
-     * sessizce atlanır (get_node nullptr döner) — paketin kendi grafı geçerlidir.
+     * Sahadan gelen IntelFeedPacket değerlerini graf düğümlerine yansıtır.
+     *
+     * (a) Paket `intel_bindings` bildirdiyse: yalnız bildirilen düğümler
+     *     güncellenir (bkz. IntelBinding).
+     * (b) Bildirmediyse (geriye uyumlu eski yol): boş şablondaki soyut
+     *     düğümler hedeflenir:
      *   • Actor_Alpha.state     = max(current, field_coeff)   (birincil sinyal)
      *   • Regulatory_Gate.state += crisis_level * 0.10 (damped) (regülasyon tepkisi)
      *   • Transit_Node.state    += 0.20  (yalnız crisis_level≥3)  (akış baskısı)
+     *   Paket bu düğümleri içermiyorsa olay hiçbir düğüme ulaşmaz.
+     *
+     * Dönüş: güncellenen düğüm sayısı. 0 ise olay `intel_events_unbound`
+     * sayacına eklenir (sessiz no-op görünür kılınır).
      */
-    void inject_intel(double field_coeff, int crisis_level, const char* memo) noexcept {
+    size_t inject_intel(double field_coeff, int crisis_level, const char* memo) noexcept {
         field_coeff = std::max(0.0, std::min(1.0, field_coeff));
-        inject_intel_fp(d_to_fp(field_coeff), crisis_level, memo);
+        return inject_intel_fp(d_to_fp(field_coeff), crisis_level, memo);
     }
 
-    void inject_intel_fp(int64_t field_coeff_fp, int crisis_level, const char* memo) noexcept {
+    size_t inject_intel_fp(int64_t field_coeff_fp, int crisis_level, const char* memo) noexcept {
         field_coeff_fp = fp_clamp(field_coeff_fp, 0LL, FP_ONE);
         crisis_level = crisis_level < 0 ? 0 : (crisis_level > 3 ? 3 : crisis_level);
+        size_t applied = 0;
 
-        // Birincil aktör: kriz sinyalini taşıyan düğüm
-        if (Node* actor = get_node("Actor_Alpha")) {
-            actor->state_fp         = std::max(actor->state_fp, field_coeff_fp);
-            actor->reported_state_fp= actor->state_fp;  // tam kriz sinyali raporlanır
-        }
-        if (Node* gate = get_node("Regulatory_Gate")) {
-            // Regülasyon tepkisi: kriz seviyesiyle orantılı, damped
-            int64_t bump = d_to_fp(crisis_level * 0.10);
-            gate->state_fp = fp_clamp(fp_add_saturating(gate->state_fp, bump),
-                                      0LL, gate->capacity_fp);
-            gate->reported_state_fp = gate->state_fp;
-        }
-        if (crisis_level >= 3) {
-            if (Node* transit = get_node("Transit_Node")) {
-                int64_t bump = d_to_fp(0.20);
-                transit->state_fp = fp_clamp(fp_add_saturating(transit->state_fp, bump),
-                                             0LL, transit->capacity_fp);
-                transit->reported_state_fp = transit->state_fp;
+        if (!intel_bindings_.empty()) {
+            for (const auto& b : intel_bindings_) {
+                if (crisis_level < b.min_crisis_level) continue;
+                Node* n = get_node(b.node_id);
+                if (!n) continue;
+                const int64_t signal = fp_add_saturating(
+                    fp_mul(field_coeff_fp, b.scale_fp),
+                    fp_mul(static_cast<int64_t>(crisis_level) * FP_ONE, b.crisis_step_fp));
+                const int64_t next = (b.mode == IntelBinding::Mode::Add)
+                    ? fp_add_saturating(n->state_fp, signal)
+                    : std::max(n->state_fp, signal);
+                n->state_fp          = fp_clamp(next, 0LL, n->capacity_fp);
+                n->reported_state_fp = n->state_fp;
+                ++applied;
+            }
+        } else {
+            // Birincil aktör: kriz sinyalini taşıyan düğüm
+            if (Node* actor = get_node("Actor_Alpha")) {
+                actor->state_fp         = std::max(actor->state_fp, field_coeff_fp);
+                actor->reported_state_fp= actor->state_fp;  // tam kriz sinyali raporlanır
+                ++applied;
+            }
+            if (Node* gate = get_node("Regulatory_Gate")) {
+                // Regülasyon tepkisi: kriz seviyesiyle orantılı, damped
+                int64_t bump = d_to_fp(crisis_level * 0.10);
+                gate->state_fp = fp_clamp(fp_add_saturating(gate->state_fp, bump),
+                                          0LL, gate->capacity_fp);
+                gate->reported_state_fp = gate->state_fp;
+                ++applied;
+            }
+            if (crisis_level >= 3) {
+                if (Node* transit = get_node("Transit_Node")) {
+                    int64_t bump = d_to_fp(0.20);
+                    transit->state_fp = fp_clamp(fp_add_saturating(transit->state_fp, bump),
+                                                 0LL, transit->capacity_fp);
+                    transit->reported_state_fp = transit->state_fp;
+                    ++applied;
+                }
             }
         }
+
+        ++intel_events_total_;
+        if (applied == 0) ++intel_events_unbound_;
 
         (void)memo;
         CAELUS_CAUSAL_LOG_EVENT(::caelus::logging::LogLevel::Info,
                                 ::caelus::logging::CausalLogCode::IntelInjected,
                                 tick_,
                                 "intel injected");
+        return applied;
     }
 
     // ── Tick yayılımı ────────────────────────────────────────────────────────
@@ -566,6 +644,9 @@ public:
      */
     void reset() noexcept {
         nodes_.clear(); edges_.clear(); loops_.clear(); levers_.clear(); hysts_.clear();
+        intel_bindings_.clear();
+        intel_events_total_   = 0;
+        intel_events_unbound_ = 0;
         tick_                 = 0;
         friction_fp_          = FP_ONE;
         permanent_friction_fp_= 0LL;
@@ -590,6 +671,20 @@ public:
     const Node* get_node(const std::string& id) const noexcept {
         for (const auto& n : nodes_) if (n.id == id) return &n;
         return nullptr;
+    }
+
+    bool is_lever_available(const std::string& id) const noexcept {
+        for (const auto& l : levers_) {
+            if (l.id == id) return l.available && l.remaining_lockout <= 0;
+        }
+        return false;
+    }
+
+    int32_t lever_remaining_lockout(const std::string& id) const noexcept {
+        for (const auto& l : levers_) {
+            if (l.id == id) return l.remaining_lockout;
+        }
+        return 0;
     }
 
     // ── BS senaryo yükleme stub'ları (gelecek genişleme noktaları) ───────────
@@ -655,6 +750,9 @@ private:
     std::vector<FeedbackLoop> loops_;
     std::vector<Lever>        levers_;
     std::vector<Hysteresis>   hysts_;
+    std::vector<IntelBinding> intel_bindings_;
+    uint64_t intel_events_total_   = 0;
+    uint64_t intel_events_unbound_ = 0;
 
     // ── Çalışma zamanı durumu ────────────────────────────────────────────────
     uint64_t tick_                  = 0;
@@ -853,15 +951,23 @@ private:
     /**
      * check_hysteresis — geri alınamaz eşik kontrolü.
      *
-     * threshold_tick'e ulaşılırsa:
+     * threshold_tick'e ulaşılırsa (ve varsa opsiyonel min_friction_fp /
+     * condition_node_id koşulları sağlanırsa):
      *   reversible=false → permanent_friction_fp_ kalıcı olarak artar,
      *                       outage_ latched true olur (akış tıkanması).
+     * Koşul alanları tanımlanmamışsa (varsayılan 0/"") geriye uyumlu olarak
+     * doğrudan threshold_tick'te tetiklenir.
      */
     void check_hysteresis() noexcept {
         for (auto& h : hysts_) {
             const uint64_t threshold =
                 h.threshold_tick <= 0 ? 0ULL : static_cast<uint64_t>(h.threshold_tick);
             if (h.flipped || tick_ < threshold) continue;
+            if (h.min_friction_fp > 0LL && friction_fp_ < h.min_friction_fp) continue;
+            if (!h.condition_node_id.empty()) {
+                const Node* cn = get_node(h.condition_node_id);
+                if (!cn || cn->state_fp < h.min_node_state_fp) continue;
+            }
             h.flipped = true;
             if (!h.reversible) {
                 permanent_friction_fp_ = fp_add_saturating(
@@ -882,11 +988,18 @@ private:
 
     /**
      * check_deadlines — deadline_tick'e ulaşılan düğümleri işaretle.
+     * deadline_min_state_fp > 0 ise yalnız node.state_fp >= deadline_min_state_fp
+     * olduğunda deadline kaçırılır (müdahale ile durum eşiğin altına çekilmişse
+     * kesinti önlenir). Varsayılan 0 ise geriye uyumlu koşulsuz tetiklenir.
      */
     void check_deadlines() noexcept {
         for (auto& node : nodes_) {
             if (node.deadline_tick < 0 || node.deadline_missed) continue;
             if (tick_ >= static_cast<uint64_t>(node.deadline_tick)) {
+                if (node.deadline_min_state_fp > 0LL &&
+                    node.state_fp < node.deadline_min_state_fp) {
+                    continue;
+                }
                 node.deadline_missed = true;
                 CAELUS_CAUSAL_LOG_EVENT(::caelus::logging::LogLevel::Error,
                                         ::caelus::logging::CausalLogCode::DeadlineMissed,

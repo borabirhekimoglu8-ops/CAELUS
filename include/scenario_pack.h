@@ -489,12 +489,63 @@ public:
     int         tick_minutes   = 15;
     int         horizon_hours  = 240;
 
+    // ── Evrensel açıklama, kaynak etiketi ve kalibrasyon üstverileri ─────────
+    std::string enterprise_code;
+    std::string sector_label;
+    std::string synopsis;
+    std::string compliance;
+    std::string data_provenance;   ///< "FICTIONAL_SAMPLE" | "USER_DEFINED" | "SOURCE_SPECIFIED"
+    std::string data_source_note;
+    std::vector<std::string> assumptions;
+    std::vector<std::string> data_gaps;
+
+    struct FinancialMeta {
+        bool        defined                  = false;
+        std::string unit_name;
+        double      baseline_units_per_hour  = 0.0;
+        double      hourly_downtime_cost_usd = -1.0;
+        double      sla_breach_penalty_usd   = -1.0;
+        std::string data_source;
+    };
+    FinancialMeta financials;
+
+    struct NodeMeta {
+        std::string id;
+        std::string label;
+        std::string category;
+        std::string notes;
+        std::string data_source;
+        std::string unit;
+        std::string timestamp;
+    };
+    std::vector<NodeMeta> node_meta;
+
+    struct LeverMeta {
+        std::string id;
+        std::string code;
+        std::string label;
+        std::string notes;
+        double      cost_usd = -1.0;
+        std::string data_source;
+    };
+    std::vector<LeverMeta> lever_meta;
+
+    // ── İmza kapsamı ────────────────────────────────────────────────────────
+    // "V3"           : schema_version + id + blackswan_class + sector + min_caelus_engine + meta + extended_causal_model + v1_engine_bridge (tam kapsam)
+    // "V2"           : id + sector + meta + extended_causal_model + v1_engine_bridge imzalı
+    // "V1"           : yalnız extended_causal_model + v1_engine_bridge imzalı (meta İMZASIZ)
+    // "DEV_UNSIGNED" : SELF_SIGNED_DEV (yalnız geliştirme bayrağıyla veya etkileşimli taslakta)
+    std::string signature_scheme;
+    bool        meta_signed    = false;   ///< tick_minutes/horizon/id/sector imza kapsamında mı?
+    bool        pubkey_pinned  = false;   ///< İmza anahtarı derleme-içi CAELUS_TRUSTED_PUBKEY ile eşleşiyor mu?
+
     // ── Yüklenen graf ───────────────────────────────────────────────────────
     std::vector<caelus::causal::Node>         nodes;
     std::vector<caelus::causal::Edge>         edges;
     std::vector<caelus::causal::FeedbackLoop> loops;
     std::vector<caelus::causal::Lever>        levers;
     std::vector<caelus::causal::Hysteresis>   hysteresis;
+    std::vector<caelus::causal::IntelBinding> intel_bindings;
 
     // ── v1 uyum köprüsü ─────────────────────────────────────────────────────
     caelus::intel::OperationalRiskProfile risk_profile;
@@ -512,6 +563,20 @@ public:
     // ── Yükleme ─────────────────────────────────────────────────────────────
 
     bool load(const std::string& path) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f) {
+            std::cout << "[SCENARIO] Paket bulunamadı: " << path << "\n";
+            loaded = false;
+            return false;
+        }
+        std::ostringstream buf;
+        buf << f.rdbuf();
+        return load_from_string(buf.str(), path, false);
+    }
+
+    bool load_from_string(const std::string& content,
+                          const std::string& source_label = "<memory>",
+                          bool allow_interactive_unsigned = false) {
         loaded = false;
         schema_version.clear();
         id.clear();
@@ -523,29 +588,34 @@ public:
         region.clear();
         tick_minutes = 15;
         horizon_hours = 240;
+        enterprise_code.clear();
+        sector_label.clear();
+        synopsis.clear();
+        compliance.clear();
+        data_provenance.clear();
+        data_source_note.clear();
+        assumptions.clear();
+        data_gaps.clear();
+        financials = FinancialMeta{};
+        node_meta.clear();
+        lever_meta.clear();
+        signature_scheme.clear();
+        meta_signed = false;
+        pubkey_pinned = false;
         nodes.clear();
         edges.clear();
         loops.clear();
         levers.clear();
         hysteresis.clear();
+        intel_bindings.clear();
         risk_profile = caelus::intel::OperationalRiskProfile{};
         intel_sequence.clear();
-
-        // Dosya oku
-        std::ifstream f(path, std::ios::binary);
-        if (!f) {
-            std::cout << "[SCENARIO] Paket bulunamadı: " << path << "\n";
-            return false;
-        }
-        std::ostringstream buf;
-        buf << f.rdbuf();
-        std::string content = buf.str();
 
         // Ayrıştır
         JsonParser parser(content.data(), content.size());
         JsonVal root;
         if (!parser.parse(root) || root.type != JsonVal::Obj) {
-            std::cerr << "[SCENARIO] JSON ayrıştırma hatası: " << path << "\n";
+            std::cerr << "[SCENARIO] JSON ayrıştırma hatası: " << source_label << "\n";
             return false;
         }
 
@@ -557,17 +627,69 @@ public:
         min_caelus_engine = root["min_caelus_engine"].as_s();
         signature         = root["signature"].as_s();
 
-        if (!verify_signature_gate(root, signature)) {
-            std::cerr << "[SCENARIO] Paket imzası reddedildi: " << path << "\n";
+        if (!verify_signature_gate(root, signature, signature_scheme, pubkey_pinned, allow_interactive_unsigned)) {
+            std::cerr << "[SCENARIO] Paket imzası reddedildi: " << source_label << "\n";
             return false;
         }
+        meta_signed = (signature_scheme == "V2" || signature_scheme == "V3");
 
         if (root.has("meta")) {
             const auto& meta = root["meta"];
-            title         = meta["title"].as_s();
-            region        = meta["region"].as_s();
-            tick_minutes  = (int)meta["tick_minutes"].as_i(15);
-            horizon_hours = (int)meta["horizon_hours"].as_i(240);
+            title            = meta["title"].as_s();
+            region           = meta["region"].as_s();
+            tick_minutes     = (int)meta["tick_minutes"].as_i(15);
+            horizon_hours    = (int)meta["horizon_hours"].as_i(240);
+            enterprise_code  = meta["enterprise_code"].as_s();
+            sector_label     = meta["sector_label"].as_s();
+            synopsis         = meta["synopsis"].as_s();
+            compliance       = meta["compliance"].as_s();
+            data_provenance  = meta["data_provenance"].as_s();
+            data_source_note = meta["data_source_note"].as_s();
+            if (meta.has("assumptions")) {
+                const auto& arr = meta["assumptions"];
+                for (size_t i = 0; i < arr.size(); ++i) {
+                    const std::string s = arr[i].as_s();
+                    if (!s.empty()) assumptions.push_back(s);
+                }
+            }
+            if (meta.has("data_gaps")) {
+                const auto& arr = meta["data_gaps"];
+                for (size_t i = 0; i < arr.size(); ++i) {
+                    const std::string s = arr[i].as_s();
+                    if (!s.empty()) data_gaps.push_back(s);
+                }
+            }
+            if (meta.has("financials")) {
+                const auto& fin = meta["financials"];
+                financials.unit_name = fin.has("unit_name")
+                    ? fin["unit_name"].as_s()
+                    : fin["unit_label"].as_s();
+                financials.baseline_units_per_hour = fin.has("baseline_units_per_hour")
+                    ? fin["baseline_units_per_hour"].as_f(0.0)
+                    : fin["baseline_units"].as_f(0.0);
+                financials.hourly_downtime_cost_usd = fin.has("hourly_downtime_cost_usd")
+                    ? fin["hourly_downtime_cost_usd"].as_f(-1.0)
+                    : fin["downtime_cost_per_hour_usd"].as_f(-1.0);
+                financials.sla_breach_penalty_usd = fin["sla_breach_penalty_usd"].as_f(-1.0);
+                financials.data_source = fin["data_source"].as_s();
+                const bool explicit_avail = fin.has("available") ? fin["available"].as_b(true) : true;
+                if (!explicit_avail) {
+                    financials.hourly_downtime_cost_usd = -1.0;
+                    financials.sla_breach_penalty_usd   = -1.0;
+                }
+                financials.defined = !financials.unit_name.empty() ||
+                                     financials.baseline_units_per_hour > 0.0 ||
+                                     financials.hourly_downtime_cost_usd >= 0.0;
+            }
+        }
+        if (!meta_signed) {
+            // Görünürlük: V1 imzası meta'yı kapsamaz. tick_minutes intel replay
+            // zamanlamasını belirlediği için imzasız olduğu açıkça bildirilir.
+            std::cerr << "[SCENARIO] UYARI: imza şeması " << signature_scheme
+                      << " — meta alanları (tick_minutes=" << tick_minutes
+                      << ", horizon_hours=" << horizon_hours
+                      << ", id, sector) imza kapsamında DEĞİL. "
+                         "V2/V3 ile yeniden imzalanması önerilir.\n";
         }
 
         // ── Causal Model ────────────────────────────────────────────────────
@@ -576,8 +698,19 @@ public:
 
             // Düğümler
             if (cm.has("nodes")) {
-                for (size_t ni = 0; ni < cm["nodes"].size(); ++ni)
-                    nodes.push_back(parse_node(cm["nodes"][ni]));
+                for (size_t ni = 0; ni < cm["nodes"].size(); ++ni) {
+                    const auto& jn = cm["nodes"][ni];
+                    nodes.push_back(parse_node(jn));
+                    NodeMeta nm;
+                    nm.id          = jn["id"].as_s();
+                    nm.label       = jn["label"].as_s();
+                    nm.category    = jn["category"].as_s();
+                    nm.notes       = jn["notes"].as_s();
+                    nm.data_source = jn["data_source"].as_s();
+                    nm.unit        = jn["unit"].as_s();
+                    nm.timestamp   = jn["timestamp"].as_s();
+                    node_meta.push_back(std::move(nm));
+                }
             }
 
             // Kenarlar
@@ -594,8 +727,18 @@ public:
 
             // İkna kaldıraçları
             if (cm.has("levers")) {
-                for (size_t lv = 0; lv < cm["levers"].size(); ++lv)
-                    levers.push_back(parse_lever(cm["levers"][lv]));
+                for (size_t lv = 0; lv < cm["levers"].size(); ++lv) {
+                    const auto& jlv = cm["levers"][lv];
+                    levers.push_back(parse_lever(jlv));
+                    LeverMeta lm;
+                    lm.id          = jlv["id"].as_s();
+                    lm.code        = jlv["code"].as_s();
+                    lm.label       = jlv["label"].as_s();
+                    lm.notes       = jlv["notes"].as_s();
+                    lm.cost_usd    = jlv["cost_usd"].as_f(-1.0);
+                    lm.data_source = jlv["data_source"].as_s();
+                    lever_meta.push_back(std::move(lm));
+                }
             }
 
             // Histerezis
@@ -604,14 +747,36 @@ public:
                     hysteresis.push_back(parse_hysteresis(cm["hysteresis"][hi]));
             }
 
-            // Deadline'lar: deadline_tick düğüm alanına ayarla
+            // Deadline'lar: deadline_tick (ve varsa min_state_fp) düğüm alanına ayarla
             if (cm.has("hard_deadlines")) {
                 for (size_t di = 0; di < cm["hard_deadlines"].size(); ++di) {
                     const auto& d = cm["hard_deadlines"][di];
                     auto nid = d["node_id"].as_s();
                     auto at  = (int32_t)d["at_tick"].as_i(-1);
-                    for (auto& node : nodes)
-                        if (node.id == nid) { node.deadline_tick = at; break; }
+                    for (auto& node : nodes) {
+                        if (node.id == nid) {
+                            node.deadline_tick = at;
+                            if (d.has("min_state_fp")) {
+                                node.deadline_min_state_fp = d["min_state_fp"].as_i(node.deadline_min_state_fp);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Intel bağlamaları (isteğe bağlı; imzalı yükün parçası)
+            if (cm.has("intel_bindings")) {
+                for (size_t bi = 0; bi < cm["intel_bindings"].size(); ++bi) {
+                    auto b = parse_intel_binding(cm["intel_bindings"][bi]);
+                    bool found = false;
+                    for (const auto& node : nodes) if (node.id == b.node_id) { found = true; break; }
+                    if (!found) {
+                        std::cerr << "[SCENARIO] UYARI: intel_bindings hedef düğümü bulunamadı: '"
+                                  << b.node_id << "' — bağlama yok sayıldı.\n";
+                        continue;
+                    }
+                    intel_bindings.push_back(std::move(b));
                 }
             }
         }
@@ -649,7 +814,9 @@ public:
                   << " Döngü:" << loops.size()
                   << " Kaldıraç:" << levers.size()
                   << " Histerezis:" << hysteresis.size()
-                  << " Intel:" << intel_sequence.size() << "\n";
+                  << " Intel:" << intel_sequence.size()
+                  << " IntelBağlama:" << intel_bindings.size()
+                  << " İmza:" << signature_scheme << "\n";
 
         loaded = true;
         return true;
@@ -665,6 +832,7 @@ public:
         for (const auto& l  : loops)      eng.add_loop(l);
         for (const auto& lv : levers)     eng.add_lever(lv);
         for (const auto& h  : hysteresis) eng.add_hysteresis(h);
+        for (const auto& b  : intel_bindings) eng.add_intel_binding(b);
         if (nodes.empty()) {
             // Uzatılmış model boşsa evrensel boş şablona dön.
             eng.load_universal_blank_slate();
@@ -688,15 +856,35 @@ public:
     }
 
     // C++ verifier ile aynı canonical signed payload'u dış araç/CLI için üretir.
+    // payload_version: 1 = CAELUS_SCENARIO_PACK_V1 (geriye uyumlu),
+    //                  2 = CAELUS_SCENARIO_PACK_V2 (meta + id + sector dahil),
+    //                  3 = CAELUS_SCENARIO_PACK_V3 (tam manifest + meta + model dahil).
     static bool canonical_signed_payload_from_json(
         const std::string& content,
         std::string& out,
-        std::string* error = nullptr) {
+        std::string* error = nullptr,
+        int payload_version = 1) {
         JsonParser parser(content.data(), content.size());
         JsonVal root;
         if (!parser.parse(root) || root.type != JsonVal::Obj) {
             if (error) *error = "JSON ayrıştırma hatası veya kök nesne değil";
             return false;
+        }
+        if (payload_version == 3) {
+            if (!root.has("extended_causal_model")) {
+                if (error) *error = "imzalı kritik alan eksik (extended_causal_model zorunlu)";
+                return false;
+            }
+            out = canonical_signed_payload_v3(root);
+            return true;
+        }
+        if (payload_version == 2) {
+            if (!root.has("extended_causal_model")) {
+                if (error) *error = "imzalı kritik alan eksik (extended_causal_model zorunlu)";
+                return false;
+            }
+            out = canonical_signed_payload_v2(root);
+            return true;
         }
         if (!root.has("extended_causal_model") || !root.has("v1_engine_bridge")) {
             if (error) {
@@ -712,7 +900,8 @@ public:
     static bool canonical_signed_payload_from_file(
         const std::string& path,
         std::string& out,
-        std::string* error = nullptr) {
+        std::string* error = nullptr,
+        int payload_version = 1) {
         std::ifstream f(path, std::ios::binary);
         if (!f) {
             if (error) *error = "senaryo dosyası açılamadı: " + path;
@@ -720,7 +909,7 @@ public:
         }
         std::ostringstream buf;
         buf << f.rdbuf();
-        return canonical_signed_payload_from_json(buf.str(), out, error);
+        return canonical_signed_payload_from_json(buf.str(), out, error, payload_version);
     }
 
 private:
@@ -745,6 +934,16 @@ private:
         0x71, 0x47, 0x47, 0x3b, 0xf1, 0x6c, 0xe9, 0xe9,
         0xc9, 0x77, 0xf8, 0x96, 0x08, 0x95, 0x8b, 0x58,
         0x63, 0x59, 0x41, 0x4c, 0xc7, 0xe9, 0x7e, 0x7f
+    };
+
+    // Bilinen deterministik geliştirme/test anahtarı (seed: 010203...1f20).
+    // Üretim güven çapası DEĞİLDİR (pubkey_pinned = false kalır; arayüzde ve
+    // raporda açıkça "Test Anahtarı — Pinli Değil" olarak etiketlenir).
+    static constexpr uint8_t CAELUS_DEV_TEST_PUBKEY[32] = {
+        0x79, 0xb5, 0x56, 0x2e, 0x8f, 0xe6, 0x54, 0xf9,
+        0x40, 0x78, 0xb1, 0x12, 0xe8, 0xa9, 0x8b, 0xa7,
+        0x90, 0x1f, 0x85, 0x3a, 0xe6, 0x95, 0xbe, 0xd7,
+        0xe0, 0xe3, 0x91, 0x0b, 0xad, 0x04, 0x96, 0x64
     };
 
     // ── JSON → Struct dönüştürücüler ─────────────────────────────────────────
@@ -827,8 +1026,20 @@ private:
                 std::vector<std::pair<std::string, const JsonVal*>> members;
                 members.reserve(v.o.size());
                 for (const auto& kv : v.o) members.push_back({kv.first, &kv.second});
+                // Bayt sırası İŞARETSİZ karşılaştırılır (Rust signer'daki
+                // as_bytes().cmp ile birebir). ASCII anahtarlarda sonuç eskisiyle
+                // aynıdır; ASCII dışı anahtarlarda (ör. meta "sınanan_aksiyom")
+                // işaretli char sıralaması Rust'tan sapardı.
                 std::sort(members.begin(), members.end(),
-                          [](const auto& a, const auto& b) { return a.first < b.first; });
+                          [](const auto& a, const auto& b) {
+                              return std::lexicographical_compare(
+                                  a.first.begin(), a.first.end(),
+                                  b.first.begin(), b.first.end(),
+                                  [](char x, char y) {
+                                      return static_cast<unsigned char>(x) <
+                                             static_cast<unsigned char>(y);
+                                  });
+                          });
                 out.push_back('{');
                 for (size_t i = 0; i < members.size(); ++i) {
                     if (i) out.push_back(',');
@@ -854,6 +1065,75 @@ private:
         payload += canonical_json(cm ? *cm : null_value);
         payload += "\n";
         payload += "v1_engine_bridge=";
+        payload += canonical_json(bridge ? *bridge : null_value);
+        payload += "\n";
+        return payload;
+    }
+
+    /**
+     * CAELUS_SCENARIO_PACK_V2 — V1'in kapsamadığı manifest ve meta alanlarını
+     * da imzalar. Böylece tick_minutes (intel replay zamanlaması), horizon,
+     * id ve sector imzayı bozmadan değiştirilemez. v1_engine_bridge isteğe
+     * bağlıdır (yoksa null); bu, ulaşım odaklı v1 profilini taşımayan yeni
+     * sektör paketlerine izin verir.
+     */
+    static std::string canonical_signed_payload_v2(const JsonVal& root) {
+        static const JsonVal null_value;
+        const JsonVal* id     = root.find("id");
+        const JsonVal* sector = root.find("sector");
+        const JsonVal* meta   = root.find("meta");
+        const JsonVal* cm     = root.find("extended_causal_model");
+        const JsonVal* bridge = root.find("v1_engine_bridge");
+        std::string payload;
+        payload.reserve(512);
+        payload += "CAELUS_SCENARIO_PACK_V2\n";
+        payload += "id=";
+        payload += canonical_json(id ? *id : null_value);
+        payload += "\nsector=";
+        payload += canonical_json(sector ? *sector : null_value);
+        payload += "\nmeta=";
+        payload += canonical_json(meta ? *meta : null_value);
+        payload += "\nextended_causal_model=";
+        payload += canonical_json(cm ? *cm : null_value);
+        payload += "\nv1_engine_bridge=";
+        payload += canonical_json(bridge ? *bridge : null_value);
+        payload += "\n";
+        return payload;
+    }
+
+    /**
+     * CAELUS_SCENARIO_PACK_V3 — Tam kapsamlı manifest + meta + model imzası.
+     * V2'ye ek olarak schema_version, blackswan_class ve min_caelus_engine
+     * alanlarını da imzalar; v1_engine_bridge yine isteğe bağlıdır (yoksa null).
+     */
+    static std::string canonical_signed_payload_v3(const JsonVal& root) {
+        static const JsonVal null_value;
+        const JsonVal* schema_ver = root.find("schema_version");
+        const JsonVal* id         = root.find("id");
+        const JsonVal* bs_class   = root.find("blackswan_class");
+        const JsonVal* sector     = root.find("sector");
+        const JsonVal* min_eng    = root.find("min_caelus_engine");
+        const JsonVal* meta       = root.find("meta");
+        const JsonVal* cm         = root.find("extended_causal_model");
+        const JsonVal* bridge     = root.find("v1_engine_bridge");
+        std::string payload;
+        payload.reserve(640);
+        payload += "CAELUS_SCENARIO_PACK_V3\n";
+        payload += "schema_version=";
+        payload += canonical_json(schema_ver ? *schema_ver : null_value);
+        payload += "\nid=";
+        payload += canonical_json(id ? *id : null_value);
+        payload += "\nblackswan_class=";
+        payload += canonical_json(bs_class ? *bs_class : null_value);
+        payload += "\nsector=";
+        payload += canonical_json(sector ? *sector : null_value);
+        payload += "\nmin_caelus_engine=";
+        payload += canonical_json(min_eng ? *min_eng : null_value);
+        payload += "\nmeta=";
+        payload += canonical_json(meta ? *meta : null_value);
+        payload += "\nextended_causal_model=";
+        payload += canonical_json(cm ? *cm : null_value);
+        payload += "\nv1_engine_bridge=";
         payload += canonical_json(bridge ? *bridge : null_value);
         payload += "\n";
         return payload;
@@ -894,13 +1174,25 @@ private:
                hex_to_bytes(sig_hex, signature, 64);
     }
 
-    static bool verify_signature_gate(const JsonVal& root, const std::string& sig) {
+    static bool verify_signature_gate(const JsonVal& root, const std::string& sig,
+                                      std::string& scheme_out, bool& pubkey_pinned_out,
+                                      bool allow_interactive_unsigned = false) {
+        scheme_out.clear();
+        pubkey_pinned_out = false;
         if (sig.empty()) {
+#ifndef CAELUS_PRODUCTION
+            if (allow_interactive_unsigned) {
+                std::cout << "[SCENARIO] Etkileşimli kullanıcı taslağı (imzasız) kabul edildi; DEV_UNSIGNED olarak işaretlendi.\n";
+                scheme_out = "DEV_UNSIGNED";
+                pubkey_pinned_out = false;
+                return true;
+            }
+#endif
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: signature alanı eksik veya boş.\n";
             return false;
         }
 
-        if (sig == "SELF_SIGNED_DEV") {
+        if (sig == "SELF_SIGNED_DEV" || sig == "UNSIGNED_LOCAL_DRAFT") {
 #ifdef CAELUS_PRODUCTION
             // CAELUS_PRODUCTION: SELF_SIGNED_DEV kabul yolu derleme-dışı — env'e hiç bakılmaz, her senaryo pinli çapayla imzalı olmak ZORUNDA.
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: SELF_SIGNED_DEV üretim derlemesinde "
@@ -908,8 +1200,10 @@ private:
                       << "çapasıyla ed25519 imzalı olmak zorunda.\n";
             return false;
 #else
-            if (env_flag_enabled("CAELUS_ALLOW_DEV_SCENARIOS")) {
-                std::cout << "[SCENARIO] SELF_SIGNED_DEV yalnızca CAELUS_ALLOW_DEV_SCENARIOS=1 ile kabul edildi; prod doğrulama atlandı.\n";
+            if (allow_interactive_unsigned || env_flag_enabled("CAELUS_ALLOW_DEV_SCENARIOS")) {
+                std::cout << "[SCENARIO] " << sig << " geliştirme/etkileşimli modda kabul edildi; prod doğrulama atlandı.\n";
+                scheme_out = "DEV_UNSIGNED";
+                pubkey_pinned_out = false;
                 return true;
             }
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: SELF_SIGNED_DEV varsayılan olarak reddedildi. "
@@ -918,9 +1212,9 @@ private:
 #endif
         }
 
-        if (!root.has("extended_causal_model") || !root.has("v1_engine_bridge")) {
-            std::cerr << "[FATAL] SIGNATURE_MISMATCH: imzalı kritik alanlar eksik "
-                      << "(extended_causal_model + v1_engine_bridge zorunlu).\n";
+        if (!root.has("extended_causal_model")) {
+            std::cerr << "[FATAL] SIGNATURE_MISMATCH: imzalı kritik alan eksik "
+                      << "(extended_causal_model zorunlu).\n";
             return false;
         }
 
@@ -932,10 +1226,29 @@ private:
             return false;
         }
 
-        const std::string payload = canonical_signed_payload(root);
-        const uint8_t ok = caelus_verify_scenario_signature(
-            reinterpret_cast<const uint8_t*>(payload.data()), payload.size(),
+        // Önce V3 (tam manifest + meta + model), sonra V2 (meta + id + sector + model),
+        // sonra geriye uyumlu V1 (yalnız model + v1_engine_bridge) denenir.
+        const std::string payload_v3 = canonical_signed_payload_v3(root);
+        uint8_t ok = caelus_verify_scenario_signature(
+            reinterpret_cast<const uint8_t*>(payload_v3.data()), payload_v3.size(),
             pubkey, signature);
+        if (ok == 1u) {
+            scheme_out = "V3";
+        } else {
+            const std::string payload_v2 = canonical_signed_payload_v2(root);
+            ok = caelus_verify_scenario_signature(
+                reinterpret_cast<const uint8_t*>(payload_v2.data()), payload_v2.size(),
+                pubkey, signature);
+            if (ok == 1u) {
+                scheme_out = "V2";
+            } else if (root.has("v1_engine_bridge")) {
+                const std::string payload = canonical_signed_payload(root);
+                ok = caelus_verify_scenario_signature(
+                    reinterpret_cast<const uint8_t*>(payload.data()), payload.size(),
+                    pubkey, signature);
+                if (ok == 1u) scheme_out = "V1";
+            }
+        }
         if (ok != 1u) {
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: ed25519 doğrulaması başarısız.\n";
             return false;
@@ -945,21 +1258,26 @@ private:
         // Matematiksel ed25519 tutarlılığı geçtikten sonra, imzadaki pubkey'in
         // derleme-içi güven çapasıyla (CAELUS_TRUSTED_PUBKEY) eşleşip
         // eşleşmediğini kontrol eder.  "Kim imzaladı?" sorusunu sorar.
+        const bool is_pinned_key = (std::memcmp(pubkey, CAELUS_TRUSTED_PUBKEY, 32) == 0);
+        const bool is_known_dev_test_key = (std::memcmp(pubkey, CAELUS_DEV_TEST_PUBKEY, 32) == 0);
+        pubkey_pinned_out = is_pinned_key;
 #ifdef CAELUS_PRODUCTION
         // CAELUS_PRODUCTION: CAELUS_ALLOW_DEV_SCENARIOS / CAELUS_TRUST_ANY_PUBKEY bypass'ları derleme-dışı — pin kontrolü koşulsuz.
-        if (std::memcmp(pubkey, CAELUS_TRUSTED_PUBKEY, 32) != 0) {
+        if (!is_pinned_key) {
             std::cerr << "[FATAL] SIGNATURE_MISMATCH: pubkey güven çapası reddi — "
                       << "imzadaki pubkey pinlenmiş güven çapasıyla eşleşmiyor "
                       << "(CAELUS_PRODUCTION: bypass yolu yok).\n";
             return false;
         }
 #else
-        if (env_flag_enabled("CAELUS_ALLOW_DEV_SCENARIOS") ||
-            env_flag_enabled("CAELUS_TRUST_ANY_PUBKEY")) {
-            std::cerr << "[UYARI] TRUSTED_PUBKEY_BYPASS: geliştirme modu — "
-                      << "pubkey pin kontrolü atlandı; üretimde bu log asla sessiz olmamalı.\n";
-        } else {
-            if (std::memcmp(pubkey, CAELUS_TRUSTED_PUBKEY, 32) != 0) {
+        if (!is_pinned_key) {
+            if ((is_known_dev_test_key && !env_flag_enabled("CAELUS_STRICT_PINNED_PUBKEY")) ||
+                allow_interactive_unsigned ||
+                env_flag_enabled("CAELUS_ALLOW_DEV_SCENARIOS") ||
+                env_flag_enabled("CAELUS_TRUST_ANY_PUBKEY")) {
+                std::cerr << "[UYARI] TRUSTED_PUBKEY_BYPASS: senaryo test/geliştirme anahtarıyla imzalanmış "
+                          << "(UNPINNED_DEV_KEY; pubkey_pinned=false); üretim güven çapası DEĞİLDİR.\n";
+            } else {
                 std::cerr << "[FATAL] SIGNATURE_MISMATCH: pubkey güven çapası reddi — "
                           << "imzadaki pubkey pinlenmiş güven çapasıyla eşleşmiyor.\n";
                 return false;
@@ -968,7 +1286,10 @@ private:
 #endif
 
         std::cout << "[SCENARIO] ed25519 imza doğrulandı "
-                  << "(payload=CAELUS_SCENARIO_PACK_V1 canonical critical fields).\n";
+                  << "(payload=CAELUS_SCENARIO_PACK_" << scheme_out
+                  << ((scheme_out == "V2" || scheme_out == "V3") ? "; meta dahil" : "; meta HARİÇ")
+                  << "; anahtar=" << (is_pinned_key ? "PINNED_TRUST_ANCHOR" : "UNPINNED_DEV_KEY")
+                  << ").\n";
         return true;
     }
 
@@ -994,8 +1315,9 @@ private:
         n.trust_fp          = v.has("trust_fp")
                                 ? v["trust_fp"].as_i(caelus::causal::FP_ONE)
                                 : caelus::causal::FP_ONE;
-        n.deadline_tick     = (int32_t)v["deadline_tick"].as_i(-1);
-        n.irrecoverable     = v["irrecoverable"].as_b(false);
+        n.deadline_tick          = (int32_t)v["deadline_tick"].as_i(-1);
+        n.deadline_min_state_fp  = v["deadline_min_state_fp"].as_i(0);
+        n.irrecoverable          = v["irrecoverable"].as_b(false);
         return n;
     }
 
@@ -1047,7 +1369,22 @@ private:
         h.threshold_tick    = (int32_t)v["threshold_tick"].as_i(0);
         h.reversible        = v["reversible"].as_b(true);
         h.permanent_loss_fp = v["permanent_loss_fp"].as_i(0);
+        h.min_friction_fp   = v["min_friction_fp"].as_i(0);
+        h.condition_node_id = v["condition_node_id"].as_s();
+        h.min_node_state_fp = v["min_node_state_fp"].as_i(0);
         return h;
+    }
+
+    static caelus::causal::IntelBinding parse_intel_binding(const JsonVal& v) {
+        caelus::causal::IntelBinding b;
+        b.node_id          = v["node_id"].as_s();
+        b.mode             = (v["mode"].as_s() == "add")
+                                 ? caelus::causal::IntelBinding::Mode::Add
+                                 : caelus::causal::IntelBinding::Mode::Max;
+        b.scale_fp         = v["scale_fp"].as_i(caelus::causal::FP_ONE);
+        b.crisis_step_fp   = v["crisis_step_fp"].as_i(0);
+        b.min_crisis_level = (int32_t)v["min_crisis_level"].as_i(0);
+        return b;
     }
 };
 
