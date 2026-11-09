@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileNeuralScenario, observeTemporalSnapshot } from "../lib/neurocausal.mjs";
+import { compileNcm2ScenarioInternal as compileNeuralScenario, observeTemporalSnapshot } from "../lib/neurocausal.mjs";
 
 const PROMPTS = {
   maritime: "Samos feribot seferleri fırtına nedeniyle 48 saat durursa yolcu, otel ve liman operasyonu nasıl etkilenir?",

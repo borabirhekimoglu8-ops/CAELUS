@@ -1,21 +1,23 @@
 import { useState } from "react";
 
-export type MobileTab = "scenario" | "graph" | "levers" | "audit";
+export type MobileTab = "scenario" | "sources" | "graph" | "levers" | "audit";
 
 type BottomNavProps = {
   active: MobileTab;
   onChange(tab: MobileTab): void;
   leverCount: number;
+  sourceCount?: number;
 };
 
 const tabs: Array<{ id: MobileTab; label: string; desc: string; icon: string }> = [
   { id: "scenario", label: "Dünyam & Senaryo", desc: "Doğal dil durum analizi ve 3 gelecek ufku", icon: "🌍" },
+  { id: "sources", label: "Kaynaklar", desc: "Yerel kaynak kasası ve kanıtlar", icon: "▣" },
   { id: "graph", label: "İlişkiler ve Keşfet", desc: "Adım adım nedensel yol ve etki grafiği", icon: "🕸" },
   { id: "levers", label: "Gelecekler & Hamleler", desc: "Deterministik WASM müdahale kaldıraçları", icon: "⚖" },
   { id: "audit", label: "Kaynaklar ve Dayanak", desc: "Epistemik denetim ve yerel çalışma kaydı", icon: "📜" },
 ];
 
-export function BottomNav({ active, onChange, leverCount }: BottomNavProps) {
+export function BottomNav({ active, onChange, leverCount, sourceCount = 0 }: BottomNavProps) {
   const [open, setOpen] = useState(false);
   const currentTab = tabs.find((t) => t.id === active) ?? tabs[0];
 
@@ -72,6 +74,7 @@ export function BottomNav({ active, onChange, leverCount }: BottomNavProps) {
                 <small>{tab.desc}</small>
               </span>
               {tab.id === "levers" && leverCount > 0 ? <em>{leverCount}</em> : null}
+              {tab.id === "sources" && sourceCount > 0 ? <em>{sourceCount > 99 ? "99+" : sourceCount}</em> : null}
             </button>
           ))}
         </div>
