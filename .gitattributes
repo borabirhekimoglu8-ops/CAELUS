@@ -1,0 +1,3 @@
+# Preserve the bytes used in model signatures and verifier integrity checks.
+models/assurance_v1/manifest.json text eol=lf
+tools/caelus_blake3.py text eol=lf

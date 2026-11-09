@@ -214,6 +214,27 @@ if "%ONLY_DET%"=="0" (
     echo.
 )
 
+:: Dataset provenance requires a clean checkout. Run before C++ build outputs.
+if "%ONLY_DET%"=="0" (
+    echo %C%[CI] Offline dataset/export/sign/verify smoke...%N%
+    cargo build --release --locked --bin caelus_sign_model
+    if errorlevel 1 (
+        echo %R%[CI FAIL] Neural model signer derlenemedi.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_SIGNER_BUILD"
+    ) else (
+        !PYTHON_CMD! "%ROOT%\tests\run_neural_toolchain_smoke.py" --signer-binary "%MODEL_SIGNER%"
+        if errorlevel 1 (
+            echo %R%[CI FAIL] Offline dataset/export/sign/verify smoke başarısız.%N%
+            set "CI_PASS=1"
+            set "STEP_FAIL=!STEP_FAIL! NEURAL_TOOLCHAIN"
+        ) else (
+            echo %G%[CI OK] Offline dataset/export/sign/verify smoke geçti%N%
+        )
+    )
+    echo.
+)
+
 :: ----------------------------------------------------------------------------
 ::: ADIM 2: C++ unit tests
 ::: --------------------------------------------------------------------------
@@ -275,26 +296,6 @@ if "%ONLY_DET%"=="0" (
         ) else (
             echo.
             echo %G%[CI OK] Connector smoke testleri gec-ti%N%
-        )
-    )
-    echo.
-)
-
-if "%ONLY_DET%"=="0" (
-    echo %C%[CI] Offline dataset/export/sign/verify smoke...%N%
-    cargo build --release --locked --bin caelus_sign_model
-    if errorlevel 1 (
-        echo %R%[CI FAIL] Neural model signer derlenemedi.%N%
-        set "CI_PASS=1"
-        set "STEP_FAIL=!STEP_FAIL! NEURAL_SIGNER_BUILD"
-    ) else (
-        !PYTHON_CMD! "%ROOT%\tests\run_neural_toolchain_smoke.py" --signer-binary "%MODEL_SIGNER%"
-        if errorlevel 1 (
-            echo %R%[CI FAIL] Offline dataset/export/sign/verify smoke başarısız.%N%
-            set "CI_PASS=1"
-            set "STEP_FAIL=!STEP_FAIL! NEURAL_TOOLCHAIN"
-        ) else (
-            echo %G%[CI OK] Offline dataset/export/sign/verify smoke geçti%N%
         )
     )
     echo.
