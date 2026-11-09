@@ -6223,6 +6223,7 @@ body.theme-light .linear-setting-row {
                 <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
                   <button type="button" class="btn btn-sm btn-accent" id="btn-dunyam-goto-world-model">🧠 Öğrenen Dünya
                     Modeli &amp; Planlama ↗</button>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-dunyam-open-world-impact-engine">🌍 Dünya Etki Motoru (Çok Alanlı Analiz) ↗</button>
                 </div>
               </div>
             </div>
@@ -6553,7 +6554,8 @@ body.theme-light .linear-setting-row {
             <button type="button" class="caelus-pill-filter-btn" data-kesfet-focus="CYTOSCAPE_GRAPH" id="btn-kesfet-focus-cytoscape">🕸 İlişki Ağı</button>
             <button type="button" class="caelus-pill-filter-btn" data-kesfet-focus="PERSPECTIVE_DATA" id="btn-kesfet-focus-perspective">📊 Gözlem Tablosu</button>
             <button type="button" class="caelus-pill-filter-btn" data-kesfet-focus="SOLAR_STAGE" id="btn-kesfet-focus-solar">🪐 Kozmos ve Güneş Sistemi</button>
-            <button type="button" class="caelus-pill-filter-btn" id="btn-kesfet-goto-senaryolar" style="margin-left:auto;">⚖ Bu Dünyada Senaryo Çalıştır</button>
+            <button type="button" class="caelus-pill-filter-btn" id="btn-kesfet-open-world-impact-engine" style="margin-left:auto;">🌍 Dünya Etki Motoru</button>
+            <button type="button" class="caelus-pill-filter-btn" id="btn-kesfet-goto-senaryolar">⚖ Bu Dünyada Senaryo Çalıştır</button>
           </div>
 
           <!-- MapLibre GL JS (v5.2.0 · BSD-3-Clause) + deck.gl (v9.4.1 · MIT) Seçilebilir Bölgesel 2B/2.5B Coğrafi Keşif ve Olay Kümesi Haritası -->
@@ -6847,6 +6849,183 @@ body.theme-light .linear-setting-row {
               </div>
             </details>
           </div>
+          </details>
+
+          <!-- ═════════════════════════════════════════════════════════════════
+               CAELUS DÜNYA ETKİ MOTORU (WORLD IMPACT ENGINE) — UÇTAN UCA ÇOK ALANLI ANALİZ VE ALTERNATİF GELECEKLER
+               ═════════════════════════════════════════════════════════════════ -->
+          <details class="expand-box" id="caelus-world-impact-engine-workspace" open style="margin-top:10px; border-radius:14px; background:rgba(7,14,28,0.86); border:1px solid rgba(136,212,255,0.34);">
+            <summary style="padding:11px 16px; font-size:0.86rem; font-weight:700; color:#88D4FF; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <span>🌍 CAELUS Dünya Etki Motoru — Çok Alanlı Dolaylı Etki Yolları, Karşıt Kanıt ve Alternatif Gelecekler</span>
+              <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <span class="kpi-badge ok" id="wie-header-status-badge" style="font-size:0.68rem;">KAYNAKLI BİLGİ &amp; SENARYO MOTORU HAZIR</span>
+                <span class="kpi-badge accent" id="wie-header-engine-badge" style="font-size:0.68rem;">Motor: Sabit Nokta (1e6)</span>
+              </span>
+            </summary>
+
+            <div style="padding:12px 16px; display:flex; flex-direction:column; gap:12px;">
+              <!-- Üst Bilgi ve 7 Sade Türkçe Bilgi Durumu Rozeti Rehberi -->
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding-bottom:8px; border-bottom:1px solid rgba(136,212,255,0.14);">
+                <div style="font-size:0.79rem; color:var(--text-2); line-height:1.45;">
+                  Bir olay veya soru seçin; verilerin <strong>ne zaman gerçekleştiğini</strong> ve <strong>ne zaman öğrenildiğini</strong> inceleyin, alanlar arası olası <strong>dolaylı etki yollarını</strong>, <strong>çelişkili iddiaları</strong> ve <strong>alternatif senaryoları</strong> aynı başlangıç durumundan karşılaştırın.
+                </div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap; font-size:0.66rem;" aria-label="Bilgi Durumu Rozetleri">
+                  <span class="kpi-badge ok">KAYNAKLI BİLGİ</span>
+                  <span class="kpi-badge accent">KAYNAKTAKİ İDDİA</span>
+                  <span class="kpi-badge warn">ARAŞTIRILACAK HİPOTEZ</span>
+                  <span class="kpi-badge">MODEL VARSAYIMI</span>
+                  <span class="kpi-badge ok">SİMÜLASYON SONUCU</span>
+                  <span class="kpi-badge warn">ÇELİŞKİ / KARŞIT KANIT</span>
+                  <span class="kpi-badge">YETERSİZ VERİ</span>
+                </div>
+              </div>
+
+              <!-- Problem Seçici ve 6 Senaryo Varsayımı Kontrol Izgarası -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; align-items:end;">
+                <div class="field-group" style="grid-column:span 2; min-width:260px;">
+                  <label class="field-label" for="wie-problem-select" style="font-size:0.76rem;">İncelenecek Çok Alanlı Problem veya Olay:</label>
+                  <select id="wie-problem-select" class="select-enterprise" style="padding:6px 10px; font-size:0.81rem; border-radius:9px;">
+                    <option value="PROB_ENERGY_TECH_FIN_TRADE">1. Enerji Altyapısı Kesintisi → Teknoloji Üretimi → Şirket Finansmanı → Uluslararası Ticaret (4 Alan)</option>
+                    <option value="PROB_AEGEAN_SEISMIC_PORT_COLDCHAIN">2. Ege Sismik &amp; Deniz Gözlemi → Liman Trafo → Soğuk Zincir İlaç/Gıda → Bölgesel Ticaret</option>
+                    <option value="PROB_INSUFFICIENT_DATA_HONEST_STOP">3. Yetersiz / Geçersiz Veri Sınaması ("Bilmiyorum / Belirlenemiyor" Dürüst Durdurma)</option>
+                  </select>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-cutoff-input" style="font-size:0.76rem;">Analiz Karar Zamanı (UTC):</label>
+                  <input type="text" id="wie-cutoff-input" value="2026-10-15T12:00:00.000Z" class="dt-editor-input mono" style="padding:6px 9px; font-size:0.77rem; border-radius:9px;" title="Bu zamandan sonra öğrenilen veya yayımlanan veriler geçmiş analizine sızmaz">
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-duration-select" style="font-size:0.76rem;">1. Olay Süresi (Saat):</label>
+                  <select id="wie-duration-select" class="select-enterprise" style="padding:6px 10px; font-size:0.80rem; border-radius:9px;">
+                    <option value="8">8 Saat (Kısa Vadeli Şok)</option>
+                    <option value="16" selected>16 Saat (Orta Vadeli Kesinti)</option>
+                    <option value="24">24 Saat (Tam Gün Kesinti)</option>
+                    <option value="48">48 Saat (Uzun Süreli Kriz)</option>
+                  </select>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-capacity-input" style="font-size:0.76rem;">2. Kaynak / Kapasite Kaybı (%):</label>
+                  <input type="number" id="wie-capacity-input" min="5" max="100" value="68" class="dt-editor-input mono" style="padding:6px 10px; font-size:0.82rem; font-weight:700; border-radius:9px;">
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-policy-select" style="font-size:0.76rem;">3. Aktör Davranış Politikası:</label>
+                  <select id="wie-policy-select" class="select-enterprise" style="padding:6px 10px; font-size:0.80rem; border-radius:9px;">
+                    <option value="COOPERATIVE_SHARING" selected>İşbirlikçi Kaynak ve Kapasite Paylaşımı</option>
+                    <option value="DEFENSIVE_BUFFERING">Savunmacı Tampon Koruma Politikası</option>
+                    <option value="OPPORTUNISTIC_HOARDING">Fırsatçı Stoklama ve Öncelik Kısıtlama</option>
+                    <option value="ESCALATORY_RETALIATION">Tırmandırıcı Karşılık / Kısıtlama Politikası</option>
+                  </select>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-buffer-input" style="font-size:0.76rem;">4. Alternatif Tedarik / Yedek (%):</label>
+                  <input type="number" id="wie-buffer-input" min="0" max="100" value="35" class="dt-editor-input mono" style="padding:6px 10px; font-size:0.82rem; font-weight:700; border-radius:9px;">
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-lag-select" style="font-size:0.76rem;">5. İlişki Gecikmesi (Adım):</label>
+                  <select id="wie-lag-select" class="select-enterprise" style="padding:6px 10px; font-size:0.80rem; border-radius:9px;">
+                    <option value="1" selected>1 Adım (Hızlı Yayılım)</option>
+                    <option value="2">2 Adım (Orta Gecikme)</option>
+                    <option value="3">3 Adım (Tamponlu Gecikme)</option>
+                    <option value="4">4 Adım (Yavaş Yayılım)</option>
+                  </select>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="wie-intervention-select" style="font-size:0.76rem;">6. Müdahale Seçimi:</label>
+                  <select id="wie-intervention-select" class="select-enterprise" style="padding:6px 10px; font-size:0.80rem; border-radius:9px;">
+                    <option value="L-MAS-COORD-01" selected>Ortak Likidite ve Kapasite Koordinasyon Protokolü</option>
+                    <option value="NONE_NO_INTERVENTION">Müdahale Yok (Kendiliğinden Yayılım)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Çalıştırma ve Doğrulama Düğmeleri -->
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; background:rgba(12,22,42,0.75); padding:8px 12px; border-radius:10px; border:1px solid rgba(136,212,255,0.18);">
+                <div id="wie-question-summary-line" style="font-size:0.81rem; font-weight:600; color:var(--text-1);">
+                  Soru: Enerji altyapısındaki bir kesinti; teknoloji üretimi, şirket finansmanı ve uluslararası ticareti hangi koşullarda dolaylı etkileyebilir?
+                </div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-wie-run-analysis">🌍 Dünya Etki Analizini Çalıştır</button>
+                  <button type="button" class="btn btn-sm btn-accent" id="btn-wie-replay-analysis">🔁 Aynı Girdilerle Tekrar Çalıştır</button>
+                  <button type="button" class="btn btn-sm" id="btn-wie-test-insufficient">🛑 Yetersiz Veri Durumunu Sına</button>
+                </div>
+              </div>
+
+              <!-- 5 Kartlı Kademeli Açıklama (Progressive Disclosure) Sonuç Akışı -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:10px;">
+                <!-- Kart 1: Kaynaklar ve Zaman Disiplini -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#88D4FF;">1. VERİ KAYNAKLARI VE ZAMAN DİSİPLİNİ</strong>
+                    <span class="kpi-badge ok" id="wie-badge-card1" style="font-size:0.65rem;">KAYNAKLI BİLGİ</span>
+                  </div>
+                  <div id="wie-card-sources-time" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Analiz başlatılıyor...
+                  </div>
+                </div>
+
+                <!-- Kart 2: Doğrudan ve Dolaylı Etki Yolları -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#E6C387;">2. OLASI DOLAYLI ETKİ YOLLARI (4 ALAN)</strong>
+                    <span class="kpi-badge warn" id="wie-badge-card2" style="font-size:0.65rem;">ARAŞTIRILACAK HİPOTEZ</span>
+                  </div>
+                  <div id="wie-card-impact-paths" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Dolaylı etki yolları hesaplanıyor...
+                  </div>
+                </div>
+
+                <!-- Kart 3: Çelişkili İddialar ve Alternatif Açıklamalar -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#f0b45a;">3. KARŞIT KANIT VE ALTERNATİF AÇIKLAMALAR</strong>
+                    <span class="kpi-badge warn" id="wie-badge-card3" style="font-size:0.65rem;">ÇELİŞKİ / KARŞIT KANIT</span>
+                  </div>
+                  <div id="wie-card-counter-evidence" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Karşıt kanıtlar ve alternatif açıklamalar inceleniyor...
+                  </div>
+                </div>
+              </div>
+
+              <!-- Kart 4 & 5: Alternatif Senaryoların Karşılaştırması + Sonuç, Belirsizlik ve Denetim Özeti -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:10px;">
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#5EC69D;">4. ALTERNATİF SENARYOLARIN KARŞILAŞTIRMASI</strong>
+                    <span class="kpi-badge ok" id="wie-badge-card4" style="font-size:0.65rem;">SİMÜLASYON SONUCU</span>
+                  </div>
+                  <div id="wie-card-scenarios-compare" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Senaryo karşılaştırması hazırlanıyor...
+                  </div>
+                </div>
+
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#a5f3fc;">5. SONUÇ, BELİRSİZLİK VE BİLMİYORUM SINIRI</strong>
+                    <span class="kpi-badge accent" id="wie-badge-card5" style="font-size:0.65rem;">MODEL VARSAYIMI</span>
+                  </div>
+                  <div id="wie-card-conclusion-audit" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Sonuç ve belirsizlik özeti hazırlanıyor...
+                  </div>
+                </div>
+              </div>
+
+              <!-- Kademeli Açıklama (Progressive Disclosure): Teknik Detaylar, Motor/Veri Sürümleri, Referans Model Karşılaştırması ve Denetim Zinciri -->
+              <details class="expand-box" id="wie-technical-audit-drawer" style="margin-top:2px;">
+                <summary style="padding:7px 12px; font-size:0.77rem; color:#88D4FF; cursor:pointer;">
+                  🔬 Teknik Denetim Çekmecesi — Motor/Veri Sürümü, SHA-256 Tekrarlanabilirlik Kanıtı, Referans Modeller ve Ajan Yetki Denetimi
+                </summary>
+                <div id="wie-technical-audit-body" class="expand-body mono" style="padding:10px 12px; font-size:0.73rem; color:var(--text-2); line-height:1.5;">
+                  Teknik denetim verileri yükleniyor...
+                </div>
+              </details>
+            </div>
           </details>
         </div>
       </section>

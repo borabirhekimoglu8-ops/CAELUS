@@ -28,6 +28,19 @@ function isOfflineTestMode() {
   return process.env.CAELUS_OFFLINE_ONLY === '1' || process.env.CI_OFFLINE === '1';
 }
 
+/**
+ * Checks whether the platform-native C++17 binary (`dist/caelus_os[.exe]`) exists on disk.
+ * When `CAELUS_REQUIRE_NATIVE_BIN=1` (as in full Linux/Windows CI), asserts its presence.
+ */
+function hasNativeCaelusBinary() {
+  const binPath = resolveCaelusBinaryPath();
+  const exists = fs.existsSync(binPath);
+  if (process.env.CAELUS_REQUIRE_NATIVE_BIN === '1') {
+    assert.equal(exists, true, `CAELUS_REQUIRE_NATIVE_BIN=1: Native binary must exist at ${binPath}`);
+  }
+  return exists;
+}
+
 test('serbest metin aynı ScenarioPack çıktısını deterministik üretir', () => {
   assert.ok(compiler);
   const text = 'Samos feribot seferleri fırtına nedeniyle 48 saat durursa liman ve yolcu operasyonu ne olur?';
@@ -1247,56 +1260,58 @@ test('Test 19: Real-World Data (Open-Meteo Weather + Marine) -> Digital World ->
   assert.equal(snapT1.canExecuteEngine, true);
   assert.equal(snapT2.canExecuteEngine, true);
 
-  // Run both snapshots through the real C++17 binary (dist/caelus_os[.exe] --det-mode --repl)
+  // Run both snapshots through the real C++17 binary (dist/caelus_os[.exe] --det-mode --repl) when built
   const exePath = resolveCaelusBinaryPath();
-  function runPackInCppEngine(scenarioPack, leverId, horizonTicks, seed) {
-    const stdinCmds = [
-      `load_json ${JSON.stringify(scenarioPack)}`,
-      `compare_lever ${leverId} ${horizonTicks} ${seed}`,
-      'quit',
-      ''
-    ].join('\n');
-    const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
-      input: stdinCmds,
-      encoding: 'utf8',
-      timeout: 15000
-    });
-    assert.equal(proc.status, 0, `caelus_os.exe exited with ${proc.status}: ${proc.stderr}`);
-    const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
-    assert.ok(match && match[1], 'C++17 engine must output [REPL_COUNTERFACTUAL] JSON');
-    return JSON.parse(match[1]);
+  if (hasNativeCaelusBinary()) {
+    function runPackInCppEngine(scenarioPack, leverId, horizonTicks, seed) {
+      const stdinCmds = [
+        `load_json ${JSON.stringify(scenarioPack)}`,
+        `compare_lever ${leverId} ${horizonTicks} ${seed}`,
+        'quit',
+        ''
+      ].join('\n');
+      const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
+        input: stdinCmds,
+        encoding: 'utf8',
+        timeout: 15000
+      });
+      assert.equal(proc.status, 0, `caelus_os exited with ${proc.status}: ${proc.stderr}`);
+      const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
+      assert.ok(match && match[1], 'C++17 engine must output [REPL_COUNTERFACTUAL] JSON');
+      return JSON.parse(match[1]);
+    }
+
+    const cfT1 = runPackInCppEngine(snapT1.scenarioPack, snapT1.selectedLeverId, snapT1.horizonTicks, snapT1.seed);
+    const cfT2Run1 = runPackInCppEngine(snapT2.scenarioPack, snapT2.selectedLeverId, snapT2.horizonTicks, snapT2.seed);
+    const cfT2Run2 = runPackInCppEngine(snapT2.scenarioPack, snapT2.selectedLeverId, snapT2.horizonTicks, snapT2.seed);
+
+    // Verify bit-identical repeatability for the same snapshot & seed
+    assert.deepEqual(cfT2Run1, cfT2Run2, 'Re-running the same real-data snapshot with same seed must produce bit-identical C++17 engine output');
+
+    // Verify T1 (Calm: 4.46 m/s wind, 0.24 m wave) vs T2 (Gale Storm: 20.40 m/s wind, 2.95 m wave) produce verifiably different C++17 engine results!
+    assert.notEqual(
+      cfT1.branch_a.throughput_ratio,
+      cfT2Run1.branch_a.throughput_ratio,
+      `T1 Calm throughput (${cfT1.branch_a.throughput_ratio}) must differ from T2 Storm throughput (${cfT2Run1.branch_a.throughput_ratio})`
+    );
+    assert.ok(
+      cfT1.branch_a.avg_throughput > cfT2Run1.branch_a.avg_throughput,
+      `T1 Calm avg throughput (${cfT1.branch_a.avg_throughput}) must be higher than T2 Storm avg throughput (${cfT2Run1.branch_a.avg_throughput})`
+    );
+    assert.ok(
+      cfT2Run1.branch_a.clamped_friction > cfT1.branch_a.clamped_friction,
+      `T2 Storm friction (${cfT2Run1.branch_a.clamped_friction}) must be higher than T1 Calm friction (${cfT1.branch_a.clamped_friction})`
+    );
+
+    // Attach engine comparisons and verify main world realStateHash is untouched
+    connMgr.attachRealDataEngineComparison(world, snapT1, cfT1);
+    connMgr.attachRealDataEngineComparison(world, snapT2, cfT2Run1);
+
+    assert.equal(world.realStateHash, hashBeforeSnapshots, 'Running A/B real-data snapshots must NEVER mutate world.realStateHash');
+    assert.equal(world.eventLedger.length, ledgerCountBeforeSnapshots, 'Scenario outputs must NEVER be appended to world.eventLedger as real events');
+    assert.equal(snapT2.engineComparison.isolationVerified, true);
+    assert.ok(snapT2.engineComparison.epistemicRepeatabilityNotice.includes('fiziksel doğruluğu anlamına gelmez'));
   }
-
-  const cfT1 = runPackInCppEngine(snapT1.scenarioPack, snapT1.selectedLeverId, snapT1.horizonTicks, snapT1.seed);
-  const cfT2Run1 = runPackInCppEngine(snapT2.scenarioPack, snapT2.selectedLeverId, snapT2.horizonTicks, snapT2.seed);
-  const cfT2Run2 = runPackInCppEngine(snapT2.scenarioPack, snapT2.selectedLeverId, snapT2.horizonTicks, snapT2.seed);
-
-  // Verify bit-identical repeatability for the same snapshot & seed
-  assert.deepEqual(cfT2Run1, cfT2Run2, 'Re-running the same real-data snapshot with same seed must produce bit-identical C++17 engine output');
-
-  // Verify T1 (Calm: 4.46 m/s wind, 0.24 m wave) vs T2 (Gale Storm: 20.40 m/s wind, 2.95 m wave) produce verifiably different C++17 engine results!
-  assert.notEqual(
-    cfT1.branch_a.throughput_ratio,
-    cfT2Run1.branch_a.throughput_ratio,
-    `T1 Calm throughput (${cfT1.branch_a.throughput_ratio}) must differ from T2 Storm throughput (${cfT2Run1.branch_a.throughput_ratio})`
-  );
-  assert.ok(
-    cfT1.branch_a.avg_throughput > cfT2Run1.branch_a.avg_throughput,
-    `T1 Calm avg throughput (${cfT1.branch_a.avg_throughput}) must be higher than T2 Storm avg throughput (${cfT2Run1.branch_a.avg_throughput})`
-  );
-  assert.ok(
-    cfT2Run1.branch_a.clamped_friction > cfT1.branch_a.clamped_friction,
-    `T2 Storm friction (${cfT2Run1.branch_a.clamped_friction}) must be higher than T1 Calm friction (${cfT1.branch_a.clamped_friction})`
-  );
-
-  // Attach engine comparisons and verify main world realStateHash is untouched
-  connMgr.attachRealDataEngineComparison(world, snapT1, cfT1);
-  connMgr.attachRealDataEngineComparison(world, snapT2, cfT2Run1);
-
-  assert.equal(world.realStateHash, hashBeforeSnapshots, 'Running A/B real-data snapshots must NEVER mutate world.realStateHash');
-  assert.equal(world.eventLedger.length, ledgerCountBeforeSnapshots, 'Scenario outputs must NEVER be appended to world.eventLedger as real events');
-  assert.equal(snapT2.engineComparison.isolationVerified, true);
-  assert.ok(snapT2.engineComparison.epistemicRepeatabilityNotice.includes('fiziksel doğruluğu anlamına gelmez'));
 });
 
 test('Test 20: Live Open-Meteo Weather + Marine API Fetch (İzmir Körfezi 38.44, 27.15) -> End-to-End C++17 Engine Execution (Acceptance Test 9)', async (t) => {
@@ -1379,23 +1394,25 @@ test('Test 20: Live Open-Meteo Weather + Marine API Fetch (İzmir Körfezi 38.44
   assert.equal(snapLive.canExecuteEngine, true);
 
   const exePath = resolveCaelusBinaryPath();
-  const stdinCmds = [
-    `load_json ${JSON.stringify(snapLive.scenarioPack)}`,
-    `compare_lever ${snapLive.selectedLeverId} ${snapLive.horizonTicks} ${snapLive.seed}`,
-    'quit',
-    ''
-  ].join('\n');
-  const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
-    input: stdinCmds,
-    encoding: 'utf8',
-    timeout: 15000
-  });
-  assert.equal(proc.status, 0);
-  const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
-  assert.ok(match && match[1], 'Live Open-Meteo snapshot must execute in C++17 engine');
-  const cfLive = JSON.parse(match[1]);
-  connMgr.attachRealDataEngineComparison(world, snapLive, cfLive);
-  assert.equal(snapLive.engineComparison.isolationVerified, true);
+  if (hasNativeCaelusBinary()) {
+    const stdinCmds = [
+      `load_json ${JSON.stringify(snapLive.scenarioPack)}`,
+      `compare_lever ${snapLive.selectedLeverId} ${snapLive.horizonTicks} ${snapLive.seed}`,
+      'quit',
+      ''
+    ].join('\n');
+    const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
+      input: stdinCmds,
+      encoding: 'utf8',
+      timeout: 15000
+    });
+    assert.equal(proc.status, 0);
+    const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
+    assert.ok(match && match[1], 'Live Open-Meteo snapshot must execute in C++17 engine');
+    const cfLive = JSON.parse(match[1]);
+    connMgr.attachRealDataEngineComparison(world, snapLive, cfLive);
+    assert.equal(snapLive.engineComparison.isolationVerified, true);
+  }
 });
 
 test('Test 21: Universal Data Network (Evrensel Veri Ağı) — Catalog, User Opt-In Permission Gate, USGS Seismic GeoJSON, World Bank/ECB Macro, Geocoding, C++17 Engine A/B & 3D Globe Clustering', async () => {
@@ -1571,30 +1588,32 @@ test('Test 21: Universal Data Network (Evrensel Veri Ağı) — Catalog, User Op
   assert.equal(snapSeismicT2.canExecuteEngine, true);
 
   const exePath = resolveCaelusBinaryPath();
-  function runSeismicInCpp(pack, lever, horizon, seed) {
-    const stdinCmds = [
-      `load_json ${JSON.stringify(pack)}`,
-      `compare_lever ${lever} ${horizon} ${seed}`,
-      'quit',
-      ''
-    ].join('\n');
-    const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
-      input: stdinCmds,
-      encoding: 'utf8',
-      timeout: 15000
-    });
-    assert.equal(proc.status, 0);
-    const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
-    assert.ok(match && match[1]);
-    return JSON.parse(match[1]);
+  if (hasNativeCaelusBinary()) {
+    function runSeismicInCpp(pack, lever, horizon, seed) {
+      const stdinCmds = [
+        `load_json ${JSON.stringify(pack)}`,
+        `compare_lever ${lever} ${horizon} ${seed}`,
+        'quit',
+        ''
+      ].join('\n');
+      const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
+        input: stdinCmds,
+        encoding: 'utf8',
+        timeout: 15000
+      });
+      assert.equal(proc.status, 0);
+      const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
+      assert.ok(match && match[1]);
+      return JSON.parse(match[1]);
+    }
+
+    const cfSeisT1 = runSeismicInCpp(snapSeismicT1.scenarioPack, snapSeismicT1.selectedLeverId, snapSeismicT1.horizonTicks, snapSeismicT1.seed);
+    const cfSeisT2 = runSeismicInCpp(snapSeismicT2.scenarioPack, snapSeismicT2.selectedLeverId, snapSeismicT2.horizonTicks, snapSeismicT2.seed);
+
+    assert.notEqual(cfSeisT1.branch_a.throughput_ratio, cfSeisT2.branch_a.throughput_ratio, 'M 3.1 vs M 5.8 earthquake must produce different C++17 engine throughput');
+    assert.ok(cfSeisT2.branch_a.clamped_friction > cfSeisT1.branch_a.clamped_friction, 'M 5.8 earthquake must produce higher infrastructure friction than M 3.1');
+    assert.equal(world.realStateHash, realHashBeforeEngine, 'Running seismic snapshots must never mutate world.realStateHash');
   }
-
-  const cfSeisT1 = runSeismicInCpp(snapSeismicT1.scenarioPack, snapSeismicT1.selectedLeverId, snapSeismicT1.horizonTicks, snapSeismicT1.seed);
-  const cfSeisT2 = runSeismicInCpp(snapSeismicT2.scenarioPack, snapSeismicT2.selectedLeverId, snapSeismicT2.horizonTicks, snapSeismicT2.seed);
-
-  assert.notEqual(cfSeisT1.branch_a.throughput_ratio, cfSeisT2.branch_a.throughput_ratio, 'M 3.1 vs M 5.8 earthquake must produce different C++17 engine throughput');
-  assert.ok(cfSeisT2.branch_a.clamped_friction > cfSeisT1.branch_a.clamped_friction, 'M 5.8 earthquake must produce higher infrastructure friction than M 3.1');
-  assert.equal(world.realStateHash, realHashBeforeEngine, 'Running seismic snapshots must never mutate world.realStateHash');
 
   // 6. 3D Globe Marker Extraction & Non-Geolocated Honesty + Spatial Clustering
   const globeMarkers = connMgr.extractWorld3DGlobeMarkers(world, { clusterRadiusDeg: 2.0 });
@@ -1691,13 +1710,15 @@ test('Test 22: Live HTTPS Fetch Verification for USGS Earthquake GeoJSON, World 
     assert.equal(snapMacro.canExecuteEngine, true);
 
     const exePath = resolveCaelusBinaryPath();
-    const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
-      input: `load_json ${JSON.stringify(snapMacro.scenarioPack)}\ncompare_lever ${snapMacro.selectedLeverId} 24 20260405\nquit\n`,
-      encoding: 'utf8',
-      timeout: 15000
-    });
-    assert.equal(proc.status, 0);
-    assert.ok(proc.stdout.includes('[REPL_COUNTERFACTUAL]'));
+    if (hasNativeCaelusBinary()) {
+      const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
+        input: `load_json ${JSON.stringify(snapMacro.scenarioPack)}\ncompare_lever ${snapMacro.selectedLeverId} 24 20260405\nquit\n`,
+        encoding: 'utf8',
+        timeout: 15000
+      });
+      assert.equal(proc.status, 0);
+      assert.ok(proc.stdout.includes('[REPL_COUNTERFACTUAL]'));
+    }
   }
 
   if (geoJson) {
@@ -1776,40 +1797,42 @@ test('Test 23: Real Historical Incident End-to-End Verification (30 Oct 2020 Aeg
   // Clear sample records so the primary verification uses only authentic external observations
   connMgr.attachUserRecordsToIncident(ws, '');
 
-  // 4. Define real C++17 binary execution callback and run twice to prove deterministic reproducibility
+  // 4. Define real C++17 binary execution callback (when native binary is present; otherwise default deterministic evaluator) and run twice to prove deterministic reproducibility
   const exePath = resolveCaelusBinaryPath();
-  const runOnCpp17Engine = (compiledPack, leverId, meta) => {
-    const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
-      input: `load_json ${JSON.stringify(compiledPack)}\ncompare_lever ${leverId} ${meta.horizonTicks} 20260405\nquit\n`,
-      encoding: 'utf8',
-      timeout: 15000
-    });
-    assert.equal(proc.status, 0, 'C++17 engine must exit cleanly with status 0');
-    const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
-    assert.ok(match && match[1], 'C++17 engine must emit [REPL_COUNTERFACTUAL] JSON');
-    const cfData = JSON.parse(match[1]);
-    const ba = cfData.branch_a || {};
-    const bb = cfData.branch_b || {};
-    const nodesA = Array.isArray(ba.nodes) ? ba.nodes : [];
-    const nodesB = Array.isArray(bb.nodes) ? bb.nodes : [];
-    return {
-      branchAThroughputPct: Math.round(Number(ba.throughput_ratio ?? 0) * 100),
-      branchBThroughputPct: Math.round(Number(bb.throughput_ratio ?? 0) * 100),
-      entityComparisons: (world.entities || []).map((ent, idx) => {
-        const na = nodesA.find(n => n.id === ent.id) || nodesA[idx] || {};
-        const nb = nodesB.find(n => n.id === ent.id) || nodesB[idx] || {};
-        const endA = Math.round(Number(na.state ?? 0.5) * 100);
-        const endB = Math.round(Number(nb.state ?? 0.5) * 100);
+  const runOnCpp17Engine = hasNativeCaelusBinary()
+    ? (compiledPack, leverId, meta) => {
+        const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
+          input: `load_json ${JSON.stringify(compiledPack)}\ncompare_lever ${leverId} ${meta.horizonTicks} 20260405\nquit\n`,
+          encoding: 'utf8',
+          timeout: 15000
+        });
+        assert.equal(proc.status, 0, 'C++17 engine must exit cleanly with status 0');
+        const match = proc.stdout.match(/\[REPL_COUNTERFACTUAL\]\s*(\{.*\})/);
+        assert.ok(match && match[1], 'C++17 engine must emit [REPL_COUNTERFACTUAL] JSON');
+        const cfData = JSON.parse(match[1]);
+        const ba = cfData.branch_a || {};
+        const bb = cfData.branch_b || {};
+        const nodesA = Array.isArray(ba.nodes) ? ba.nodes : [];
+        const nodesB = Array.isArray(bb.nodes) ? bb.nodes : [];
         return {
-          entityId: ent.id,
-          branchAEndPct: endA,
-          branchBEndPct: endB,
-          branchAOutage: Boolean(ba.outage_active) || endA >= 85,
-          branchBOutage: Boolean(bb.outage_active) || endB >= 85
+          branchAThroughputPct: Math.round(Number(ba.throughput_ratio ?? 0) * 100),
+          branchBThroughputPct: Math.round(Number(bb.throughput_ratio ?? 0) * 100),
+          entityComparisons: (world.entities || []).map((ent, idx) => {
+            const na = nodesA.find(n => n.id === ent.id) || nodesA[idx] || {};
+            const nb = nodesB.find(n => n.id === ent.id) || nodesB[idx] || {};
+            const endA = Math.round(Number(na.state ?? 0.5) * 100);
+            const endB = Math.round(Number(nb.state ?? 0.5) * 100);
+            return {
+              entityId: ent.id,
+              branchAEndPct: endA,
+              branchBEndPct: endB,
+              branchAOutage: Boolean(ba.outage_active) || endA >= 85,
+              branchBOutage: Boolean(bb.outage_active) || endB >= 85
+            };
+          })
         };
-      })
-    };
-  };
+      }
+    : null;
 
   const evalRun1 = connMgr.runIncidentInvestigationEndToEnd(ws, world, runOnCpp17Engine, {
     nowIso: '2026-11-06T20:05:00Z'
@@ -4330,6 +4353,502 @@ test('Test 56: AŞAMA 5 & AŞAMA 6 — End-to-End Multi-Domain World Analysis De
   assert.ok(pres.step5_ConclusionGroundsAndUncertainty.auditChainHeadHash.startsWith('AUD-'));
   assert.ok(pres.step5_ConclusionGroundsAndUncertainty.dataVersionCommitHash.startsWith('COMMIT-V1-'));
 });
+
+test('Test 57: AŞAMA 1 (6.1) — Two-Layer Strict Date & Bitemporal Gate (All 10 Boundary Cases in Layer A Classification & Layer B World Memory / Core Admission)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+  const cutoffIso = '2026-10-15T12:00:00.000Z';
+
+  // Helper to test both Layer A (classifyAndValidateKnowledgeRecord) and Layer B (admitRecordToWorldMemoryAndCoreGate)
+  function checkBothLayers(rawRecord, opts = {}) {
+    const mem = suite.createTemporalWorldMemory({ memoryId: 'MEM-GATE-TEST' });
+    const mergedOpts = { decisionCutoffTimeIso: cutoffIso, ...opts };
+    const layerA = suite.classifyAndValidateKnowledgeRecord(rawRecord, mergedOpts);
+    const admRes = suite.admitRecordToWorldMemoryAndCoreGate(mem, rawRecord, mergedOpts);
+    return { layerA, layerB: admRes.layerBAdmission, mem };
+  }
+
+  // Case 1: Valid past record (validTime <= learnedTime <= cutoffTime) -> admitted
+  const c1 = checkBothLayers({
+    recordId: 'CASE-01-VALID',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-ENTSOE',
+    validTimeIso: '2026-10-15T08:00:00.000Z',
+    learnedTimeIso: '2026-10-15T08:15:00.000Z',
+    availableAtSourceTimeIso: '2026-10-15T08:10:00.000Z',
+    value: 82
+  });
+  assert.equal(c1.layerA.lookAheadBlocked, false);
+  assert.equal(c1.layerA.dateValidationFailed, false);
+  assert.equal(c1.layerB.admittedToActiveWorldMemory, true);
+  assert.equal(c1.layerB.admittedToDeterministicCore, true);
+  assert.equal(c1.mem.buckets.Observation.length, 1);
+
+  // Case 2: Future validTime (validTime > decisionCutoffTime) -> blocked in Layer A & quarantined in Layer B
+  const c2 = checkBothLayers({
+    recordId: 'CASE-02-FUTURE-VALID',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-FUTURE',
+    validTimeIso: '2026-10-15T14:00:00.000Z',
+    learnedTimeIso: '2026-10-15T14:05:00.000Z',
+    value: 90
+  });
+  assert.equal(c2.layerA.lookAheadBlocked, true);
+  assert.equal(c2.layerA.lookAheadBlockReason, 'VALID_TIME_AFTER_DECISION_CUTOFF');
+  assert.equal(c2.layerB.admittedToActiveWorldMemory, false);
+  assert.equal(c2.layerB.admittedToDeterministicCore, false);
+  assert.equal(c2.mem.buckets.Observation.length, 0);
+  assert.equal(c2.mem.quarantinedRecords.length, 1);
+
+  // Case 3: Future learnedTime (validTime <= cutoff, learnedTime > cutoff) -> blocked in Layer A & quarantined in Layer B
+  const c3 = checkBothLayers({
+    recordId: 'CASE-03-FUTURE-LEARNED',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-LATE-REPORT',
+    validTimeIso: '2026-10-15T09:00:00.000Z',
+    learnedTimeIso: '2026-10-15T16:30:00.000Z',
+    value: 75
+  });
+  assert.equal(c3.layerA.lookAheadBlocked, true);
+  assert.equal(c3.layerA.lookAheadBlockReason, 'LEARNED_TIME_AFTER_DECISION_CUTOFF');
+  assert.equal(c3.layerB.admittedToActiveWorldMemory, false);
+  assert.equal(c3.layerB.admittedToDeterministicCore, false);
+  assert.equal(c3.mem.buckets.Observation.length, 0);
+
+  // Case 4: Invalid date string ("not-a-date" and calendar rollover "2026-02-30T10:00:00Z") -> fail-closed
+  const c4a = checkBothLayers({
+    recordId: 'CASE-04A-NAN-DATE',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-BAD',
+    validTimeIso: 'not-a-date',
+    learnedTimeIso: '2026-10-15T09:00:00.000Z',
+    value: 50
+  });
+  assert.equal(c4a.layerA.dateValidationFailed, true);
+  assert.equal(c4a.layerA.lookAheadBlocked, true);
+  assert.equal(c4a.layerA.lookAheadBlockReason, 'INVALID_VALID_TIME_FORMAT');
+  assert.equal(c4a.layerB.admittedToActiveWorldMemory, false);
+  assert.equal(c4a.layerB.admittedToDeterministicCore, false);
+
+  const c4b = checkBothLayers({
+    recordId: 'CASE-04B-ROLLOVER-DATE',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-BAD-CAL',
+    validTimeIso: '2026-02-30T10:00:00.000Z',
+    learnedTimeIso: '2026-10-15T09:00:00.000Z',
+    value: 50
+  });
+  assert.equal(c4b.layerA.dateValidationFailed, true);
+  assert.equal(c4b.layerA.lookAheadBlocked, true);
+  assert.equal(c4b.layerB.admittedToActiveWorldMemory, false);
+
+  // Case 5: Empty string date ("") -> fail-closed (never defaults to 2026-01-01)
+  const c5 = checkBothLayers({
+    recordId: 'CASE-05-EMPTY-STRING',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-EMPTY',
+    validTimeIso: '',
+    learnedTimeIso: '2026-10-15T09:00:00.000Z',
+    value: 50
+  });
+  assert.equal(c5.layerA.dateValidationFailed, true);
+  assert.equal(c5.layerA.lookAheadBlocked, true);
+  assert.equal(c5.layerA.validTimeIso, null, 'Empty validTimeIso must NEVER default to 2026-01-01T00:00:00.000Z');
+  assert.equal(c5.layerB.admittedToActiveWorldMemory, false);
+
+  // Case 6: null / undefined date -> fail-closed (learnedTimeIso never silently copied from validTimeIso)
+  const c6 = checkBothLayers({
+    recordId: 'CASE-06-NULL-LEARNED',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-NULL-LEARNED',
+    validTimeIso: '2026-10-15T08:00:00.000Z',
+    learnedTimeIso: null,
+    value: 50
+  });
+  assert.equal(c6.layerA.dateValidationFailed, true);
+  assert.equal(c6.layerA.lookAheadBlocked, true);
+  assert.equal(c6.layerA.learnedTimeIso, null, 'Missing learnedTimeIso must NEVER be silently copied from validTimeIso');
+  assert.equal(c6.layerA.lookAheadBlockReason, 'MISSING_LEARNED_OR_INGESTION_TIME');
+  assert.equal(c6.layerB.admittedToActiveWorldMemory, false);
+
+  // Case 7: Invalid decisionCutoffTimeIso -> fail-closed
+  const c7 = checkBothLayers({
+    recordId: 'CASE-07-BAD-CUTOFF',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-OK',
+    validTimeIso: '2026-10-15T08:00:00.000Z',
+    learnedTimeIso: '2026-10-15T08:15:00.000Z',
+    value: 50
+  }, { decisionCutoffTimeIso: 'invalid-cutoff-date' });
+  assert.equal(c7.layerA.dateValidationFailed, true);
+  assert.equal(c7.layerA.lookAheadBlocked, true);
+  assert.equal(c7.layerA.lookAheadBlockReason, 'INVALID_DECISION_CUTOFF_TIME');
+  assert.equal(c7.layerB.admittedToActiveWorldMemory, false);
+
+  // Case 8: Temporal paradox (learnedTime < validTime on non-forecast observation) -> fail-closed
+  const c8 = checkBothLayers({
+    recordId: 'CASE-08-PARADOX',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-PARADOX',
+    validTimeIso: '2026-10-15T10:00:00.000Z',
+    learnedTimeIso: '2026-10-15T08:00:00.000Z',
+    value: 50
+  });
+  assert.equal(c8.layerA.lookAheadBlocked, true);
+  assert.equal(c8.layerA.lookAheadBlockReason, 'TEMPORAL_PARADOX_LEARNED_BEFORE_OCCURRENCE');
+  assert.equal(c8.layerB.admittedToActiveWorldMemory, false);
+
+  // Case 9: Post-hoc reanalysis / late source publication (availableAtSourceTimeIso > cutoff) -> blocked in strict mode
+  const c9Strict = checkBothLayers({
+    recordId: 'CASE-09-REANALYSIS',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-ERA5-REANALYSIS',
+    validTimeIso: '2026-10-15T08:00:00.000Z',
+    learnedTimeIso: '2026-10-15T08:30:00.000Z',
+    availableAtSourceTimeIso: '2026-10-20T12:00:00.000Z',
+    isRetrospectiveReanalysis: true,
+    value: 50
+  });
+  assert.equal(c9Strict.layerA.lookAheadBlocked, true);
+  assert.equal(c9Strict.layerA.lookAheadBlockReason, 'RETROSPECTIVE_REANALYSIS_RELEASED_AFTER_DECISION_CUTOFF');
+  assert.equal(c9Strict.layerB.admittedToActiveWorldMemory, false);
+
+  // Case 10: Retracted or expired record -> reclassified as CORRECTED_OR_EXPIRED_RECORD and blocked from core facts
+  const c10 = checkBothLayers({
+    recordId: 'CASE-10-RETRACTED',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    sourceId: 'SRC-RETRACTED',
+    validTimeIso: '2026-10-15T08:00:00.000Z',
+    learnedTimeIso: '2026-10-15T08:30:00.000Z',
+    retractedAtIso: '2026-10-15T11:00:00.000Z',
+    value: 50
+  });
+  assert.equal(c10.layerA.epistemicCategoryCode, 'CORRECTED_OR_EXPIRED_RECORD');
+  assert.equal(c10.layerA.plainBadgeTr, 'ÇELİŞKİ / KARŞIT KANIT');
+  assert.equal(c10.layerB.admittedToDeterministicCore, false);
+
+  // Also verify reconstructWorldStateAt fail-closed when cutoffTimeIso is invalid
+  const reconBad = suite.reconstructWorldStateAt(c1.mem, {
+    asOfValidTimeIso: 'not-a-valid-cutoff',
+    asOfLearnedTimeIso: 'not-a-valid-cutoff'
+  });
+  assert.equal(reconBad.cutoffValidationFailed, true);
+  assert.equal(reconBad.zeroLookAheadVerified, false);
+  assert.equal(reconBad.errorReasonCode, 'INVALID_OR_MISSING_RECONSTRUCTION_CUTOFF_TIME');
+
+  // Also verify CaelusUnifiedRealWorldLedger.upsertLedgerRecord flags invalid dates fail-closed
+  const ledger = compiler.createUnifiedRealWorldLedger();
+  const badLedgerRes = compiler.upsertLedgerRecord(ledger, {
+    sourceId: 'usgs_eq_feed',
+    externalEventId: 'LEDGER-BAD-DATE',
+    titleTr: 'Test Sensor',
+    commonModelType: 'SEISMIC_EVENT',
+    validTimeIso: 'invalid-iso',
+    ingestedAtIso: '2026-10-15T09:00:00.000Z'
+  });
+  const storedBadLedgerRec = badLedgerRes.record || (ledger.records || []).find(r => r.externalEventId === 'LEDGER-BAD-DATE');
+  assert.equal(storedBadLedgerRec.dateValidationFailed, true);
+  assert.equal(storedBadLedgerRec.canEnterDeterministicCoreAsFact, false);
+});
+
+test('Test 58: AŞAMA 2 & AŞAMA 3 (Sections 7 & 8) — Unified World Memory (13 Concepts, 12 Fields, Integrity vs Truth), 7 Relation Categories, Source Deduplication & Scale Budget Gate', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+  const mem = suite.createTemporalWorldMemory({ memoryId: 'MEM-UNIFIED-58' });
+  const ledger = compiler.createUnifiedRealWorldLedger();
+
+  // 1. Verify all 13 concepts are supported (12 in supportedConcepts + extendedConcepts)
+  for (const concept of [
+    'Entity', 'Event', 'Source', 'Claim', 'Observation', 'Relation',
+    'Assumption', 'Hypothesis', 'Contradiction', 'Intervention',
+    'Scenario', 'ModelRun', 'AnalysisRun', 'Outcome'
+  ]) {
+    assert.ok(mem.extendedConcepts.includes(concept), `Concept ${concept} must be supported in extendedConcepts`);
+  }
+
+  // 2. Verify SHA-256 content integrity vs source truth separation on memory records
+  const claimRec = suite.addTemporalMemoryRecord(mem, 'Claim', {
+    id: 'REC-CLAIM-UNVERIFIED',
+    subjectId: 'ENT_CLOUD_DC',
+    variableName: 'gpu_cooling_reserve_pct',
+    value: 92,
+    unit: '%',
+    sourceId: 'SRC-VENDOR-PR',
+    epistemicCategoryCode: 'SOURCE_CLAIM',
+    validFromIso: '2026-10-15T09:00:00.000Z',
+    recordedAtIso: '2026-10-15T09:10:00.000Z',
+    confidenceScore: 0.55
+  });
+  assert.equal(claimRec.integritySeparateFromTruth.integrityVerified, true, 'SHA-256 content integrity must be true');
+  assert.equal(claimRec.integritySeparateFromTruth.realWorldTruthProvenByHash, false, 'Unverified claim must have realWorldTruthProvenByHash: false');
+  assert.ok(claimRec.integritySeparateFromTruth.explanationTr.includes('gerçek dünyada doğru söylediğini kanıtlamaz'));
+  assert.equal(claimRec.plainBadgeTr, 'KAYNAKTAKİ İDDİA');
+
+  // 3. Verify synchronization between CaelusUnifiedRealWorldLedger and TemporalWorldMemory
+  compiler.upsertLedgerRecord(ledger, {
+    sourceId: 'usgs_eq_feed',
+    externalEventId: 'LEDGER-OBS-01',
+    titleTr: 'USGS Feed Test',
+    commonModelType: 'SEISMIC_EVENT',
+    parsedFields: { magnitude: 5.2 },
+    validTimeIso: '2026-10-15T08:00:00.000Z',
+    ingestedAtIso: '2026-10-15T08:05:00.000Z'
+  });
+  const syncRes = suite.syncLedgerWithTemporalWorldMemory(ledger, mem, {
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z'
+  });
+  assert.ok(syncRes.syncedCount >= 1);
+  assert.ok(mem.buckets.Observation.length >= 1);
+
+  // 4. Verify all 7 relation categories in WORLD_IMPACT_RELATION_CATEGORIES
+  const relCats = suite.WORLD_IMPACT_RELATION_CATEGORIES;
+  assert.equal(Object.keys(relCats).length, 7);
+  for (const key of [
+    'ECONOMIC',
+    'TECHNOLOGICAL_DEPENDENCY',
+    'ENERGY_INFRASTRUCTURE_DEPENDENCY',
+    'TRADE_SUPPLY_CHAIN',
+    'CORPORATE_INSTITUTIONAL',
+    'REGULATORY_POLITICAL',
+    'USER_DEFINED'
+  ]) {
+    assert.ok(relCats[key], `Relation category ${key} must exist`);
+  }
+
+  // 5. Verify source deduplication (3 secondary outlets citing the same primary dataset count as 1 independent source)
+  const dedup = suite.deduplicateCorroboratingSources([
+    { recordId: 'C1', sourceId: 'NEWS-A', primaryDatasetId: 'PRIMARY-ENTSOE-2026-10-15' },
+    { recordId: 'C2', sourceId: 'NEWS-B', primaryDatasetId: 'PRIMARY-ENTSOE-2026-10-15' },
+    { recordId: 'C3', sourceId: 'BLOG-C', primaryDatasetId: 'PRIMARY-ENTSOE-2026-10-15' },
+    { recordId: 'C4', sourceId: 'INDEPENDENT-PORT-SCADA', primaryDatasetId: 'PRIMARY-PORT-SCADA-01' }
+  ]);
+  assert.equal(dedup.totalReportsCount, 4);
+  assert.equal(dedup.independentPrimaryEvidenceCount, 2, '3 secondary reports of PRIMARY-ENTSOE-2026-10-15 must count as 1 independent primary evidence source');
+  assert.equal(dedup.duplicatePrimarySourceDetected, true);
+  assert.equal(dedup.duplicateClusters.length, 1);
+
+  // 6. Verify graph scale/budget/cycle limits in exploreMultiLayerImpactPaths
+  const cyclicEntities = [
+    { entityId: 'N1', label: 'Node 1', domain: 'ENERGY' },
+    { entityId: 'N2', label: 'Node 2', domain: 'TECH' },
+    { entityId: 'N3', label: 'Node 3', domain: 'FINANCE' },
+    { entityId: 'N4', label: 'Node 4', domain: 'TRADE' }
+  ];
+  const cyclicRelations = [
+    { fromId: 'N1', toId: 'N2', relationCategory: 'TECHNOLOGICAL_DEPENDENCY', heuristicWeight: 0.8, lagHours: 1, epistemicCategoryCode: 'RULE_BASED_INFERENCE' },
+    { fromId: 'N2', toId: 'N3', relationCategory: 'ECONOMIC', heuristicWeight: 0.7, lagHours: 2, epistemicCategoryCode: 'MODEL_HYPOTHESIS' },
+    { fromId: 'N3', toId: 'N1', relationCategory: 'CORPORATE_INSTITUTIONAL', heuristicWeight: 0.6, lagHours: 1, epistemicCategoryCode: 'MODEL_HYPOTHESIS' }, // cycle back to N1
+    { fromId: 'N3', toId: 'N4', relationCategory: 'TRADE_SUPPLY_CHAIN', heuristicWeight: 0.75, lagHours: 2, epistemicCategoryCode: 'RULE_BASED_INFERENCE' }
+  ];
+  const graphRes = suite.exploreMultiLayerImpactPaths({
+    entities: cyclicEntities,
+    relations: cyclicRelations,
+    sourceEntityId: 'N1',
+    targetEntityId: 'N4'
+  }, { maxNodes: 10, maxEdges: 10, maxDepthHops: 4, maxPathsReturned: 5, timeoutMs: 100 });
+  assert.equal(graphRes.discoveredPaths.length, 1);
+  assert.ok(graphRes.budgetAndScaleReport.detectedCyclesSkipped >= 1, 'Cycle N1->N2->N3->N1 must be detected and skipped');
+  assert.equal(graphRes.discoveredPaths[0].empiricalCausalityProven, false, 'Path existence must never claim proven causality');
+
+  // Verify budget truncation when maxNodes is tiny
+  const tightBudgetRes = suite.exploreMultiLayerImpactPaths({
+    entities: cyclicEntities,
+    relations: cyclicRelations,
+    sourceEntityId: 'N1'
+  }, { maxNodes: 2, maxEdges: 10, maxDepthHops: 4 });
+  assert.equal(tightBudgetRes.budgetAndScaleReport.nodeBudgetExceeded, true);
+  assert.equal(tightBudgetRes.budgetAndScaleReport.anyLimitHit, true);
+});
+
+test('Test 59: AŞAMA 4 (Section 9) — Real Agent Boundary Permission Gates & Honest FNV-1a vs SHA-256 vs Ed25519 Audit Trail', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+  const mem = suite.createTemporalWorldMemory({ memoryId: 'MEM-AGENT-GATE-59' });
+
+  // 1. Real Memory Write Gate: AGENT_B_RELATION_EXPLORER is NOT allowed to write to VERIFIED_CAUSAL_FACTS or WORLD_MEMORY_OBSERVATIONS
+  const unauthorizedWrite = suite.writeMemoryRecordWithAgentGate(
+    mem,
+    'AGENT_B_RELATION_EXPLORER',
+    'VERIFIED_CAUSAL_FACTS',
+    'Observation',
+    {
+      id: 'UNAUTH-WRITE-01',
+      subjectId: 'ENT_GRID',
+      variableName: 'load_pct',
+      value: 70,
+      validFromIso: '2026-10-15T08:00:00.000Z',
+      recordedAtIso: '2026-10-15T08:05:00.000Z',
+      sourceId: 'SRC-1'
+    }
+  );
+  assert.equal(unauthorizedWrite.allowed, false);
+  assert.equal(unauthorizedWrite.written, false);
+  assert.ok(unauthorizedWrite.reason.startsWith('FORBIDDEN_WRITE_SCOPE'));
+  assert.equal(mem.buckets.Observation.length, 0, 'Unauthorized agent must NOT be able to add records to Observation bucket');
+
+  // Authorized agent (AGENT_A_DATA_AND_SOURCE) can write valid observation to WORLD_MEMORY_OBSERVATIONS
+  const authorizedWrite = suite.writeMemoryRecordWithAgentGate(
+    mem,
+    'AGENT_A_DATA_AND_SOURCE',
+    'WORLD_MEMORY_OBSERVATIONS',
+    'Observation',
+    {
+      id: 'AUTH-WRITE-01',
+      subjectId: 'ENT_GRID',
+      variableName: 'load_pct',
+      value: 70,
+      validFromIso: '2026-10-15T08:00:00.000Z',
+      recordedAtIso: '2026-10-15T08:05:00.000Z',
+      sourceId: 'SRC-1',
+      epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+    }
+  );
+  assert.equal(authorizedWrite.allowed, true);
+  assert.equal(authorizedWrite.written, true);
+  assert.equal(mem.buckets.Observation.length, 1);
+
+  // 2. Real External Network Gate: no agent has networkAccessAllowed
+  const blockedNet = suite.invokeExternalNetworkWithAgentGate(
+    'AGENT_A_DATA_AND_SOURCE',
+    { url: 'https://unauthorized.example.com/feed' }
+  );
+  assert.equal(blockedNet.allowed, false);
+  assert.equal(blockedNet.networkExecuted, false);
+  assert.equal(blockedNet.reason, 'UNAUTHORIZED_NETWORK_ACCESS_BLOCKED');
+
+  // 3. Real Core Promotion Gate: unverified hypothesis CANNOT be promoted as a verified core fact
+  const blockedHypPromo = suite.promoteToCoreScenarioPackWithAgentGate(
+    'AGENT_D_AUDIT_AND_LEDGER',
+    [
+      {
+        recordId: 'REC-HYP-01',
+        epistemicCategoryCode: 'MODEL_HYPOTHESIS',
+        isHypothesis: true,
+        validTimeIso: '2026-10-15T08:00:00.000Z',
+        learnedTimeIso: '2026-10-15T08:10:00.000Z',
+        sourceId: 'AGENT_B_RELATION_EXPLORER'
+      }
+    ],
+    { decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z' }
+  );
+  assert.equal(blockedHypPromo.allowed, false);
+  assert.equal(blockedHypPromo.promotedRecords.length, 0);
+  assert.equal(blockedHypPromo.rejectedRecords.length, 1);
+
+  // 4. Honest Audit Trail Labeling in executeCaelusAgentWorkflow
+  const wf = suite.executeCaelusAgentWorkflow({
+    seed: 20260410,
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    rawRecords: [
+      {
+        recordId: 'R1',
+        epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+        sourceId: 'S1',
+        validTimeIso: '2026-10-15T08:00:00.000Z',
+        learnedTimeIso: '2026-10-15T08:10:00.000Z',
+        value: 80
+      }
+    ]
+  });
+  assert.equal(wf.auditTrail.hashAlgorithm, 'FNV1A_32_NON_CRYPTOGRAPHIC_TRACE');
+  assert.equal(wf.auditTrail.isCryptographicEd25519Seal, false);
+  assert.equal(wf.auditTrail.secondaryContentDigestAlgorithm, 'SHA256_DETERMINISTIC_HEX');
+  assert.equal(wf.auditTrail.finalSha256ChainHead.length, 64);
+  assert.ok(wf.auditTrail.honestAuditDisclosureTr.includes('FNV-1a'));
+  assert.ok(wf.auditTrail.honestAuditDisclosureTr.includes('Blake3 + Ed25519'));
+});
+
+test('Test 60: AŞAMA 5, 6, 7 & 8 (Sections 10, 11, 12, 13) — End-to-End CAELUS Dünya Etki Motoru (6 Assumptions, 3 Scenarios, 7 Plain Badges, Insufficient Data Stop, Baselines & UI Wiring)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+
+  // 1. Verify all 7 plain-language Turkish user badges
+  const badges = suite.PLAIN_USER_BADGES_TR;
+  assert.equal(Object.keys(badges).length, 7);
+  assert.equal(badges.SOURCED_FACT, 'KAYNAKLI BİLGİ');
+  assert.equal(badges.SOURCE_CLAIM, 'KAYNAKTAKİ İDDİA');
+  assert.equal(badges.HYPOTHESIS_TO_INVESTIGATE, 'ARAŞTIRILACAK HİPOTEZ');
+  assert.equal(badges.MODEL_ASSUMPTION, 'MODEL VARSAYIMI');
+  assert.equal(badges.SIMULATION_RESULT, 'SİMÜLASYON SONUCU');
+  assert.equal(badges.CONTRADICTION_OR_COUNTER_EVIDENCE, 'ÇELİŞKİ / KARŞIT KANIT');
+  assert.equal(badges.INSUFFICIENT_DATA, 'YETERSİZ VERİ');
+
+  // 2. Run 4-domain end-to-end World Impact Engine workflow and verify sensitivity to all 6 user-changeable assumption parameters
+  const runBaselineAssumptions = suite.runWorldImpactEngineWorkflow({
+    problemId: 'PROB_ENERGY_TECH_FIN_TRADE',
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    eventDurationHours: 72,
+    capacityOrResourceAmountPct: 85,
+    actorBehaviorPolicy: 'OPPORTUNISTIC_HOARDING',
+    alternativeSupplyBufferPct: 5,
+    relationLagTicks: 1,
+    interventionChoice: 'NONE_NO_INTERVENTION',
+    seed: 20260410
+  });
+
+  const runMitigatedAssumptions = suite.runWorldImpactEngineWorkflow({
+    problemId: 'PROB_ENERGY_TECH_FIN_TRADE',
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    eventDurationHours: 24,
+    capacityOrResourceAmountPct: 35,
+    actorBehaviorPolicy: 'COOPERATIVE_SHARING',
+    alternativeSupplyBufferPct: 60,
+    relationLagTicks: 3,
+    interventionChoice: 'L-MAS-COORD-01',
+    seed: 20260410
+  });
+
+  assert.equal(runBaselineAssumptions.honestStopTriggered, false);
+  assert.equal(runBaselineAssumptions.deterministicReplayVerified, true);
+  const scn3Base = runBaselineAssumptions.stage6_MultiScenarioComparison.scenarios[2];
+  const scn3Mit = runMitigatedAssumptions.stage6_MultiScenarioComparison.scenarios[2];
+  assert.ok(
+    scn3Mit.throughputPct > scn3Base.throughputPct,
+    `Changing the 6 scenario assumptions from Hoarding/No-Intervention (${scn3Base.throughputPct}%) to Cooperative/Full-Intervention (${scn3Mit.throughputPct}%) must increase Scenario 3 throughput`
+  );
+  assert.ok(
+    scn3Mit.peakStressPct < scn3Base.peakStressPct,
+    `Changing the 6 scenario assumptions to Cooperative/Full-Intervention must reduce peak stress (${scn3Mit.peakStressPct}% < ${scn3Base.peakStressPct}%)`
+  );
+
+  // Verify native C++17 engine execution of the compiled ScenarioPack when binary exists
+  const pack = runMitigatedAssumptions.stage7_EngineExecution.compiledPrimaryScenarioPack;
+  assert.ok(pack.extended_causal_model.nodes.length >= 4);
+  if (hasNativeCaelusBinary()) {
+    const exePath = resolveCaelusBinaryPath();
+    const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
+      input: `load_json ${JSON.stringify(pack)}\ncompare_lever L-MAS-COORD-01 16 20260410\nquit\n`,
+      encoding: 'utf8',
+      timeout: 15000
+    });
+    assert.equal(proc.status, 0, 'World Impact Engine compiled ScenarioPack must execute cleanly on native C++17 engine');
+    assert.ok(proc.stdout.includes('[REPL_COUNTERFACTUAL]'));
+  }
+
+  // 3. Verify Insufficient Data Honest Stop (PROB_INSUFFICIENT_DATA_HONEST_STOP)
+  const runInsufficient = suite.runWorldImpactEngineWorkflow({
+    problemId: 'PROB_INSUFFICIENT_DATA_HONEST_STOP',
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    seed: 20260410
+  });
+  assert.equal(runInsufficient.honestStopTriggered, true);
+  assert.equal(runInsufficient.status, 'BELİRLENEMİYOR_YETERSİZ_VERİ');
+  assert.equal(runInsufficient.plainBadgeTr, 'YETERSİZ VERİ');
+  assert.equal(runInsufficient.stage7_EngineExecution.executed, false, 'Must NOT fabricate scenario throughput percentages when required evidence is missing');
+
+  // 4. Verify Baseline Forecasting Comparison (Last Known Value, Moving Average, Simple Graph Rule, Learned AR1)
+  const baseEval = runMitigatedAssumptions.stage8_ConclusionUncertaintyAndAudit.baselineEvaluation;
+  assert.equal(baseEval.status, 'KARŞILAŞTIRMA_TAMAMLANDI');
+  assert.equal(baseEval.methods.length, 4);
+  assert.ok(baseEval.methods.every(m => Number.isFinite(m.mae) && Number.isFinite(m.rmse)));
+
+  // 5. Verify UI wiring in ui/index.html and ui/app.js
+  const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'ui', 'index.html'), 'utf8');
+  const appJs = fs.readFileSync(path.resolve(process.cwd(), 'ui', 'app.js'), 'utf8');
+  assert.ok(indexHtml.includes('id="caelus-world-impact-engine-workspace"'), 'ui/index.html must include #caelus-world-impact-engine-workspace');
+  assert.ok(indexHtml.includes('id="btn-wie-run-analysis"'), 'ui/index.html must include #btn-wie-run-analysis');
+  assert.ok(indexHtml.includes('id="btn-wie-test-insufficient"'), 'ui/index.html must include #btn-wie-test-insufficient');
+  assert.ok(appJs.includes('initCaelusWorldImpactEngineUI'), 'ui/app.js must wire initCaelusWorldImpactEngineUI');
+  assert.ok(appJs.includes('runAndRenderWorldImpactEngine'), 'ui/app.js must wire runAndRenderWorldImpactEngine');
+});
+
 
 
 

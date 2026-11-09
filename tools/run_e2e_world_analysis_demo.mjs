@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================================
-// CAELUS — AŞAMA 5: Uçtan Uca Çok Alanlı Dünya Analizi Gösterimi (CLI Runner)
+// CAELUS — AŞAMA 5 & AŞAMA 7: Uçtan Uca Çok Alanlı Dünya Etki Motoru Gösterimi
 // Çalıştırma:
 //   node tools/run_e2e_world_analysis_demo.mjs
 // ============================================================================
@@ -18,14 +18,33 @@ const demoResult = suite.runEndToEndWorldAnalysisDemo({
   decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z'
 });
 
+const wieResult = suite.runWorldImpactEngineWorkflow({
+  problemId: 'PROB_ENERGY_TECH_FIN_TRADE',
+  decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+  eventDurationHours: 48,
+  capacityOrResourceAmountPct: 68,
+  actorBehaviorPolicy: 'COOPERATIVE_SHARING',
+  alternativeSupplyBufferPct: 35,
+  relationLagTicks: 2,
+  interventionChoice: 'L-MAS-COORD-01',
+  seed: 20260410,
+  executionEngineMode: 'JS_FIXED_POINT_1E6_MIRROR'
+});
+
+const wieInsufficientResult = suite.runWorldImpactEngineWorkflow({
+  problemId: 'PROB_INSUFFICIENT_DATA_HONEST_STOP',
+  decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+  seed: 20260410
+});
+
 // Opsiyonel: Platform ikilisi (dist/caelus_os[.exe]) mevcutsa derlenen ScenarioPack'i yerel C++17 motorunda da doğrula
 const distDir = path.resolve(process.cwd(), 'dist');
 const binName = process.platform === 'win32' ? 'caelus_os.exe' : 'caelus_os';
 const exePath = path.join(distDir, binName);
-let nativeEngineVerification = { executed: false, status: 'BINARY_NOT_FOUND' };
+let nativeEngineVerification = { executed: false, status: 'BINARY_NOT_FOUND', binaryPath: exePath };
 
 if (fs.existsSync(exePath)) {
-  const pack = demoResult.scenarioCooperative.compiledScenarioPack;
+  const pack = wieResult.stage7_EngineExecution.compiledPrimaryScenarioPack;
   const replInput = `load_json ${JSON.stringify(pack)}\ncompare_lever L-MAS-COORD-01 16 20260410\nquit\n`;
   const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
     input: replInput,
@@ -37,6 +56,7 @@ if (fs.existsSync(exePath)) {
     const parsedCf = JSON.parse(cfMatch[1]);
     nativeEngineVerification = {
       executed: true,
+      status: 'NATIVE_CPP17_REPL_VERIFIED',
       binaryPath: exePath,
       exitCode: proc.status,
       branchAThroughputRatio: parsedCf.branch_a.throughput_ratio,
@@ -47,42 +67,57 @@ if (fs.existsSync(exePath)) {
 
 const p = demoResult.progressiveDisclosurePresentation;
 console.log('======================================================================');
-console.log('CAELUS — AŞAMA 5: UÇTAN UCA ÇOK ALANLI DÜNYA ANALİZİ GÖSTERİMİ');
+console.log('CAELUS — UÇTAN UCA ÇOK ALANLI DÜNYA ETKİ MOTORU GÖSTERİMİ');
 console.log('======================================================================');
 console.log(`\n[${p.step1_QuestionAndEvent.titleTr}]`);
-console.log(`  Soru          : ${p.step1_QuestionAndEvent.questionTr}`);
-console.log(`  Karar Kesimi  : ${p.step1_QuestionAndEvent.decisionCutoffTimeIso}`);
+console.log(`  Soru          : ${wieResult.questionTr}`);
+console.log(`  Karar Kesimi  : ${wieResult.decisionCutoffTimeIso}`);
+console.log(`  Veri Kökeni   : ${wieResult.dataProvenanceLabelTr}`);
 
-console.log(`\n[${p.step2_SourcesAndTemporalGate.titleTr}]`);
-console.log(`  Kabul Edilen Kayıtlar          : ${p.step2_SourcesAndTemporalGate.acceptedRecordsCount}`);
-console.log(`  Engellenen Gelecek Sızıntısı   : ${p.step2_SourcesAndTemporalGate.blockedLookAheadCount} (Anti-Look-Ahead)`);
-console.log(`  Bilinmeyen / Eksik Veri Alanı  : ${p.step2_SourcesAndTemporalGate.missingDataGapsCount}`);
-console.log(`  Korunan Çelişkili İddia Sayısı : ${p.step2_SourcesAndTemporalGate.preservedConflictingClaimsCount}`);
+const st1 = wieResult.stage1_DataAndSources;
+console.log(`\n[1. VERİ KAYNAKLARI, ÇİFT ZAMANLI HAFIZA VE DOĞRULAMA KAPILARI]`);
+console.log(`  Kabul Edilen Kayıtlar          : ${st1.acceptedCount} (Doğrudan Gözlem=${st1.verifiedFactCount})`);
+console.log(`  Engellenen Gelecek/Geçersiz    : ${st1.blockedLookAheadOrInvalidDateCount} (Anti-Look-Ahead)`);
+console.log(`  Eksik Veri Boşlukları          : ${st1.missingDataGapCount}`);
+console.log(`  Korunan Çelişkili İddia Sayısı : ${st1.preservedConflictCount}`);
+console.log(`  Bağımsız Kaynak Tekilleştirme  : Ham=${st1.sourceDeduplicationReport.totalReportsCount} -> Bağımsız=${st1.sourceDeduplicationReport.independentPrimaryEvidenceCount}`);
 
-console.log(`\n[${p.step3_RelationsAndHypotheses.titleTr}]`);
-console.log(`  Dolaylı Etki Yolu   : ${p.step3_RelationsAndHypotheses.indirectPathSummary}`);
-console.log(`  Geçilen Alanlar     : ${p.step3_RelationsAndHypotheses.domainsTraversed.join(' -> ')}`);
-console.log(`  Bilgi Durumu        : ${p.step3_RelationsAndHypotheses.epistemicLabelTr}`);
-console.log(`  Sembolik Kapı Özeti : Doğrulanan Gözlem=${p.step3_RelationsAndHypotheses.symbolicVerificationSummary.verifiedFactPromotions}, Karantina Hipotez=${p.step3_RelationsAndHypotheses.symbolicVerificationSummary.quarantinedHypotheses}`);
-for (const alt of p.step3_RelationsAndHypotheses.alternativeExplanations) {
-  console.log(`  Alternatif Açıklama : [${alt.type}] ${alt.explanationTr}`);
+const st4 = wieResult.stage4_IndirectImpactPaths;
+console.log(`\n[2. ÇOK KATMANLI İLİŞKİ AĞI VE DOLAYLI ETKİ YOLLARI]`);
+console.log(`  Birincil Etki Yolu  : ${st4.primaryIndirectPath ? st4.primaryIndirectPath.nodeLabels.join(' -> ') : 'Yok'}`);
+console.log(`  Geçilen Alanlar     : ${st4.primaryIndirectPath ? st4.primaryIndirectPath.domainsTraversed.join(' -> ') : 'Yok'}`);
+console.log(`  Bütçe Durumu        : Adım=${st4.budgetReport.expansionStepsExecuted}, Döngü Önleme=${st4.budgetReport.detectedCyclesSkipped}`);
+
+const st5 = wieResult.stage5_CounterEvidenceAndAlternatives;
+console.log(`\n[3. KARŞIT KANIT, ÇELİŞKİLER VE ALTERNATİF AÇIKLAMALAR]`);
+console.log(`  Korunan Çelişkili İddia Sayısı : ${st5.conflicts.length}`);
+if (st5.primaryCritique) {
+  for (const alt of st5.primaryCritique.alternativeExplanations) {
+    console.log(`  Alternatif Açıklama : [${alt.plainBadgeTr}] (${alt.type}) ${alt.explanationTr}`);
+  }
 }
 
-console.log(`\n[${p.step4_Scenarios.titleTr}]`);
-console.log(`  1) ${p.step4_Scenarios.scenario1_HoardingNoCoord.title}:`);
-console.log(`     Akış Oranı=%${p.step4_Scenarios.scenario1_HoardingNoCoord.throughputPct}, Tepe Stres=%${p.step4_Scenarios.scenario1_HoardingNoCoord.peakStressPct}, Kesinti=${p.step4_Scenarios.scenario1_HoardingNoCoord.outageActive}`);
-console.log(`  2) ${p.step4_Scenarios.scenario2_CooperativeWithCoord.title}:`);
-console.log(`     Akış Oranı=%${p.step4_Scenarios.scenario2_CooperativeWithCoord.throughputPct}, Tepe Stres=%${p.step4_Scenarios.scenario2_CooperativeWithCoord.peakStressPct}, Kesinti=${p.step4_Scenarios.scenario2_CooperativeWithCoord.outageActive}`);
+const st6 = wieResult.stage6_MultiScenarioComparison;
+console.log(`\n[4. 3 SENARYOLU KARŞILAŞTIRMALI SİMÜLASYON (int64 x 1e6)]`);
+for (const sc of st6.scenarios) {
+  console.log(`  - ${sc.titleTr}: Akış=%${sc.throughputPct}, Tepe Stres=%${sc.peakStressPct}, Kesinti=${sc.outageActive}`);
+}
 
-console.log(`\n[${p.step5_ConclusionGroundsAndUncertainty.titleTr}]`);
-console.log(`  Koordinasyon Katkısı (ΔAkış) : +%${p.step5_ConclusionGroundsAndUncertainty.throughputDifferencePct}`);
-console.log(`  Topluluk Beklenen Akış       : %${p.step5_ConclusionGroundsAndUncertainty.bayesianEnsembleSummary.ensembleMean} (90% GA: [${p.step5_ConclusionGroundsAndUncertainty.bayesianEnsembleSummary.credibleInterval90.low}, ${p.step5_ConclusionGroundsAndUncertainty.bayesianEnsembleSummary.credibleInterval90.high}])`);
-console.log(`  Model Uyuşmazlığı (Std)      : ${p.step5_ConclusionGroundsAndUncertainty.bayesianEnsembleSummary.epistemicBetweenModelDisagreementStd}`);
-console.log(`  Kalibrasyon Durumu           : ${p.step5_ConclusionGroundsAndUncertainty.calibrationStatus}`);
-console.log(`  Denetim Zincir Başı (Audit)  : ${p.step5_ConclusionGroundsAndUncertainty.auditChainHeadHash}`);
-console.log(`  Veri Sürüm Özeti (Commit)    : ${p.step5_ConclusionGroundsAndUncertainty.dataVersionCommitHash}`);
-console.log(`  Deterministik Tekrar Kanıtı  : ${demoResult.deterministicReplayVerified} (SHA-256=${demoResult.run1Sha256.slice(0, 16)}...)`);
+const st8 = wieResult.stage8_ConclusionUncertaintyAndAudit;
+console.log(`\n[5. SONUÇ, BELİRSİZLİK, BASELINE KARŞILAŞTIRMASI VE DENETİM İZİ]`);
+console.log(`  Karar Durumu                 : ${wieResult.status}`);
+console.log(`  Koordinasyon Katkısı (S2-S1) : +%${st6.netCooperativeGainPct}`);
+console.log(`  Özel Senaryo Farkı (S3-S1)   : +%${st6.netCustomGainVsUnmitigatedPct}`);
+console.log(`  Topluluk Beklenen Akış       : %${st8.ensembleSummary.ensembleMean} (90% GA: [${st8.ensembleSummary.credibleInterval90.low}, ${st8.ensembleSummary.credibleInterval90.high}])`);
+console.log(`  Baseline MAE Karşılaştırması : ${st8.baselineEvaluation.methods.map(m => `${m.methodId}=${m.mae}`).join(', ')}`);
+console.log(`  Ajan Kapısı Denetimi         : YetkisizYazmaİzni=${st8.securityGateChecks.attemptedUnauthorizedWriteResult?.allowed}, YetkisizAğİzni=${st8.securityGateChecks.attemptedUnauthorizedNetworkResult?.allowed}`);
+console.log(`  Hafif İz Özeti (FNV-1a 32b)  : ${st8.auditTrail.finalChainHeadHash} (${st8.auditTrail.hashAlgorithm})`);
+console.log(`  İçerik Zincir Başı (SHA-256) : ${st8.auditTrail.finalSha256ChainHead}`);
+console.log(`  Deterministik Tekrar Kanıtı  : ${wieResult.deterministicReplayVerified} (SHA-256=${wieResult.run1Sha256.slice(0, 16)}...)`);
+console.log(`  Yetersiz Veri Dürüst Durdurma: ${wieInsufficientResult.status} (honestStopTriggered=${wieInsufficientResult.honestStopTriggered}, Rozet=${wieInsufficientResult.plainBadgeTr})`);
 if (nativeEngineVerification.executed) {
-  console.log(`  C++17 Yerel Motor Doğrulaması: Dal A=${nativeEngineVerification.branchAThroughputRatio}, Dal B=${nativeEngineVerification.branchBThroughputRatio}`);
+  console.log(`  C++17 Yerel Motor Doğrulaması: [${nativeEngineVerification.status}] (${nativeEngineVerification.binaryPath}) Dal A=${nativeEngineVerification.branchAThroughputRatio}, Dal B=${nativeEngineVerification.branchBThroughputRatio}`);
+} else {
+  console.log(`  C++17 Yerel Motor Doğrulaması: [${nativeEngineVerification.status}] (${nativeEngineVerification.binaryPath})`);
 }
 console.log('======================================================================');

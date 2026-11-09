@@ -42,6 +42,8 @@ jobs:
           --manifest-path caelus_wasm/Cargo.toml
 
       - name: Validate universal scenario compiler
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
         run: |
           node --check ui/scenario_compiler.js
           node --check ui/app.js

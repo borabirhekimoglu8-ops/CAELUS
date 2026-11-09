@@ -569,10 +569,83 @@ export function compileNeuralScenario(input, options = {}) {
   };
 
   const strongestRelations = positiveEdges.slice(0, 5).map((edge) => relationNarrative(edge, nodeByKey));
-  const eventValidTimeIso = String(options.eventValidTimeIso || "2026-01-01T00:00:00.000Z");
-  const systemLearnedTimeIso = String(options.systemLearnedTimeIso || eventValidTimeIso);
-  const decisionCutoffTimeIso = String(options.decisionCutoffTimeIso || systemLearnedTimeIso);
-  const lookAheadViolation = Date.parse(systemLearnedTimeIso) > Date.parse(decisionCutoffTimeIso);
+
+  function parseStrictIsoDate(val) {
+    if (val === null || val === undefined || typeof val === "boolean" || typeof val === "object") {
+      return { valid: false, missing: true, ms: NaN };
+    }
+    const str = String(val).trim();
+    if (!str) return { valid: false, missing: true, ms: NaN };
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:Z|([+-]\d{2}:?\d{2}))?)?$/.exec(str);
+    if (!m) return { valid: false, missing: false, ms: NaN };
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return { valid: false, missing: false, ms: NaN };
+    const calCheck = new Date(Date.UTC(year, month - 1, day));
+    if (calCheck.getUTCFullYear() !== year || calCheck.getUTCMonth() !== month - 1 || calCheck.getUTCDate() !== day) {
+      return { valid: false, missing: false, ms: NaN };
+    }
+    const ms = Date.parse(str);
+    if (!Number.isFinite(ms)) return { valid: false, missing: false, ms: NaN };
+    return { valid: true, missing: false, ms };
+  }
+
+  const hasExplicitBitemporalOpts = Boolean(
+    options && (
+      "eventValidTimeIso" in options ||
+      "systemLearnedTimeIso" in options ||
+      "decisionCutoffTimeIso" in options ||
+      "availableAtSourceTimeIso" in options ||
+      options.strictBitemporal === true
+    )
+  );
+
+  const eventValidTimeIso = hasExplicitBitemporalOpts
+    ? (options.eventValidTimeIso !== undefined && options.eventValidTimeIso !== null ? String(options.eventValidTimeIso) : "")
+    : "2026-01-01T00:00:00.000Z";
+  const systemLearnedTimeIso = hasExplicitBitemporalOpts
+    ? (options.systemLearnedTimeIso !== undefined && options.systemLearnedTimeIso !== null ? String(options.systemLearnedTimeIso) : "")
+    : eventValidTimeIso;
+  const decisionCutoffTimeIso = hasExplicitBitemporalOpts
+    ? (options.decisionCutoffTimeIso !== undefined && options.decisionCutoffTimeIso !== null ? String(options.decisionCutoffTimeIso) : "")
+    : systemLearnedTimeIso;
+  const availableAtSourceTimeIso = options && options.availableAtSourceTimeIso !== undefined && options.availableAtSourceTimeIso !== null
+    ? String(options.availableAtSourceTimeIso)
+    : null;
+
+  const validParsed = parseStrictIsoDate(eventValidTimeIso);
+  const learnedParsed = parseStrictIsoDate(systemLearnedTimeIso);
+  const cutoffParsed = parseStrictIsoDate(decisionCutoffTimeIso);
+  const sourcePubParsed = availableAtSourceTimeIso !== null ? parseStrictIsoDate(availableAtSourceTimeIso) : null;
+
+  let lookAheadViolation = false;
+  let dateValidationFailed = false;
+  let lookAheadStatus = "ALLOWED_NO_FUTURE_LEAKAGE";
+
+  if (!validParsed.valid || !learnedParsed.valid || !cutoffParsed.valid || (sourcePubParsed && !sourcePubParsed.valid)) {
+    lookAheadViolation = true;
+    dateValidationFailed = true;
+    if (validParsed.missing) lookAheadStatus = "BLOCKED_MISSING_EVENT_VALID_TIME";
+    else if (!validParsed.valid) lookAheadStatus = "BLOCKED_INVALID_EVENT_VALID_TIME";
+    else if (learnedParsed.missing) lookAheadStatus = "BLOCKED_MISSING_LEARNED_TIME";
+    else if (!learnedParsed.valid) lookAheadStatus = "BLOCKED_INVALID_LEARNED_TIME";
+    else if (cutoffParsed.missing) lookAheadStatus = "BLOCKED_MISSING_DECISION_CUTOFF_TIME";
+    else if (!cutoffParsed.valid) lookAheadStatus = "BLOCKED_INVALID_DECISION_CUTOFF_TIME";
+    else lookAheadStatus = "BLOCKED_INVALID_SOURCE_PUBLICATION_TIME";
+  } else if (validParsed.ms > cutoffParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_VALID_AFTER_DECISION_CUTOFF";
+  } else if (learnedParsed.ms > cutoffParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_LEARNED_AFTER_DECISION_CUTOFF";
+  } else if (sourcePubParsed && sourcePubParsed.ms > cutoffParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_SOURCE_PUBLISHED_AFTER_DECISION_CUTOFF";
+  } else if (validParsed.ms > learnedParsed.ms) {
+    lookAheadViolation = true;
+    lookAheadStatus = "BLOCKED_TEMPORAL_PARADOX_VALID_AFTER_LEARNED";
+  }
 
   const epistemicDiscipline = {
     schema: "caelus.ncm2.epistemic_discipline.v1",
@@ -589,7 +662,7 @@ export function compileNeuralScenario(input, options = {}) {
       conditionalCausalConclusions: deep.counterfactuals.length,
       simulationResults: deep.horizons.length,
       counterEvidenceOrContradictions: situation.negatedEvents.length,
-      unknownsOrInsufficientData: deep.unknowns.length,
+      unknownsOrInsufficientData: deep.unknowns.length + (dateValidationFailed ? 1 : 0),
       correctedOrExpiredRecords: Number(options.correctedRecordCount || 0),
     },
     fallbackEdgesCount: semanticEdges.filter((e) => e.fallback).length,
@@ -600,8 +673,11 @@ export function compileNeuralScenario(input, options = {}) {
     eventValidTimeIso,
     systemLearnedTimeIso,
     decisionCutoffTimeIso,
+    availableAtSourceTimeIso,
+    dateValidationFailed,
     lookAheadBlocked: lookAheadViolation,
-    lookAheadStatus: lookAheadViolation ? "BLOCKED_LEARNED_AFTER_DECISION_CUTOFF" : "ALLOWED_NO_FUTURE_LEAKAGE",
+    canEnterDeterministicCoreAsFact: false,
+    lookAheadStatus,
   };
 
   const observerProposal = {

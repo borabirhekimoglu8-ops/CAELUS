@@ -131,3 +131,66 @@ test("AŞAMA 2: 9 epistemik bilgi kategorisi, fallback hipotez ayrımı, kalibre
   assert.equal(result.analysis.bitemporalContext.lookAheadBlocked, true);
   assert.equal(result.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_LEARNED_AFTER_DECISION_CUTOFF");
 });
+
+test("AŞAMA 1 (6.1): NCM-2 tarih kapısı geçersiz, eksik, takvim taşmalı ve gelecek tarihli girdilerde fail-closed çalışır", () => {
+  const prompt = "Liman gümrük kapısında 36 saatlik fırtına ve enerji kesintisi soğuk zincir ilaç sevkiyatını geciktirirse";
+
+  // 1. Geçersiz tarih dizesi (NaN) -> fail-closed
+  const badValid = compileNeuralScenario(prompt, {
+    eventValidTimeIso: "not-a-valid-date",
+    systemLearnedTimeIso: "2026-03-10T09:00:00.000Z",
+    decisionCutoffTimeIso: "2026-03-10T10:00:00.000Z"
+  });
+  assert.equal(badValid.analysis.bitemporalContext.dateValidationFailed, true);
+  assert.equal(badValid.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(badValid.analysis.bitemporalContext.canEnterDeterministicCoreAsFact, false);
+  assert.equal(badValid.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_INVALID_EVENT_VALID_TIME");
+
+  // 2. Takvim taşması (2026-02-30) -> fail-closed
+  const rolloverLearned = compileNeuralScenario(prompt, {
+    eventValidTimeIso: "2026-02-28T08:00:00.000Z",
+    systemLearnedTimeIso: "2026-02-30T09:00:00.000Z",
+    decisionCutoffTimeIso: "2026-03-10T10:00:00.000Z"
+  });
+  assert.equal(rolloverLearned.analysis.bitemporalContext.dateValidationFailed, true);
+  assert.equal(rolloverLearned.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(rolloverLearned.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_INVALID_LEARNED_TIME");
+
+  // 3. Boş string tarih -> fail-closed
+  const emptyCutoff = compileNeuralScenario(prompt, {
+    eventValidTimeIso: "2026-03-10T08:00:00.000Z",
+    systemLearnedTimeIso: "2026-03-10T09:00:00.000Z",
+    decisionCutoffTimeIso: "   "
+  });
+  assert.equal(emptyCutoff.analysis.bitemporalContext.dateValidationFailed, true);
+  assert.equal(emptyCutoff.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(emptyCutoff.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_MISSING_DECISION_CUTOFF_TIME");
+
+  // 4. Gelecekteki olay zamanı (validTime > decisionCutoff) -> fail-closed
+  const futureValid = compileNeuralScenario(prompt, {
+    eventValidTimeIso: "2026-03-10T12:00:00.000Z",
+    systemLearnedTimeIso: "2026-03-10T12:05:00.000Z",
+    decisionCutoffTimeIso: "2026-03-10T10:00:00.000Z"
+  });
+  assert.equal(futureValid.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(futureValid.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_VALID_AFTER_DECISION_CUTOFF");
+
+  // 5. Kaynak yayım zamanı karar kesiminden sonra -> fail-closed
+  const futureSourcePub = compileNeuralScenario(prompt, {
+    eventValidTimeIso: "2026-03-10T08:00:00.000Z",
+    systemLearnedTimeIso: "2026-03-10T09:00:00.000Z",
+    availableAtSourceTimeIso: "2026-03-11T08:00:00.000Z",
+    decisionCutoffTimeIso: "2026-03-10T10:00:00.000Z"
+  });
+  assert.equal(futureSourcePub.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(futureSourcePub.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_SOURCE_PUBLISHED_AFTER_DECISION_CUTOFF");
+
+  // 6. Zamansal paradoks (learnedTime < validTime, non-forecast) -> fail-closed
+  const paradox = compileNeuralScenario(prompt, {
+    eventValidTimeIso: "2026-03-10T09:30:00.000Z",
+    systemLearnedTimeIso: "2026-03-10T08:00:00.000Z",
+    decisionCutoffTimeIso: "2026-03-10T10:00:00.000Z"
+  });
+  assert.equal(paradox.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(paradox.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_TEMPORAL_PARADOX_VALID_AFTER_LEARNED");
+});
