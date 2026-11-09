@@ -5527,10 +5527,544 @@ body.theme-light .linear-setting-row {
     }
     /* ═══ SON: CAELUS HOLOGRAFİK ATMOSFER ═══ */
 
+    /* ═══════════════════════════════════════════════════════════════════════════
+       CAELUS GÖRSEL EVRİM VE MEKÂNSAL ARAYÜZ SİSTEMİ (BAŞLIKSIZ SAHNE · YAŞAYAN DÜNYA)
+       Sabit üst bar ve sabit alt dock tamamen kaldırıldı; açık sarmal mekânsal pusula,
+       isteğe bağlı Zaman Merceği, 3 kademeli Performans Modu ve Bağlamsal Dayanak eklendi.
+       ═══════════════════════════════════════════════════════════════════════════ */
+    :root {
+      --caelus-bg-void: #040812;
+      --caelus-bg-deep: #07101F;
+      --caelus-surface-glass: rgba(10, 19, 36, 0.78);
+      --caelus-surface-elevated: rgba(14, 26, 48, 0.88);
+      --caelus-border-subtle: rgba(136, 212, 255, 0.16);
+      --caelus-border-focus: rgba(136, 212, 255, 0.44);
+      --caelus-text-primary: #F3F6FA;
+      --caelus-text-secondary: #B7C5D9;
+      --caelus-text-muted: #7E90AA;
+      --caelus-accent-ice: #88D4FF;
+      --caelus-accent-gold: #E6C387;
+      --caelus-state-observed: #4ADE80;
+      --caelus-state-claim: #60A5FA;
+      --caelus-state-hypothesis: #C084FC;
+      --caelus-state-uncertainty: #FBBF24;
+      --caelus-state-risk: #F87171;
+      --caelus-state-simulation: #38BDF8;
+    }
+
+    /* Sabit üst bar ve sabit mobil alt dock kaldırıldı: sahne tam ekran (100dvh) */
+    .top-header,
+    #caelus-mobile-bottom-nav {
+      display: none !important;
+    }
+
+    body[data-quiet-view="dunyam"] .page-container {
+      max-width: 100% !important;
+      width: 100% !important;
+      height: 100dvh !important;
+      min-height: 100vh !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      position: relative;
+    }
+
+    body:not([data-quiet-view="dunyam"]) .page-container {
+      padding-top: 74px !important;
+      padding-bottom: 36px !important;
+    }
+
+    #kesfet-cytoscape-panel,
+    #senaryolar-guided-workspace,
+    #hafiza-clean-workspace,
+    #baglantilar-clean-workspace {
+      scroll-margin-top: 74px !important;
+    }
+
+    .dunyam-hub {
+      height: 100dvh !important;
+      min-height: 100vh !important;
+    }
+
+    /* ── Sol Üst CAELUS Açık Sarmal Mekânsal Pusulası (#caelus-spatial-compass) ── */
+    .caelus-spatial-compass {
+      position: fixed;
+      top: max(14px, env(safe-area-inset-top, 14px));
+      left: max(16px, env(safe-area-inset-left, 16px));
+      z-index: 1400;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .caelus-compass-capsule-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+      flex-wrap: nowrap;
+    }
+
+    .caelus-compass-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      min-width: 44px;
+      padding: 5px 15px 5px 10px;
+      border-radius: 999px;
+      background: rgba(6, 13, 28, 0.84);
+      border: 1px solid rgba(136, 212, 255, 0.34);
+      box-shadow: 0 12px 32px rgba(2, 6, 16, 0.65), 0 0 22px rgba(136, 212, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(18px) saturate(150%);
+      -webkit-backdrop-filter: blur(18px) saturate(150%);
+      color: var(--caelus-text-primary);
+      cursor: pointer;
+      user-select: none;
+      transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .caelus-compass-trigger:hover {
+        border-color: rgba(230, 195, 135, 0.68);
+        box-shadow: 0 14px 36px rgba(2, 6, 16, 0.72), 0 0 26px rgba(136, 212, 255, 0.26);
+      }
+    }
+
+    .caelus-compass-trigger:active {
+      transform: scale(0.97);
+    }
+
+    .caelus-compass-spiral-svg {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+      filter: drop-shadow(0 0 8px rgba(136, 212, 255, 0.42));
+    }
+
+    .caelus-compass-trigger[aria-expanded="true"] .caelus-compass-spiral-svg {
+      transform: rotate(45deg) scale(1.06);
+    }
+
+    .caelus-compass-wordmark {
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.24em;
+      color: #F5ECD7;
+      text-transform: uppercase;
+    }
+
+    .caelus-compass-sep {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--caelus-accent-gold);
+      opacity: 0.85;
+    }
+
+    .caelus-compass-active-domain {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--caelus-accent-ice);
+      white-space: nowrap;
+    }
+
+    .caelus-compass-kbd {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(136, 212, 255, 0.12);
+      border: 1px solid rgba(136, 212, 255, 0.24);
+      color: var(--caelus-text-secondary);
+    }
+
+    .caelus-compass-return-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: rgba(14, 28, 54, 0.86);
+      border: 1px solid rgba(230, 195, 135, 0.52);
+      color: #F5ECD7;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48);
+      transition: transform 150ms ease, border-color 150ms ease;
+    }
+
+    body[data-quiet-view="dunyam"] .caelus-compass-return-btn {
+      display: none !important;
+    }
+
+    /* ── Açılır Mekânsal Pusula Menüsü (#caelus-compass-popover) ── */
+    .caelus-compass-popover {
+      pointer-events: auto;
+      width: min(440px, calc(100vw - 32px));
+      background: rgba(6, 13, 28, 0.94);
+      border: 1px solid rgba(136, 212, 255, 0.34);
+      border-top: 1px solid rgba(230, 195, 135, 0.56);
+      border-radius: 20px;
+      padding: 14px;
+      box-shadow: 0 26px 64px rgba(0, 0, 0, 0.78), 0 0 36px rgba(136, 212, 255, 0.16);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      transform-origin: top left;
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .caelus-compass-popover.hidden {
+      display: none !important;
+    }
+
+    .caelus-compass-domain-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+
+    .caelus-compass-domain-grid .quiet-nav-tab {
+      width: 100%;
+      justify-content: flex-start;
+      padding: 10px 14px;
+      border-radius: 13px;
+      border: 1px solid rgba(136, 212, 255, 0.14);
+      background: rgba(11, 22, 42, 0.65);
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 46px;
+    }
+
+    .caelus-compass-domain-grid .quiet-nav-tab .compass-domain-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .caelus-compass-domain-grid .quiet-nav-tab .compass-domain-title {
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--caelus-text-primary);
+    }
+
+    .caelus-compass-domain-grid .quiet-nav-tab .compass-domain-desc {
+      font-size: 0.73rem;
+      color: var(--caelus-text-secondary);
+      white-space: normal;
+      line-height: 1.3;
+    }
+
+    /* İlk Açılış Keşfedilebilirlik İpucu (#caelus-spatial-onboarding-hint) */
+    .caelus-spatial-onboarding-hint {
+      pointer-events: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: min(420px, calc(100vw - 32px));
+      padding: 6px 12px;
+      border-radius: 12px;
+      background: rgba(8, 18, 36, 0.84);
+      border: 1px solid rgba(230, 195, 135, 0.42);
+      color: var(--caelus-text-secondary);
+      font-size: 0.74rem;
+      line-height: 1.35;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+    }
+
+    /* ── Sağ Üst Zaman Merceği, Performans Modu ve Dayanak Kapsülü (#caelus-stage-top-right-pod) ── */
+    .caelus-stage-top-right-pod {
+      position: fixed;
+      top: max(14px, env(safe-area-inset-top, 14px));
+      right: max(16px, env(safe-area-inset-right, 16px));
+      z-index: 1380;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      pointer-events: none;
+    }
+
+    .caelus-stage-top-right-pod > * {
+      pointer-events: auto;
+    }
+
+    .caelus-spatial-lens-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 42px;
+      padding: 5px 13px;
+      border-radius: 999px;
+      background: rgba(6, 13, 28, 0.84);
+      border: 1px solid rgba(136, 212, 255, 0.30);
+      color: var(--caelus-text-primary);
+      font-size: 0.77rem;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52);
+      transition: border-color 150ms ease, transform 150ms ease;
+    }
+
+    .caelus-spatial-lens-pill[aria-expanded="true"] {
+      border-color: var(--caelus-accent-gold);
+      box-shadow: 0 0 22px rgba(230, 195, 135, 0.28);
+    }
+
+    .caelus-perf-mode-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      min-height: 42px;
+      padding: 3px;
+      border-radius: 999px;
+      background: rgba(6, 13, 28, 0.84);
+      border: 1px solid rgba(136, 212, 255, 0.28);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52);
+    }
+
+    .caelus-perf-mode-btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--caelus-text-secondary);
+      font-size: 0.73rem;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      min-height: 34px;
+      transition: all 150ms ease;
+    }
+
+    .caelus-perf-mode-btn.active {
+      background: linear-gradient(135deg, rgba(136, 212, 255, 0.26) 0%, rgba(230, 195, 135, 0.20) 100%);
+      border-color: rgba(230, 195, 135, 0.58);
+      color: #FFFFFF;
+    }
+
+    /* ── Yüzen Çift Zamanlı Zaman Merceği (#caelus-time-lens-popover) ve Dayanak Katmanı (#caelus-provenance-drawer) ── */
+    .caelus-floating-spatial-drawer {
+      position: fixed;
+      top: calc(max(14px, env(safe-area-inset-top, 14px)) + 50px);
+      right: max(16px, env(safe-area-inset-right, 16px));
+      width: min(460px, calc(100vw - 32px));
+      max-height: calc(100dvh - 84px);
+      overflow-y: auto;
+      z-index: 1390;
+      background: rgba(6, 13, 28, 0.94);
+      border: 1px solid rgba(136, 212, 255, 0.34);
+      border-top: 1px solid rgba(230, 195, 135, 0.58);
+      border-radius: 20px;
+      padding: 15px 16px;
+      box-shadow: 0 26px 64px rgba(0, 0, 0, 0.78), 0 0 34px rgba(136, 212, 255, 0.16);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      color: var(--caelus-text-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transform-origin: top right;
+    }
+
+    /* ── Dünyam Sahnesi Düzenlemeleri: Çakışma Yok, Seçim Öncesi Açık Kart Yok ── */
+    .dunyam-hero-top {
+      position: absolute !important;
+      top: 72px !important;
+      left: 16px !important;
+      width: min(316px, calc(100vw - 32px)) !important;
+      z-index: 14 !important;
+    }
+
+    .dunyam-hero-top.is-whisper-collapsed .dunyam-status-sentence,
+    .dunyam-hero-top.is-whisper-collapsed #dunyam-onboarding-subtitle,
+    .dunyam-hero-top.is-whisper-collapsed .dunyam-badge-row,
+    .dunyam-hero-top.is-whisper-collapsed .dunyam-top-controls {
+      display: none !important;
+    }
+
+    /* Seçili Konum / Varlık İnceleyici (#dunyam-stage-callout-card): Sağ Rayda Bağlamsal Katman (Merkezi Asla Kapatmaz) */
+    body:not([data-theme="light"]) .dunyam-stage-callout,
+    .dunyam-stage-callout {
+      position: absolute !important;
+      top: 68px !important;
+      right: 18px !important;
+      left: auto !important;
+      width: min(352px, calc(100vw - 32px)) !important;
+      max-height: calc(100dvh - 148px) !important;
+      overflow-y: auto !important;
+      z-index: 28 !important;
+    }
+
+    .dunyam-stage-callout.is-collapsed {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateX(18px) scale(0.96) !important;
+      visibility: hidden !important;
+    }
+
+    .dunyam-callout-reopen-pill {
+      position: absolute !important;
+      top: 68px !important;
+      right: 18px !important;
+      z-index: 22 !important;
+    }
+
+    /* Üst Merkez Hızlı Keşif ve Ölçek Şeritleri: Dar Ekranlarda ve Mobilde Küreyi Bölmez */
+    .dunyam-stage-quick-layers {
+      top: auto !important;
+      bottom: 66px !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+      max-width: calc(100vw - 36px) !important;
+      z-index: 16 !important;
+    }
+
+    .dunyam-cosmoscope-strip {
+      top: 16px !important;
+      left: 318px !important;
+      transform: none !important;
+      z-index: 16 !important;
+    }
+
+    @media (max-width: 1480px) {
+      .dunyam-cosmoscope-strip {
+        display: none !important;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .caelus-compass-wordmark,
+      .caelus-compass-kbd,
+      .caelus-perf-mode-group,
+      #btn-stage-time-lens > span:nth-child(2) {
+        display: none !important;
+      }
+
+      .caelus-spatial-lens-pill {
+        min-height: 38px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+      }
+
+      .dunyam-hero-top {
+        top: 66px !important;
+        left: 12px !important;
+        right: 12px !important;
+        width: calc(100vw - 24px) !important;
+      }
+
+      .dunyam-hero-identity {
+        padding: 10px 12px !important;
+      }
+
+      .dunyam-world-title {
+        font-size: 1.02rem !important;
+      }
+
+      .dunyam-status-sentence,
+      #dunyam-onboarding-subtitle {
+        display: none !important;
+      }
+
+      /* Mobilde 3B Dünya Küresi tam ekran sahne olarak kalır */
+      .dunyam-spatial-arena,
+      .dunyam-hud-center,
+      #dunyam-webgl-canvas,
+      #dunyam-cesium-container,
+      #dunyam-wind-canvas,
+      #dunyam-hero-canvas,
+      .dunyam-three-stage-container {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+
+      .dunyam-stage-quick-layers {
+        bottom: 60px !important;
+        left: 10px !important;
+        right: 10px !important;
+        transform: none !important;
+        max-width: calc(100vw - 20px) !important;
+        justify-content: flex-start !important;
+      }
+
+      .dunyam-stage-bottom-bar {
+        position: absolute !important;
+        bottom: 10px !important;
+        left: 10px !important;
+        right: 10px !important;
+        z-index: 20 !important;
+      }
+
+      .dunyam-stage-entity-strip {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        gap: 6px !important;
+        padding-bottom: 2px !important;
+        scrollbar-width: none;
+      }
+
+      .dunyam-floating-query-bar,
+      .dunyam-ondemand-bar {
+        display: none !important;
+      }
+
+      /* Mobilde seçili varlık kartı alt çekmece (Bottom Sheet) olarak açılır */
+      body:not([data-theme="light"]) .dunyam-stage-callout,
+      .dunyam-stage-callout {
+        position: fixed !important;
+        top: auto !important;
+        bottom: 12px !important;
+        left: 12px !important;
+        right: 12px !important;
+        width: calc(100vw - 24px) !important;
+        max-height: 56dvh !important;
+        z-index: 1360 !important;
+      }
+
+      .dunyam-callout-reopen-pill {
+        position: fixed !important;
+        top: auto !important;
+        bottom: 98px !important;
+        right: 14px !important;
+        width: auto !important;
+        z-index: 30 !important;
+      }
+    }
+
   </style>
 </head>
 
-<body data-quiet-view="dunyam">
+<body data-quiet-view="dunyam" data-caelus-perf-mode="FULL">
 
   <div class="workbench-shell">
 
@@ -5563,60 +6097,204 @@ body.theme-light .linear-setting-row {
     </svg>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
-       SESSİZ HOLOGRAFİ ÜST BAŞLIK: CAELUS AÇIK SPİRAL SEMBOLÜ + C A E L U S WORDMARK
-       (02_Sembol_Form_Referansi.png ile birebir uyumlu)
+       BAŞLIKSIZ MEKÂNSAL GEZİNME SİSTEMİ: CAELUS AÇIK SARMAL PUSULA (SOL ÜST)
+       Sabit yatay üst bar kaldırıldı. Kullanıcı açık sarmal pusulaya tıklayarak,
+       dokunarak veya Alt+M ile 5 ana mekânsal katmanı açar; seçim sonrası kapanır.
        ═══════════════════════════════════════════════════════════════════════ -->
-    <header class="top-header">
-      <!-- Paper Shaders (@paper-design/shaders v0.0.82) Dekoratif Kozmik Marka Işığı (Veri veya Fiziksel Simülasyon Değildir) -->
-      <div id="caelus-paper-shader-host" class="caelus-paper-shader-host" aria-hidden="true" title="Dekoratif Marka Işığı (Paper Shaders v0.0.82 · Veri Değildir)"></div>
+    <div class="caelus-spatial-compass" id="caelus-spatial-compass" role="navigation" aria-label="CAELUS Mekânsal Gezgin Pusulası">
+      <div id="caelus-paper-shader-host" class="caelus-paper-shader-host hidden" aria-hidden="true"></div>
+      <div class="caelus-compass-capsule-row">
+        <button type="button" class="caelus-compass-trigger" id="caelus-compass-trigger"
+          aria-expanded="false" aria-haspopup="dialog" aria-controls="caelus-compass-popover"
+          title="CAELUS Mekânsal Katman Pusulasını Aç veya Kapat (Kısayol: Alt+M)">
+          <svg class="caelus-compass-spiral-svg" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M49 23C45.5 14 36 9.5 26 11C14.5 12.8 7.5 23.5 9.5 35C11.5 46.5 22.8 54 35 51.8C44.5 50 51.5 42.5 53 33.5" stroke="#88D4FF" stroke-width="2.4" stroke-linecap="round"/>
+            <path d="M42.5 25.5C39.8 19.5 33 16.5 26.2 18.2C19 20 14.8 27.5 16.8 34.8C18.8 42 26.5 46.2 34 44C40 42.2 44.2 37 45 31" stroke="#E6C387" stroke-width="1.9" stroke-linecap="round"/>
+            <path d="M35.8 28.5C34 25.2 29.8 23.8 26.2 25.5C22.5 27.2 21 31.8 23 35.5C25 39.2 29.8 40.5 33.5 38.2" stroke="#88D4FF" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="30" cy="32" r="2.6" fill="#E6C387"/>
+          </svg>
+          <span class="caelus-compass-wordmark">CAELUS</span>
+          <span class="caelus-compass-sep" aria-hidden="true"></span>
+          <span class="caelus-compass-active-domain" id="caelus-compass-active-domain">1. Dünyam</span>
+          <span class="caelus-compass-kbd" aria-hidden="true">Alt+M</span>
+        </button>
 
-      <div class="brand-group">
-        <div class="caelus-logo-frame" id="hdr-logo-home-btn" role="button" tabindex="0"
-          aria-label="CAELUS Ana Ekran (Dünyam)" title="Dünyam görünümüne dön">
-          <img src="/assets/caelus-logo.png" alt="CAELUS Açık Spiral Sembolü" class="caelus-logo-img">
-          <span class="caelus-brand-wordmark">CAELUS</span>
+        <button type="button" class="caelus-compass-return-btn" id="hdr-logo-home-btn"
+          title="Ana 3B Dünya Sahnesine (Dünyam) dön">
+          <span aria-hidden="true">←</span>
+          <span>Sahneye Dön</span>
+        </button>
+      </div>
+
+      <!-- İlk Açılış Keşfedilebilirlik İpucu (Kapatılabilir, Sahneyi Bölmez) -->
+      <div class="caelus-spatial-onboarding-hint" id="caelus-spatial-onboarding-hint" role="status">
+        <span><strong>Mekânsal Sahne:</strong> Sol üstteki açık sarmal pusula (<code>Alt+M</code>) ile 5 katman arasında geçin; kürede bir olaya tıklayarak bağlamsal inceleyiciyi açın.</span>
+        <button type="button" class="dunyam-callout-close-btn" id="btn-dismiss-spatial-onboarding" aria-label="Yönlendirme ipucunu gizle" title="Gizle">✕</button>
+      </div>
+
+      <!-- Açılır Mekânsal Katman Menüsü (Seçim Yapıldığında Otomatik Kapanır) -->
+      <div class="caelus-compass-popover hidden" id="caelus-compass-popover" role="dialog" aria-modal="false" aria-label="CAELUS 5 Mekânsal Katman Seçici">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:6px; border-bottom:1px solid rgba(136,212,255,0.16);">
+          <div>
+            <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#E6C387;">MEKÂNSAL KATMAN GEZGİNİ</div>
+            <strong style="font-size:0.90rem; color:var(--caelus-text-primary);">Hangi boyutu incelemek istiyorsunuz?</strong>
+          </div>
+          <button type="button" class="dunyam-callout-close-btn" id="btn-close-compass-popover" aria-label="Mekânsal pusulayı kapat" title="Kapat (ESC)">✕</button>
+        </div>
+
+        <nav class="quiet-nav-bar caelus-compass-domain-grid" id="quiet-main-nav" role="tablist" aria-label="CAELUS Ana Gezinme">
+          <button type="button" class="quiet-nav-tab active" role="tab" aria-selected="true" data-quiet-nav="dunyam" id="nav-tab-dunyam">
+            <i data-lucide="globe" aria-hidden="true"></i>
+            <span class="compass-domain-meta">
+              <span class="compass-domain-title" data-i18n="nav.dunyam">1. Dünyam (Ana Sahne)</span>
+              <span class="compass-domain-desc">Başlıksız 3B yaşayan dünya küresi, coğrafi olaylar ve bağlamsal varlık inceleyici</span>
+            </span>
+          </button>
+          <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="kesfet" id="nav-tab-kesfet">
+            <i data-lucide="compass" aria-hidden="true"></i>
+            <span class="compass-domain-meta">
+              <span class="compass-domain-title" data-i18n="nav.kesfet">2. İlişkiler ve Keşfet</span>
+              <span class="compass-domain-desc">Odaklanabilir 1–3 derece etki ağı, Neden gösteriliyor? ve bilgi değeri (VoI)</span>
+            </span>
+          </button>
+          <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="hafiza" id="nav-tab-hafiza">
+            <i data-lucide="history" aria-hidden="true"></i>
+            <span class="compass-domain-meta">
+              <span class="compass-domain-title" data-i18n="nav.hafiza">3. Zaman ve Hafıza</span>
+              <span class="compass-domain-desc">Çift zamanlı (bitemporal) kesit, olay/öğrenilme zamanı ve düşüncenin değişimi</span>
+            </span>
+          </button>
+          <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="senaryolar" id="nav-tab-senaryolar">
+            <i data-lucide="git-compare-arrows" aria-hidden="true"></i>
+            <span class="compass-domain-meta">
+              <span class="compass-domain-title" data-i18n="nav.senaryolar">4. Gelecekler ve Senaryolar</span>
+              <span class="compass-domain-desc">Baz durum, müdahale ve birleşik stres geleceklerinin 6 soruyla karşılaştırması</span>
+            </span>
+          </button>
+          <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="baglantilar" id="nav-tab-baglantilar">
+            <i data-lucide="cable" aria-hidden="true"></i>
+            <span class="compass-domain-meta">
+              <span class="compass-domain-title" data-i18n="nav.baglantilar">5. Kaynaklar ve Dayanak</span>
+              <span class="compass-domain-desc">Kanıt zinciri, açık veri kaynakları, karşıt kanıt, eksik veri ve ticari haklar</span>
+            </span>
+          </button>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%;">
+            <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="kozmos" id="nav-tab-kozmos" style="min-height:38px; padding:6px 10px;">
+              <i data-lucide="orbit" aria-hidden="true"></i>
+              <span class="compass-domain-title" data-i18n="nav.kozmos" style="font-size:0.79rem;">Kozmos (J2000.0)</span>
+            </button>
+            <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="ayarlar" id="nav-tab-ayarlar" style="min-height:38px; padding:6px 10px;">
+              <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
+              <span class="compass-domain-title" data-i18n="nav.ayarlar" style="font-size:0.79rem;">Görünüm &amp; Ayarlar</span>
+            </button>
+          </div>
+        </nav>
+
+        <div class="header-controls" style="padding-top:8px; border-top:1px solid rgba(136,212,255,0.16); justify-content:space-between;">
+          <span id="live-pill" class="engine-pill" title="Hesaplama motoru bağlantı durumu" style="font-size:0.74rem;">● Hesaplama Motoru</span>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <select id="quiet-lang-select" class="select-enterprise"
+              style="padding:4px 8px; font-size:0.76rem; border-radius:999px;" aria-label="Arayüz Dili"
+              title="Arayüz Dili">
+              <option value="tr-TR">TR · Türkçe</option>
+              <option value="en-US">EN · English</option>
+              <option value="ar-SA">AR · العربية (RTL)</option>
+              <option value="he-IL">HE · עברית (RTL)</option>
+            </select>
+            <button class="btn btn-sm" id="btn-export-dossier" type="button" style="border-radius:999px; font-size:0.75rem; padding:4px 10px;"
+              title="Senaryo ve karar raporunu aç">
+              ▤ Rapor
+            </button>
+          </div>
+          <span id="hdr-connector-pill" class="kpi-badge hidden">VERİ BAĞLANTISI: HAZIR (SALT OKUNUR)</span>
+          <span id="hdr-gpu-eco-pill" class="kpi-badge ok hidden">Intel UHD Eko · DPR 1.0</span>
+          <button class="btn btn-sm hidden" id="btn-header-3d-toggle" type="button">Görünüm: 3D Sahne</button>
+          <button class="btn btn-sm hidden" id="btn-open-appearance" type="button">Görünüm &amp; Kişiselleştirme</button>
+          <button class="btn btn-sm hidden" id="btn-theme-toggle" type="button">Tema</button>
         </div>
       </div>
+    </div>
 
-      <nav class="quiet-nav-bar" id="quiet-main-nav" role="tablist" aria-label="CAELUS Ana Gezinme">
-        <button type="button" class="quiet-nav-tab active" role="tab" aria-selected="true" data-quiet-nav="dunyam"
-          id="nav-tab-dunyam"><i data-lucide="globe" aria-hidden="true"></i><span data-i18n="nav.dunyam">Dünyam</span></button>
-        <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="kesfet"
-          id="nav-tab-kesfet"><i data-lucide="compass" aria-hidden="true"></i><span data-i18n="nav.kesfet">Keşfet</span></button>
-        <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="kozmos"
-          id="nav-tab-kozmos"><i data-lucide="orbit" aria-hidden="true"></i><span data-i18n="nav.kozmos">Kozmos</span></button>
-        <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="senaryolar"
-          id="nav-tab-senaryolar"><i data-lucide="git-compare-arrows" aria-hidden="true"></i><span data-i18n="nav.senaryolar">Senaryolar</span></button>
-        <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="hafiza"
-          id="nav-tab-hafiza"><i data-lucide="history" aria-hidden="true"></i><span data-i18n="nav.hafiza">Hafıza</span></button>
-        <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="baglantilar"
-          id="nav-tab-baglantilar"><i data-lucide="cable" aria-hidden="true"></i><span data-i18n="nav.baglantilar">Bağlantılar</span></button>
-        <button type="button" class="quiet-nav-tab" role="tab" aria-selected="false" data-quiet-nav="ayarlar"
-          id="nav-tab-ayarlar"><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span data-i18n="nav.ayarlar">Ayarlar</span></button>
-      </nav>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+       SAĞ ÜST MEKÂNSAL MERCEK VE PERFORMANS KAPSÜLÜ (ZAMAN MERCEĞİ · PERFORMANS MODU · DAYANAK)
+       ═══════════════════════════════════════════════════════════════════════ -->
+    <div class="caelus-stage-top-right-pod" id="caelus-stage-top-right-pod" role="region" aria-label="Mekânsal Zaman Merceği, Performans Modu ve Dayanak Kontrolleri">
+      <button type="button" class="caelus-spatial-lens-pill" id="btn-stage-time-lens"
+        aria-expanded="false" aria-controls="caelus-time-lens-popover"
+        title="Çift zamanlı (Bitemporal) Zaman Merceğini aç: geçmiş bilgi kesiti ve düşüncenin değişimi">
+        <span style="color:#E6C387;" aria-hidden="true">⏱</span>
+        <span>Zaman Merceği:</span>
+        <strong id="stage-time-lens-active-badge" style="color:#88D4FF;">17 Mar 2021 (v2)</strong>
+      </button>
 
-      <div class="header-controls">
-        <span id="live-pill" class="engine-pill" title="Hesaplama motoru bağlantı durumu">● Hesaplama Motoru</span>
-        <select id="quiet-lang-select" class="select-enterprise"
-          style="padding:5px 10px; font-size:0.82rem; border-radius:999px;" aria-label="Arayüz Dili"
-          title="Arayüz Dili">
-          <option value="tr-TR">TR · Türkçe</option>
-          <option value="en-US">EN · English</option>
-          <option value="ar-SA">AR · العربية (RTL)</option>
-          <option value="he-IL">HE · עברית (RTL)</option>
-        </select>
-        <button class="btn btn-sm" id="btn-export-dossier" type="button" style="border-radius:999px;"
-          title="Senaryo ve karar raporunu aç">
-          ▤ Rapor
-        </button>
-        <!-- Mevcut işlevlerle tam uyumluluk için korunan ikincil üst çubuk öğeleri -->
-        <span id="hdr-connector-pill" class="kpi-badge hidden">VERİ BAĞLANTISI: HAZIR (SALT OKUNUR)</span>
-        <span id="hdr-gpu-eco-pill" class="kpi-badge ok hidden">Intel UHD Eko · DPR 1.0</span>
-        <button class="btn btn-sm hidden" id="btn-header-3d-toggle" type="button">Görünüm: 3D Sahne</button>
-        <button class="btn btn-sm hidden" id="btn-open-appearance" type="button">Görünüm &amp; Kişiselleştirme</button>
-        <button class="btn btn-sm hidden" id="btn-theme-toggle" type="button">Tema</button>
+      <div class="caelus-perf-mode-group" id="caelus-perf-mode-switcher" role="group" aria-label="Sahne Performans Modu Seçici">
+        <button type="button" class="caelus-perf-mode-btn active" data-perf-mode="FULL" title="Tam Sahne: 3B Dünya + Atmosferik Katmanlar">Tam Sahne</button>
+        <button type="button" class="caelus-perf-mode-btn" data-perf-mode="BALANCED" title="Dengeli: DPR 1.0 Eko + Azaltılmış Efekt Yoğunluğu">Dengeli</button>
+        <button type="button" class="caelus-perf-mode-btn" data-perf-mode="LITE_2D" title="Hafif / 2B: GPU Kısıtlı Cihazlar İçin 2B Şematik Harita ve Liste">Hafif / 2B</button>
       </div>
-    </header>
+
+      <button type="button" class="caelus-spatial-lens-pill" id="btn-stage-provenance-lens"
+        aria-expanded="false" aria-controls="caelus-provenance-drawer"
+        title="Seçili bilgi ve dünya için Kaynak, Kanıt, Karşıt Kanıt ve Ticari Haklar katmanını aç">
+        <span style="color:#4ADE80;" aria-hidden="true">⚖</span>
+        <span>Dayanak</span>
+      </button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+       İSTEĞE BAĞLI YÜZEN ZAMAN MERCEĞİ (#caelus-time-lens-popover — BÖLÜM 9)
+       ═══════════════════════════════════════════════════════════════════════ -->
+    <aside class="caelus-floating-spatial-drawer hidden" id="caelus-time-lens-popover" role="dialog" aria-modal="false" aria-labelledby="time-lens-title">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div>
+          <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:#E6C387;">ÇİFT ZAMANLI (BITEMPORAL) ZAMAN MERCEĞİ</div>
+          <strong id="time-lens-title" style="font-size:0.96rem; color:var(--caelus-text-primary);">O Tarihte Ne Biliniyordu? Sonra Ne Öğrenildi?</strong>
+        </div>
+        <button type="button" class="dunyam-callout-close-btn" id="btn-close-time-lens" aria-label="Zaman Merceğini kapat">✕</button>
+      </div>
+
+      <div style="display:flex; gap:6px; flex-wrap:wrap;" id="time-lens-preset-bar" role="group" aria-label="Bilgi Kesiti Tarih Seçimi">
+        <button type="button" class="caelus-pill-filter-btn" data-tl-cutoff="2021-02-19T23:59:59Z" id="btn-tl-cutoff-t1">19 Şub 2021 (Erken Kriz · v1)</button>
+        <button type="button" class="caelus-pill-filter-btn active" data-tl-cutoff="2021-03-17T23:59:59Z" id="btn-tl-cutoff-t2">17 Mar 2021 (Revizyon · v2)</button>
+        <button type="button" class="caelus-pill-filter-btn" data-tl-cutoff="2020-10-30T12:30:00Z" id="btn-tl-cutoff-aegean">30 Eki 2020 (Ege t_karar)</button>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; justify-content:space-between; background:rgba(11,22,42,0.75); border:1px solid rgba(136,212,255,0.18); border-radius:12px; padding:8px 11px;">
+        <label for="inp-time-lens-cutoff-date" style="font-size:0.75rem; font-weight:600; color:var(--caelus-text-secondary);">Seçili Bilgi Kesiti (T_kesit):</label>
+        <input type="date" id="inp-time-lens-cutoff-date" class="dt-editor-input mono" value="2021-03-17" style="padding:3px 8px; font-size:0.76rem; width:136px;">
+        <span class="kpi-badge ok" id="time-lens-leakage-badge" style="font-size:0.68rem;">Sızıntı: 0</span>
+      </div>
+
+      <div id="time-lens-comparison-body" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem; line-height:1.45;">
+        <!-- JS tarafından living_world_model.js verisiyle doldurulur -->
+      </div>
+
+      <div style="display:flex; gap:6px; flex-wrap:wrap; padding-top:6px; border-top:1px solid rgba(136,212,255,0.16);">
+        <button type="button" class="btn btn-sm btn-primary" id="btn-time-lens-launch-scenario" style="flex:1; border-radius:999px; font-size:0.75rem;">⚖ Bu Zaman Noktasından Senaryo Başlat</button>
+        <button type="button" class="btn btn-sm" id="btn-time-lens-open-full-hafiza" style="border-radius:999px; font-size:0.75rem;">Tam Hafıza ↗</button>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+       BAĞLAMSAL KAYNAKLAR VE DAYANAK KATMANI (#caelus-provenance-drawer — BÖLÜM 11)
+       ═══════════════════════════════════════════════════════════════════════ -->
+    <aside class="caelus-floating-spatial-drawer hidden" id="caelus-provenance-drawer" role="dialog" aria-modal="false" aria-labelledby="provenance-drawer-title">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div>
+          <div style="font-size:0.69rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:#4ADE80;">KAYNAKLAR, DAYANAK VE EPİSTEMİK DENETİM</div>
+          <strong id="provenance-drawer-title" style="font-size:0.96rem; color:var(--caelus-text-primary);">Bilginin Kaynağı, Kanıt Sınıfı ve Ticari Uygunluk</strong>
+        </div>
+        <button type="button" class="dunyam-callout-close-btn" id="btn-close-provenance-drawer" aria-label="Dayanak katmanını kapat">✕</button>
+      </div>
+
+      <div id="provenance-drawer-body" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem; line-height:1.45;">
+        <!-- JS tarafından seçili varlık/olay ve caelus_world_store.json dayanak verisiyle doldurulur -->
+      </div>
+
+      <div style="display:flex; gap:6px; flex-wrap:wrap; padding-top:6px; border-top:1px solid rgba(136,212,255,0.16);">
+        <button type="button" class="btn btn-sm btn-accent" id="btn-provenance-open-baglantilar" style="flex:1; border-radius:999px; font-size:0.75rem;">Tüm Kaynaklar ve Lisans Envanterini Aç ↗</button>
+      </div>
+    </aside>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
        ANA SAYFA KONTEYNERİ: SESSİZ HOLOGRAFİ DÜNYAM VE ÇALIŞMA ALANLARI
@@ -5626,11 +6304,14 @@ body.theme-light .linear-setting-row {
       <!-- ── ANA EKRAN: DÜNYAM (ÖNCE DÜNYA: TAM EKRAN GERÇEK 3B WEBGL DÜNYA VE İSTEĞE BAĞLI PANELLER) ── -->
       <section class="dunyam-hub" id="dunyam-overview-hub" aria-labelledby="dunyam-world-title">
 
-        <!-- Sol Üst Kimlik: Dünya Başlığı, Tek Durum Cümlesi ve 3 Temel Eylem -->
-        <div class="dunyam-hero-top">
+        <!-- Sol Üst Kimlik: Dünya Başlığı, Tek Durum Cümlesi ve 3 Temel Eylem (Daraltılabilir Bağlamsal Fısıltı) -->
+        <div class="dunyam-hero-top" id="dunyam-hero-whisper-box">
           <div class="dunyam-hero-identity">
             <div class="dunyam-title-stack">
-              <h1 class="dunyam-world-title" id="dunyam-world-title">Liman Soğuk Zincir ve Terminal Dünyası</h1>
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+                <h1 class="dunyam-world-title" id="dunyam-world-title" style="margin:0;">Liman Soğuk Zincir ve Terminal Dünyası</h1>
+                <button type="button" class="dunyam-callout-close-btn" id="btn-dunyam-whisper-toggle" aria-expanded="true" title="Dünya özet kartını daralt veya genişlet">▾</button>
+              </div>
               <div id="dunyam-onboarding-subtitle"
                 style="font-size:0.76rem; font-weight:600; color:#88D4FF; letter-spacing:0.01em;">
                 Dünyayı keşfet, bilgilerin kaynağını incele ve farklı olasılıkları değerlendir.
@@ -5925,11 +6606,11 @@ body.theme-light .linear-setting-row {
             <canvas id="dunyam-hero-canvas" width="960" height="540" tabindex="0" role="img"
               aria-label="CAELUS merkez 3B dünya sahnesi. Sürükleyerek döndürün, tekerlek veya + / - ile yakınlaştırın; sol ve sağ ok tuşlarıyla konum veya varlık seçin."></canvas>
 
-            <!-- Sahne Sağ Üst: Kompakt Seçili Konum / Varlık Bilgi Kartı (Katlanabilir) -->
-            <div class="dunyam-stage-callout" id="dunyam-stage-callout-card">
+            <!-- Sahne Sağ Ray: 6 Katmanlı Bağlamsal Seçili Konum / Varlık İnceleyici (Seçim Yapılmadan Önce Kapalıdır) -->
+            <div class="dunyam-stage-callout is-collapsed" id="dunyam-stage-callout-card" role="region" aria-label="Seçili Olay veya Varlık Bağlamsal İnceleyicisi">
               <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px;">
                 <div style="min-width:0;">
-                  <div class="dunyam-callout-eyebrow" id="dunyam-callout-eyebrow">SEÇİLİ KONUM / VARLIK</div>
+                  <div class="dunyam-callout-eyebrow" id="dunyam-callout-eyebrow">1. OLAY VE VARLIK ODAĞI</div>
                   <div id="dunyam-callout-name" class="dunyam-callout-name">Terminal</div>
                   <div class="mono dunyam-callout-code" id="dunyam-callout-code">N-01 · 38.44°K, 27.15°D</div>
                 </div>
@@ -5956,39 +6637,55 @@ body.theme-light .linear-setting-row {
                   <div class="dunyam-callout-cell-val" id="dunyam-callout-metric-4">0.25×</div>
                 </div>
               </div>
-              <div
-                style="border-top:1px solid rgba(136,212,255,0.14); padding-top:6px; display:flex; flex-direction:column; gap:5px;">
-                <div style="min-width:0;">
-                  <div class="dunyam-callout-cell-label">Bağlı Dünya &amp; Veri Kaynağı</div>
+
+              <!-- 6 Katmanlı Kademeli Açılım ("Under the Surface": 1. Olay → 2. İlgili Varlıklar → 3. Etki Yolları → 4. Kaynak/Kanıt → 5. Alternatif Açıklamalar → 6. Senaryolar) -->
+              <div id="callout-progressive-layers-box" style="border-top:1px solid rgba(136,212,255,0.16); padding-top:6px; display:flex; flex-direction:column; gap:6px; font-size:0.74rem;">
+                <div style="background:rgba(9,18,36,0.72); border:1px solid rgba(136,212,255,0.18); border-radius:10px; padding:6px 8px;">
+                  <div style="font-size:0.66rem; font-weight:700; color:#88D4FF; letter-spacing:0.06em; text-transform:uppercase;">2. İLGİLİ VARLIKLAR &amp; 3. ETKİ YOLLARI</div>
+                  <div id="callout-layer-entities-paths" style="color:var(--text-2); margin-top:2px; line-height:1.38;">
+                    Doğrudan bağlı süreç varlıkları ve 1–2 derece yayılım yolları seçime göre güncellenir.
+                  </div>
+                </div>
+
+                <div style="background:rgba(9,18,36,0.72); border:1px solid rgba(230,195,135,0.22); border-radius:10px; padding:6px 8px;">
+                  <div style="font-size:0.66rem; font-weight:700; color:#E6C387; letter-spacing:0.06em; text-transform:uppercase;">4. KAYNAK/KANIT &amp; 5. ALTERNATİF AÇIKLAMALAR</div>
                   <div id="dunyam-callout-purpose"
-                    style="font-size:0.77rem; font-weight:600; color:#88D4FF; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    style="font-size:0.75rem; font-weight:600; color:#88D4FF; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;">
                     Soğuk Zincir &amp; Rıhtım</div>
                   <div id="dunyam-callout-sources-line" style="font-size:0.71rem; color:var(--text-2); margin-top:2px;">
                     Kaynak: Örnek veri · Güncel durum</div>
                   <div id="dunyam-callout-event-time" class="mono"
                     style="font-size:0.69rem; color:var(--text-3); margin-top:1px;">Son güncelleme: Statik baz kayıt
                   </div>
+                  <div id="callout-layer-hypotheses" style="font-size:0.71rem; color:#B7C5D9; margin-top:3px; line-height:1.35;">
+                    Rakip açıklama: H1 (Şebeke/Fiziksel Darboğaz) vs H2 (İkincil Kalifikasyon Gecikmesi).
+                  </div>
                 </div>
-                <div style="display:flex; align-items:center; gap:5px; justify-content:space-between; flex-wrap:wrap;">
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
                   <button type="button" class="btn btn-sm" id="btn-dunyam-callout-open-world"
-                    title="Seçili konuma bağlı dünyayı ve süreç şemasını aç"
-                    style="border-radius:999px; padding:3px 9px; font-weight:600; flex:1; justify-content:center;">◈
-                    Dünyayı Aç</button>
+                    title="Seçili konuma bağlı ilişki ağını ve süreç şemasını odakla"
+                    style="border-radius:999px; padding:4px 8px; font-size:0.73rem; font-weight:600; justify-content:center;">🕸 İlişkileri Gör</button>
                   <button type="button" class="btn btn-sm" id="btn-dunyam-callout-intervene"
-                    title="Bu varlık için seçenekleri ve A/B senaryolarını karşılaştır"
-                    style="border-radius:999px; padding:3px 9px; font-weight:700; flex:1; justify-content:center;">⚖
-                    Seçenekler ↗</button>
+                    title="Bu varlık için 3 gelecek senaryosunu karşılaştır"
+                    style="border-radius:999px; padding:4px 8px; font-size:0.73rem; font-weight:700; justify-content:center;">⚖ Senaryolar ↗</button>
+                  <button type="button" class="btn btn-sm" id="btn-callout-open-provenance"
+                    title="Seçili öğenin kaynak, kanıt, karşıt kanıt ve ticari dayanak katmanını aç"
+                    style="border-radius:999px; padding:4px 8px; font-size:0.73rem; font-weight:600; justify-content:center;">📋 Dayanak &amp; Kanıt</button>
+                  <button type="button" class="btn btn-sm" id="btn-callout-open-timelens"
+                    title="Seçili öğeyi Zaman Merceğinde incele"
+                    style="border-radius:999px; padding:4px 8px; font-size:0.73rem; font-weight:600; justify-content:center;">⏱ Zaman Merceği</button>
                   <button type="button" class="btn btn-sm btn-accent" id="btn-dunyam-callout-snapshot"
                     data-i18n="plain.use_event_data"
                     title="Seçili olayın verilerini Senaryolar ekranında karşılaştırma için hazırla (ana dünya kaydı değişmez)"
-                    style="border-radius:999px; padding:4px 10px; font-weight:700; width:100%; justify-content:center; margin-top:3px;">Bu olayın verilerini kullan</button>
+                    style="grid-column:1/-1; border-radius:999px; padding:5px 10px; font-size:0.74rem; font-weight:700; justify-content:center;">Bu olayın verilerini kullan</button>
                 </div>
                 <div id="dunyam-snapshot-status-line" class="mono hidden" style="font-size:0.67rem; color:#5EC69D; margin-top:2px; word-break:break-all;"></div>
               </div>
             </div>
-            <button type="button" class="dunyam-callout-reopen-pill" id="btn-dunyam-callout-reopen" title="Seçili konum ve olay bilgi kartını tekrar aç">
+            <button type="button" class="dunyam-callout-reopen-pill" id="btn-dunyam-callout-reopen" title="Seçili konum ve olay bilgi kartını aç">
               <span class="caelus-status-dot live"></span>
-              <span id="dunyam-callout-reopen-label">Seçili Konum Kartı</span>
+              <span id="dunyam-callout-reopen-label">Seçili Varlık Merceğini Aç</span>
             </button>
 
             <!-- Sahne Altı: Konum / Süreç Varlığı Seçim Kapsülleri ve Hızlı Sorgu Çubuğu -->
@@ -6586,23 +7283,35 @@ body.theme-light .linear-setting-row {
           <div id="kesfet-cytoscape-panel" class="kesfet-maplibre-card hidden" role="region" aria-label="Cytoscape.js Etkileşimli İlişki Ağı">
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
               <div>
-                <div style="font-size:0.71rem; font-weight:700; color:#88D4FF; letter-spacing:0.05em; text-transform:uppercase;">İLİŞKİ AĞI · VARLIK BAĞLANTILARI VE BİLGİ DAYANAĞI SINIFLARI (CYTOSCAPE.JS)</div>
+                <div style="font-size:0.71rem; font-weight:700; color:#88D4FF; letter-spacing:0.05em; text-transform:uppercase;">İLİŞKİLER VE ETKİ AĞI · ODAKLANABİLİR KOMŞULUK VE KANIT SINIFLARI ("NETWORKS IN FOCUS")</div>
                 <strong style="font-size:0.96rem; color:var(--text-1);">Seçili Dünya Varlıkları, Gözlem Bağları ve İlişki Türleri</strong>
               </div>
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;" id="kesfet-cytoscape-filter-bar">
                 <button type="button" class="caelus-pill-filter-btn active" data-cy-edge-filter="ALL">Tümü</button>
-                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="MEASUREMENT">🟢 Ölçüm / Gözlem</button>
-                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="EXPERT_INPUT">🔵 Uzman Girişi</button>
-                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="MODEL_RELATION">🟠 Model Bağıntısı</button>
-                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="HYPOTHESIS">🟣 Hipotez (Nedensellik Değil)</button>
+                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="MEASUREMENT">🟢 Ölçüm / Gözlem (● Düz)</button>
+                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="EXPERT_INPUT">🔵 İddia / Uzman (◆)</button>
+                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="MODEL_RELATION">🟠 Model / Simülasyon (◈)</button>
+                <button type="button" class="caelus-pill-filter-btn" data-cy-edge-filter="HYPOTHESIS">🟣 Hipotez (--- Kesikli)</button>
                 <button type="button" class="btn btn-sm" id="btn-cytoscape-fit" title="Tüm düğümleri ekrana sığdır">Sığdır</button>
                 <button type="button" class="btn btn-sm" id="btn-cytoscape-reset" title="Düğüm yerleşimini ve seçimi sıfırla">↺ Sıfırla</button>
               </div>
             </div>
-            <div style="background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.38); border-radius:8px; padding:6px 12px; font-size:0.76rem; color:var(--text-1);">
-              <strong>İlişki Sınırı (Birlikte Değişim ≠ Nedensellik):</strong> Ağdaki bir bağlantı iki varlığın birlikte değiştiğini veya süreç akışını gösterir; <strong>tek başına kanıtlanmış nedensellik anlamına gelmez</strong>. Bir düğüme tıkladığınızda doğrudan komşuları vurgulanır.
+
+            <!-- Komşuluk Derinliği (Hop Depth: 1. Derece Doğrudan → 2. Derece Dolaylı → 3. Derece Tam Ağ) -->
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; background:rgba(7,15,30,0.75); border:1px solid rgba(136,212,255,0.22); border-radius:10px; padding:7px 12px;" id="kesfet-cy-hop-bar" role="group" aria-label="İlişki Ağı Komşuluk Derinliği">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-size:0.75rem; font-weight:700; color:#E6C387;">Komşuluk Derinliği:</span>
+                <button type="button" class="caelus-pill-filter-btn active" data-cy-hop="1" id="btn-cy-hop-1">1. Derece (Doğrudan Bağlantılar)</button>
+                <button type="button" class="caelus-pill-filter-btn" data-cy-hop="2" id="btn-cy-hop-2">2. Derece (Dolaylı Yayılım)</button>
+                <button type="button" class="caelus-pill-filter-btn" data-cy-hop="3" id="btn-cy-hop-3">3. Derece (Tam Etki Ağı)</button>
+              </div>
+              <span style="font-size:0.73rem; color:var(--text-2);" id="kesfet-cy-hop-status-label">Odak: 1. derece doğrudan komşular aktif; diğer yollar geri çekildi.</span>
             </div>
-            <div class="kesfet-cytoscape-split" style="display:grid; grid-template-columns:1fr 310px; gap:12px; align-items:stretch;">
+
+            <div style="background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.38); border-radius:8px; padding:6px 12px; font-size:0.76rem; color:var(--text-1);">
+              <strong>İlişki Sınırı (Birlikte Değişim ≠ Nedensellik):</strong> Ağdaki bir bağlantı iki varlığın birlikte değiştiğini veya süreç akışını gösterir; <strong>tek başına kanıtlanmış nedensellik anlamına gelmez</strong>. Renk yanında çizgi biçimi ve şekil ile gözlem (● düz), hipotez (◆ kesikli) ve belirsizlik (▲ noktalı) ayrılır.
+            </div>
+            <div class="kesfet-cytoscape-split" style="display:grid; grid-template-columns:1fr 340px; gap:12px; align-items:stretch;">
               <div id="kesfet-cytoscape-container" tabindex="0" aria-label="Etkileşimli Varlık ve İlişki Ağı (Ok tuşları veya fare ile düğüm seçebilirsiniz)" style="width:100%; height:390px; background:rgba(5,11,24,0.88); border:1px solid rgba(136,212,255,0.18); border-radius:12px; position:relative; outline:none;"></div>
               <aside id="kesfet-cytoscape-inspector" style="background:rgba(10,18,34,0.82); border:1px solid rgba(136,212,255,0.18); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; font-size:0.79rem;">
                 <div style="font-size:0.70rem; font-weight:700; color:#88D4FF; text-transform:uppercase; letter-spacing:0.05em;">SEÇİLİ DÜĞÜM / BAĞLANTI AÇIKLAMASI</div>
@@ -6614,7 +7323,24 @@ body.theme-light .linear-setting-row {
                 <div id="cy-insp-details" style="color:var(--text-2); line-height:1.45;">
                   Ağ üzerindeki bir düğüme veya kenara tıklayarak veri kaynağını, ölçüm/varsayım/hipotez ayrımını ve etkilediği noktaları inceleyin.
                 </div>
+                <!-- Bölüm 8 Zorunlu Alan: Neden Gösteriliyor? Alternatif Açıklamalar ve Eksik Veri -->
+                <div id="cy-insp-why-shown-box" style="margin-top:4px; padding-top:8px; border-top:1px solid rgba(136,212,255,0.16); display:flex; flex-direction:column; gap:5px; font-size:0.75rem;">
+                  <div><strong style="color:#E6C387;">Neden gösteriliyor?</strong> <span id="cy-insp-why-text">Seçili olayın 1. derece doğrudan kapasite ve akış komşuluğunda yer alır.</span></div>
+                  <div><strong style="color:#88D4FF;">Alternatif Açıklamalar:</strong> <span id="cy-insp-alt-text">H1 (Fiziksel/Şebeke Darboğazı) vs H2 (Kalifikasyon ve Operasyonel Gecikme).</span></div>
+                  <div><strong style="color:#4ADE80;">Eksik Veri / Bilgi Değeri (VoI):</strong> <span id="cy-insp-missing-text">Tesis içi alt-sayaç ve temiz oda yeniden kalifikasyon süresi.</span></div>
+                </div>
               </aside>
+            </div>
+
+            <!-- Mobil ve Erişilebilir Odaklı Yol / Adım Adım İlişki Listesi (Olay → İlgili Varlık → Olası Etki → Seçili Bağlam) -->
+            <div id="kesfet-mobile-step-path-list" role="region" aria-label="Odaklanmış Adım Adım İlişki Yolu Listesi" style="background:rgba(7,14,28,0.86); border:1px solid rgba(136,212,255,0.20); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+                <strong style="font-size:0.82rem; color:#E6C387;">🧭 Odaklanmış Etki Yolu (Olay → İlgili Varlık → Olası Etki → Seçili Bağlam)</strong>
+                <span class="kpi-badge accent" style="font-size:0.68rem;">Adım Adım Zincir</span>
+              </div>
+              <div id="kesfet-step-path-cards" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px;">
+                <!-- JS tarafından doldurulur -->
+              </div>
             </div>
           </div>
 
@@ -6743,6 +7469,32 @@ body.theme-light .linear-setting-row {
               <button type="button" class="btn btn-sm" id="btn-scen-quick-step2" title="2. Adıma git: Uygulanacak müdahaleyi ve süreyi seç">2. Müdahaleyi Seç</button>
               <button type="button" class="btn btn-sm btn-primary" id="btn-scen-quick-run-compare" title="İki durumu yan yana karşılaştır ve 3. adıma odaklan">⚡ İki Durumu Karşılaştır</button>
               <button type="button" class="btn btn-sm" id="btn-scen-quick-step4" title="4. Adıma git: Sonucun dayanağını ve raporu incele">4. Kanıt ve Rapor</button>
+            </div>
+          </div>
+
+          <!-- Bölüm 10 Zorunlu Karar Katmanı: 6 Temel Soru ve 3 Rakip Gelecek Akışı (Baz Durum · Müdahale · Birleşik Stres) -->
+          <div id="senaryolar-six-questions-deck" role="region" aria-label="6 Temel Karar Sorusu ve 3 Rakip Gelecek Akışı Karşılaştırması" style="background:rgba(7,15,30,0.82); border:1px solid rgba(136,212,255,0.22); border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+              <div>
+                <div style="font-size:0.69rem; font-weight:700; color:#E6C387; letter-spacing:0.08em; text-transform:uppercase;">KARAR DESTEK ÖZETİ · 6 TEMEL SORU VE 3 GELECEK AKIŞI</div>
+                <strong style="font-size:0.94rem; color:var(--text-1);">Baz Durum, Müdahale Senaryosu ve Birleşik Stres Senaryosunun Net Karşılaştırması</strong>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;" id="senaryolar-mobile-future-tabs" role="tablist" aria-label="Gelecek Akışı Görünüm Seçici">
+                <button type="button" class="caelus-pill-filter-btn active" data-future-tab="ALL" role="tab" aria-selected="true">Üç Gelecek Birden</button>
+                <button type="button" class="caelus-pill-filter-btn" data-future-tab="BASELINE" role="tab" aria-selected="false">1. Baz Durum</button>
+                <button type="button" class="caelus-pill-filter-btn" data-future-tab="INTERVENTION" role="tab" aria-selected="false">2. Müdahale</button>
+                <button type="button" class="caelus-pill-filter-btn" data-future-tab="COMBINED_STRESS" role="tab" aria-selected="false">3. Birleşik Stres</button>
+              </div>
+            </div>
+
+            <!-- 6 Temel Soru Kartları -->
+            <div id="senaryolar-six-questions-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(225px, 1fr)); gap:8px; font-size:0.76rem;">
+              <!-- JS tarafından aktif dünya, müdahale ve motor çıktısıyla doldurulur -->
+            </div>
+
+            <!-- 3 Rakip Gelecek Akışı (Baz Durum · Müdahale Senaryosu · Birleşik Stres Senaryosu) -->
+            <div id="senaryolar-three-futures-deck" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:10px;">
+              <!-- JS tarafından deterministik çekirdek ve living_world_model.js ile doldurulur -->
             </div>
           </div>
 

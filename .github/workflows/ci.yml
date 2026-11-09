@@ -67,6 +67,7 @@ jobs:
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
           node --test tests/discovery_value_engine.test.mjs
+          node --test tests/spatial_interface.test.mjs
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
@@ -125,6 +126,7 @@ jobs:
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
           node --test tests/discovery_value_engine.test.mjs
+          node --test tests/spatial_interface.test.mjs
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
