@@ -1,0 +1,220 @@
+{
+  "asset": {
+    "version": "1.0",
+    "tilesetVersion": "CAELUS-SAMPLE-1.0",
+    "gltfUpAxis": "Y",
+    "extras": {
+      "datasetName": "CAELUS İzmir Limanı ve Soğuk Zincir Örnek 3D Tiles Veri Seti",
+      "dataClassification": "SAMPLE_CONTROLLED_3DTILES",
+      "license": "CC0-1.0 Public Domain (CAELUS Yerel Doğrulanmış Geometri — Ücretli Google/Ticari Şehir Verisi Değildir)",
+      "createdAtIso": "2026-11-08T18:00:00Z"
+    }
+  },
+  "geometricError": 120,
+  "root": {
+    "boundingVolume": {
+      "box": [
+        0,
+        2.5,
+        0,
+        12,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0,
+        12
+      ]
+    },
+    "geometricError": 48,
+    "refine": "ADD",
+    "children": [
+      {
+        "transform": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          -4.5,
+          0,
+          -3,
+          1
+        ],
+        "boundingVolume": {
+          "box": [
+            0,
+            1.8,
+            0,
+            1.6,
+            0,
+            0,
+            0,
+            1.8,
+            0,
+            0,
+            0,
+            1.4
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "sector_trafo.glb"
+        },
+        "extras": {
+          "entityId": "TRAFO_RIHTIM",
+          "entityName": "Rıhtım Trafo ve Reefer Enerji Beslemesi",
+          "sampleTile": true
+        }
+      },
+      {
+        "transform": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          4.2,
+          0,
+          -2.8,
+          1
+        ],
+        "boundingVolume": {
+          "box": [
+            0,
+            1.3,
+            0,
+            2.2,
+            0,
+            0,
+            0,
+            1.3,
+            0,
+            0,
+            0,
+            1.6
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "sector_reefer.glb"
+        },
+        "extras": {
+          "entityId": "SOGUK_ZINCIR_REEFER",
+          "entityName": "Soğuk Zincir Reefer Depolama ve Muayene Bloğu",
+          "sampleTile": true
+        }
+      },
+      {
+        "transform": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          -3.8,
+          0,
+          3.8,
+          1
+        ],
+        "boundingVolume": {
+          "box": [
+            0,
+            1.05,
+            0,
+            1.9,
+            0,
+            0,
+            0,
+            1.05,
+            0,
+            0,
+            0,
+            1.3
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "sector_gumruk.glb"
+        },
+        "extras": {
+          "entityId": "GUMRUK_KAPI",
+          "entityName": "Gümrük ve Kapı Geçiş Koridoru",
+          "sampleTile": true
+        }
+      },
+      {
+        "transform": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          4,
+          0,
+          3.6,
+          1
+        ],
+        "boundingVolume": {
+          "box": [
+            0,
+            2.4,
+            0,
+            1.7,
+            0,
+            0,
+            0,
+            2.4,
+            0,
+            0,
+            0,
+            1.4
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "sector_vinc.glb"
+        },
+        "extras": {
+          "entityId": "RIHTIM_VINC_HATTI",
+          "entityName": "Rıhtım Konteyner Vinç ve Tahliye Hattı",
+          "sampleTile": true
+        }
+      }
+    ]
+  }
+}

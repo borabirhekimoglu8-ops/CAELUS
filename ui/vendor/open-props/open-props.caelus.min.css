@@ -1,0 +1,42 @@
+/*!
+ * Open Props v1.7.6 (https://open-props.style) — Curated CAELUS Token Subset
+ * Copyright (c) 2021 Adam Argyle — Licensed under MIT
+ * Includes: sizes, fonts, borders, easings, shadows, zindex + CAELUS Cosmic Surface & Theme Token Bridge
+ */
+:where(html){--size-000:-.5rem;--size-00:-.25rem;--size-1:.25rem;--size-2:.5rem;--size-3:1rem;--size-4:1.25rem;--size-5:1.5rem;--size-6:1.75rem;--size-7:2rem;--size-8:3rem;--size-9:4rem;--size-10:5rem;--size-11:7.5rem;--size-12:10rem;--size-13:15rem;--size-14:20rem;--size-15:30rem;--size-px-000:-8px;--size-px-00:-4px;--size-px-1:4px;--size-px-2:8px;--size-px-3:16px;--size-px-4:20px;--size-px-5:24px;--size-px-6:28px;--size-px-7:32px;--size-px-8:48px;--size-px-9:64px;--size-px-10:80px;--size-px-11:120px;--size-px-12:160px;--size-px-13:240px;--size-px-14:320px;--size-px-15:480px;--size-fluid-1:clamp(.5rem,1vw,1rem);--size-fluid-2:clamp(1rem,2vw,1.5rem);--size-fluid-3:clamp(1.5rem,3vw,2rem);--size-fluid-4:clamp(2rem,4vw,3rem);--size-fluid-5:clamp(4rem,5vw,5rem);--size-content-1:20ch;--size-content-2:45ch;--size-content-3:65ch;--size-header-1:20ch;--size-header-2:28ch;--size-header-3:38ch;--size-xxs:240px;--size-xs:360px;--size-sm:480px;--size-md:768px;--size-lg:1024px;--size-xl:1440px;--size-xxl:1920px}
+:where(html){--font-system-ui:'Plus Jakarta Sans','Inter',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;--font-monospace-code:'JetBrains Mono',ui-monospace,SF Mono,Monaco,Cascadia Code,Menlo,Consolas,monospace;--font-sans:var(--font-system-ui);--font-mono:var(--font-monospace-code);--font-weight-3:300;--font-weight-4:400;--font-weight-5:500;--font-weight-6:600;--font-weight-7:700;--font-weight-8:800;--font-lineheight-0:1.12;--font-lineheight-1:1.25;--font-lineheight-2:1.4;--font-lineheight-3:1.55;--font-lineheight-4:1.7;--font-letterspacing-0:-.025em;--font-letterspacing-1:.02em;--font-letterspacing-2:.05em;--font-letterspacing-3:.08em;--font-size-00:.6875rem;--font-size-0:.75rem;--font-size-1:.875rem;--font-size-2:1rem;--font-size-3:1.125rem;--font-size-4:1.35rem;--font-size-5:1.75rem;--font-size-6:2.25rem;--font-size-fluid-0:clamp(.78rem,1.4vw,.92rem);--font-size-fluid-1:clamp(1rem,2.2vw,1.35rem);--font-size-fluid-2:clamp(1.35rem,3.5vw,2rem)}
+:where(html){--border-size-1:1px;--border-size-2:2px;--border-size-3:4px;--radius-1:4px;--radius-2:8px;--radius-3:12px;--radius-4:16px;--radius-5:24px;--radius-round:9999px}
+:where(html){--ease-1:cubic-bezier(.25,0,.5,1);--ease-2:cubic-bezier(.25,0,.4,1);--ease-3:cubic-bezier(.22,1,.36,1);--ease-out-1:cubic-bezier(0,0,.75,1);--ease-out-2:cubic-bezier(0,0,.5,1);--ease-out-3:cubic-bezier(.16,1,.3,1);--ease-in-out-2:cubic-bezier(.3,0,.7,1);--ease-spring-1:linear(0,0.006,0.025 2.8%,0.101 6.1%,0.539 18.9%,0.721 25.3%,0.849 31.5%,0.937 38.1%,0.968 41.8%,0.991 45.7%,1.006 50.1%,1.015 55%,1.017 63.9%,1.001);--ease-spring-2:linear(0,0.007,0.029 2.2%,0.118 4.7%,0.625 14.4%,0.826 19%,0.902,0.962,1.008 26.1%,1.041 28.7%,1.064 32.1%,1.07 36%,1.061 40.5%,1.015 53.4%,0.999 61.6%,0.995 71.2%,1)}
+:where(html){--shadow-color:222 48% 3%;--shadow-strength:32%;--inner-shadow-highlight:inset 0 1px 0 0 rgba(255,255,255,.07),inset 0 -1px 0 0 rgba(0,0,0,.42);--shadow-1:0 2px 6px -1px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 10%));--shadow-2:0 6px 16px -3px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 12%)),0 4px 8px -2px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 8%));--shadow-3:0 14px 34px -6px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 18%)),0 6px 14px -4px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 12%));--shadow-4:0 24px 56px -10px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 26%)),0 10px 24px -6px hsl(var(--shadow-color)/calc(var(--shadow-strength) + 16%));--inner-shadow-1:inset 0 1px 2px 0 hsl(var(--shadow-color)/calc(var(--shadow-strength) + 9%)),var(--inner-shadow-highlight);--layer-1:10;--layer-2:50;--layer-3:120;--layer-4:400;--layer-5:1200;--layer-important:9999}
+:where(html){
+  /* CAELUS Cosmic Surface & Semantic Tokens bridged to Open Props */
+  --op-space-xs: var(--size-px-1);
+  --op-space-sm: var(--size-px-2);
+  --op-space-md: var(--size-px-3);
+  --op-space-lg: var(--size-px-5);
+  --op-space-xl: var(--size-px-7);
+  --op-radius-sm: var(--radius-2);
+  --op-radius-md: var(--radius-3);
+  --op-radius-lg: var(--radius-4);
+  --op-radius-pill: var(--radius-round);
+  --op-surface-deep: #040814;
+  --op-surface-1: rgba(8, 15, 30, 0.78);
+  --op-surface-2: rgba(13, 23, 44, 0.86);
+  --op-surface-3: rgba(19, 32, 58, 0.92);
+  --op-border-subtle: rgba(148, 163, 184, 0.14);
+  --op-border-accent: rgba(56, 189, 248, 0.36);
+  --op-focus-ring: 0 0 0 2px rgba(56, 189, 248, 0.55), 0 0 14px rgba(56, 189, 248, 0.22);
+}
+html[data-theme="light"]{
+  --shadow-color:215 28% 22%;
+  --shadow-strength:8%;
+  --inner-shadow-highlight:inset 0 1px 0 0 rgba(255,255,255,.85),inset 0 -1px 0 0 rgba(15,23,42,.06);
+  --op-surface-deep: #f1f5f9;
+  --op-surface-1: rgba(255, 255, 255, 0.88);
+  --op-surface-2: rgba(248, 250, 252, 0.94);
+  --op-surface-3: rgba(241, 245, 249, 0.98);
+  --op-border-subtle: rgba(15, 23, 42, 0.12);
+  --op-border-accent: rgba(2, 132, 199, 0.42);
+  --op-focus-ring: 0 0 0 2px rgba(2, 132, 199, 0.5), 0 0 10px rgba(2, 132, 199, 0.16);
+}
+

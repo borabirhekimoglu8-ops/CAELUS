@@ -175,6 +175,24 @@ public:
     const char* source_path = nullptr;
     /** Current read position (event index). */
     size_t      cursor      = 0;
+    /**
+     * ScenarioPack replay için tick/saat oranı. 0 → eski davranış (dosya
+     * metninde ilk "tick_minutes" araması). Motor, ayrıştırılmış ScenarioPack
+     * değerini buraya yazar; böylece zamanlama ham metin aramasına değil,
+     * imza kapısından geçmiş paket ayrıştırmasına dayanır.
+     */
+    uint64_t    ticks_per_hour_override = 0;
+
+    /**
+     * Çalışırken yeni bir kaynağa geçiş (REPL senaryo değişimi). Önceki
+     * senaryonun olayları atılır; imleç sıfırlanır. init edilmemişse false.
+     */
+    bool reload(const char* new_source_path, uint64_t new_ticks_per_hour) noexcept {
+        if (!fns_) return false;
+        source_path = new_source_path;
+        ticks_per_hour_override = new_ticks_per_hour;
+        return do_init(fns_);
+    }
 
     bool do_init(const CaelusEngineFns* fns) noexcept {
         fns_ = fns;
@@ -469,12 +487,15 @@ private:
     }
 
     void parse_scenario_json(const std::string& content) {
-        double tick_minutes_d = 15.0;
-        json_number(content, "tick_minutes", tick_minutes_d);
-        const uint64_t tick_minutes = tick_minutes_d > 0.0
-            ? static_cast<uint64_t>(tick_minutes_d)
-            : 15ULL;
-        const uint64_t ticks_per_hour = tick_minutes ? (60ULL / tick_minutes) : 4ULL;
+        uint64_t ticks_per_hour = ticks_per_hour_override;
+        if (ticks_per_hour == 0) {
+            double tick_minutes_d = 15.0;
+            json_number(content, "tick_minutes", tick_minutes_d);
+            const uint64_t tick_minutes = tick_minutes_d > 0.0
+                ? static_cast<uint64_t>(tick_minutes_d)
+                : 15ULL;
+            ticks_per_hour = tick_minutes ? (60ULL / tick_minutes) : 4ULL;
+        }
 
         size_t seq = content.find("\"intel_feed_sequence\"");
         if (seq == std::string::npos) return;

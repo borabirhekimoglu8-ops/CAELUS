@@ -27,3 +27,10 @@ caelus_identity.key
 
 # WASM build çıktısı (üretilmiş)
 caelus_wasm/target/
+
+# Yerel yedekleme klasörleri ve geçici arşivler
+backups/
+*.prev.json
+CAELUS_v8_Gorselli_Tam_Paket.zip
+_chrome_profile_*
+**/_chrome_profile_*/

@@ -1,0 +1,298 @@
+{
+  "schema_version": "3.0",
+  "id": "EX-02_HASTANE_YOGUN_BAKIM",
+  "blackswan_class": "clinical_oxygen_triage_cascade",
+  "sector": "healthcare_critical_care",
+  "min_caelus_engine": "2.0",
+  "signature": "ed25519:79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664:77dee59c5a1ad3d31e24a09baa570c0c732ac949660686a5473b74ed846f4eed921ca3464ce1ec61784e869e7ac322dde7b38f23abe6efe36e3ba7f6318b8506",
+  "meta": {
+    "title": "Örnek Model 2 — Bölge Hastanesi Yoğun Bakım Oksijen Manifoldu ve Triyaj Süreklilik Analizi",
+    "enterprise_code": "EX-HOSP-ICU-02",
+    "sector_label": "Sağlık Operasyonu & Yoğun Bakım Sürekliliği (Örnek Model)",
+    "region": "SAMPLE_REGIONAL_HOSPITAL_ICU (Kurgu / Örnek Veri)",
+    "tick_minutes": 15,
+    "horizon_hours": 12,
+    "data_provenance": "FICTIONAL_SAMPLE",
+    "data_source_note": "ÖRNEK / KURGU VERİ — Çok sektörlü evrensel karar akışı doğrulaması için sentetik hastane yoğun bakım operasyon modeli. Gerçek bir sağlık kurumu veya hasta verisi değildir; V3 geliştirici test anahtarı ile imzalanmıştır.",
+    "compliance": "ÖRNEK MODEL — Klinik Operasyon Sürekliliği & Medikal Gaz Yedeklilik Testi (Kurgu Veri)",
+    "synopsis": "Merkezi sıvı oksijen evaporatör hattındaki basınç düşüşü (MED_OXYGEN_MANIFOLD) ve kan gazı/sterilizasyon laboratuvar kapısındaki gecikme (STERILE_LAB_GATE), acil servis triyaj kuyruğunu (ER_TRIAGE_INFLOW) biriktirerek 3. basamak yoğun bakım ventilatör yataklarını (ICU_VENTILATOR_BEDS) 10. tick (2.5 saat) kritik kapasite kesintisine sürükler.",
+    "assumptions": [
+      "Her 1 tick = 15 dakika klinik operasyon süresini temsil eder (1 saat = 4 tick).",
+      "ICU_VENTILATOR_BEDS düğüm yükü 10. tick'te (2.5 saat) >= 0.68 (680.000 FP) kalırsa acil hasta kabulü durur ve kesinti (outage) kilitlenir.",
+      "Toplam sürtünme >= 1.65x ve ICU_VENTILATOR_BEDS >= 0.68 iken 12. tick'te zorunlu bölgesel ambulans yönlendirmesi (histerezis +0.24x) devreye girer.",
+      "Fiziksel kapasite birimi 48 Kritik Bakım Hasta-Saat olarak tanımlanmıştır; klinik senaryoda parasal duruş maliyeti tanımlanmadığı için (available=false) finansal alanlar sayı uydurulmadan 'Hesaplanamadı' olarak gösterilir."
+    ],
+    "data_gaps": [
+      "Gerçek hastane merkezi medikal gaz BMS sensörleri ve HBYS yatak doluluk verisi bağlı değildir (kurgu/örnek başlangıç değerleri).",
+      "Klinik yoğun bakım kapasitesi için parasal duruş/ceza verisi girilmemiştir (kullanıcı isterse 1B Kalibrasyon panelinden girebilir).",
+      "L-HOSP-01 ve L-HOSP-02 başarı olasılıkları (p=0.92 ve p=0.85) sentetik stres testi varsayımıdır."
+    ],
+    "financials": {
+      "available": false,
+      "currency": "USD",
+      "unit_label": "Kritik Bakım Hasta-Saat",
+      "baseline_units": 48.0,
+      "downtime_cost_per_hour_usd": -1.0,
+      "sla_breach_penalty_usd": -1.0,
+      "outage_threshold_ratio": 0.50,
+      "data_source": "FICTIONAL_SAMPLE"
+    }
+  },
+  "extended_causal_model": {
+    "nodes": [
+      {
+        "id": "MED_OXYGEN_MANIFOLD",
+        "label": "Merkezi Tıbbi Oksijen Manifoldu ve Evaporatör Hattı",
+        "category": "Medikal Gaz Altyapısı",
+        "kind": "Service",
+        "capacity_fp": 1000000,
+        "state_fp": 760000,
+        "weight_fp": 340000,
+        "reported_state_fp": 760000,
+        "trust_fp": 1000000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: Ana evaporatör buzlanması nedeniyle hat basıncı sınırda (%76 stres yükü)."
+      },
+      {
+        "id": "ER_TRIAGE_INFLOW",
+        "label": "Acil Servis Kırmızı Alan Triyaj ve Resüsitasyon Kuyruğu",
+        "category": "Klinik Akış",
+        "kind": "Queue",
+        "capacity_fp": 1000000,
+        "state_fp": 640000,
+        "weight_fp": 240000,
+        "reported_state_fp": 640000,
+        "trust_fp": 1000000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: Yoğun bakım devir hızı düştüğü için acil serviste bekleyen kritik hasta kuyruğu (%64)."
+      },
+      {
+        "id": "STERILE_LAB_GATE",
+        "label": "Kan Gazı Laboratuvarı ve Sterilizasyon Onay Kapısı",
+        "category": "Tanı & Protokol Kapısı",
+        "kind": "Gate",
+        "capacity_fp": 1000000,
+        "state_fp": 580000,
+        "weight_fp": 200000,
+        "reported_state_fp": 420000,
+        "trust_fp": 840000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: Kalibrasyon beklemesi nedeniyle tanı dönüş süresi uzadı; gerçek yük %58, ekran %42."
+      },
+      {
+        "id": "ICU_VENTILATOR_BEDS",
+        "label": "3. Basamak Yoğun Bakım Ventilatör Yatak Kapasitesi",
+        "category": "Kritik Klinik Kapasite (Zaman-Hassas)",
+        "kind": "Perishable",
+        "capacity_fp": 1000000,
+        "state_fp": 740000,
+        "weight_fp": 280000,
+        "reported_state_fp": 740000,
+        "trust_fp": 1000000,
+        "deadline_tick": 10,
+        "deadline_min_state_fp": 680000,
+        "data_source": "FICTIONAL_SAMPLE",
+        "notes": "ÖRNEK VERİ: 10. tick (2.5 saat) sonunda stres >= 0.68 kalırsa yeni kritik hasta kabulü durur (outage)."
+      }
+    ],
+    "edges": [
+      {
+        "from": "MED_OXYGEN_MANIFOLD",
+        "to": "ICU_VENTILATOR_BEDS",
+        "multiplier_fp": 160000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Oksijen hat basıncındaki düşüş yüksek akışlı ventilatör yataklarını anında kısıtlar."
+      },
+      {
+        "from": "ER_TRIAGE_INFLOW",
+        "to": "ICU_VENTILATOR_BEDS",
+        "multiplier_fp": 120000,
+        "lag_ticks": 1,
+        "active": true,
+        "notes": "Acil triyajda bekleyen entübe hastalar 1 tick gecikmeyle yoğun bakım darboğazını artırır."
+      },
+      {
+        "from": "STERILE_LAB_GATE",
+        "to": "ER_TRIAGE_INFLOW",
+        "multiplier_fp": 200000,
+        "lag_ticks": 1,
+        "active": true,
+        "notes": "Kan gazı/sterilizasyon gecikmesi triyaj taburcu/devir süresini uzatır."
+      },
+      {
+        "from": "MED_OXYGEN_MANIFOLD",
+        "to": "ER_TRIAGE_INFLOW",
+        "multiplier_fp": 180000,
+        "lag_ticks": 2,
+        "active": true,
+        "notes": "Basınç düşüşü acil servis resüsitasyon odalarının devir hızını yavaşlatır."
+      },
+      {
+        "from": "MED_OXYGEN_MANIFOLD",
+        "to": "",
+        "multiplier_fp": 250000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (MED_OXYGEN_MANIFOLD)."
+      },
+      {
+        "from": "ER_TRIAGE_INFLOW",
+        "to": "",
+        "multiplier_fp": 180000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (ER_TRIAGE_INFLOW)."
+      },
+      {
+        "from": "STERILE_LAB_GATE",
+        "to": "",
+        "multiplier_fp": 150000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (STERILE_LAB_GATE)."
+      },
+      {
+        "from": "ICU_VENTILATOR_BEDS",
+        "to": "",
+        "multiplier_fp": 220000,
+        "lag_ticks": 0,
+        "active": true,
+        "notes": "Sistem sürtünme agregasyon kenarı (ICU_VENTILATOR_BEDS)."
+      }
+    ],
+    "feedback_loops": [
+      {
+        "id": "FL_ICU_BACKPRESSURE",
+        "path": [
+          "MED_OXYGEN_MANIFOLD",
+          "ER_TRIAGE_INFLOW",
+          "ICU_VENTILATOR_BEDS"
+        ],
+        "gain_fp": 1160000
+      }
+    ],
+    "levers": [
+      {
+        "id": "L-HOSP-01_OXYGEN_BACKUP",
+        "code": "L-HOSP-01",
+        "label": "Yedek Sıvı Oksijen Evaporatör Devreye Alma & Elektif Cerrahi Erteleme",
+        "target": "ICU_CLINICAL_COMMAND",
+        "success_p_fp": 920000,
+        "cost_ticks": 3,
+        "lockout_ticks": 6,
+        "cost_usd": -1.0,
+        "data_source": "FICTIONAL_SAMPLE",
+        "on_success": {
+          "target_node_id": "ICU_VENTILATOR_BEDS",
+          "state_delta_fp": -640000,
+          "trust_delta_fp": 120000,
+          "friction_delta_fp": -240000,
+          "clear_irrecoverable": true
+        },
+        "on_failure": {
+          "target_node_id": "ICU_VENTILATOR_BEDS",
+          "state_delta_fp": 40000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 50000,
+          "clear_irrecoverable": false
+        },
+        "notes": "ÖRNEK MÜDAHALE: Yedek evaporatör bankasını açar ve elektif ameliyathane oksijen tüketimini keserek yoğun bakım yatak stresini 0.68 eşiğinin altına indirir; 10. tick kesintisini önler."
+      },
+      {
+        "id": "L-HOSP-02_TRIAGE_FASTTRACK",
+        "code": "L-HOSP-02",
+        "label": "Hasta Başı Kan Gazı (POCT) & Hızlı Triyaj Protokolü",
+        "target": "ER_OPERATIONS_LEAD",
+        "success_p_fp": 850000,
+        "cost_ticks": 2,
+        "lockout_ticks": 4,
+        "cost_usd": -1.0,
+        "data_source": "FICTIONAL_SAMPLE",
+        "on_success": {
+          "target_node_id": "ER_TRIAGE_INFLOW",
+          "state_delta_fp": -520000,
+          "trust_delta_fp": 100000,
+          "friction_delta_fp": -140000,
+          "clear_irrecoverable": false
+        },
+        "on_failure": {
+          "target_node_id": "ER_TRIAGE_INFLOW",
+          "state_delta_fp": 30000,
+          "trust_delta_fp": 0,
+          "friction_delta_fp": 30000,
+          "clear_irrecoverable": false
+        },
+        "notes": "ÖRNEK MÜDAHALE: Acil servis triyaj kuyruğunu rahatlatır ancak yoğun bakım oksijen darboğazını doğrudan çözmediği için tek başına 10. tick kesintisini önlemeye yetmeyebilir."
+      }
+    ],
+    "hysteresis": [
+      {
+        "id": "HYST_AMBULANCE_DIVERSION",
+        "threshold_tick": 12,
+        "reversible": false,
+        "permanent_loss_fp": 240000,
+        "min_friction_fp": 1650000,
+        "condition_node_id": "ICU_VENTILATOR_BEDS",
+        "min_node_state_fp": 680000,
+        "notes": "12. tick'te sürtünme >= 1.65x ve ICU_VENTILATOR_BEDS >= 0.68 ise bölgesel 112 ambulans yönlendirmesi kalıcılaşır."
+      }
+    ],
+    "hard_deadlines": [
+      {
+        "node_id": "ICU_VENTILATOR_BEDS",
+        "at_tick": 10,
+        "min_state_fp": 680000,
+        "label": "ICU_VENT_CAPACITY_BREACH_2_5H",
+        "notes": "10. tick (2.5 saat) sonunda ICU_VENTILATOR_BEDS durumu >= 0.68 ise yoğun bakım kabul kesintisi (outage) tetiklenir."
+      }
+    ],
+    "intel_bindings": [
+      {
+        "node_id": "MED_OXYGEN_MANIFOLD",
+        "mode": "max",
+        "scale_fp": 880000,
+        "crisis_step_fp": 40000,
+        "min_crisis_level": 1
+      },
+      {
+        "node_id": "STERILE_LAB_GATE",
+        "mode": "add",
+        "scale_fp": 100000,
+        "crisis_step_fp": 20000,
+        "min_crisis_level": 2
+      }
+    ]
+  },
+  "v1_engine_bridge": {
+    "operational_risk_profile": {
+      "scenario_id": "EX-02_HASTANE_YOGUN_BAKIM",
+      "region": "SAMPLE_REGIONAL_HOSPITAL_ICU",
+      "bureaucratic_complexity": 0.58,
+      "historical_delay_rate": 0.24,
+      "labor_action_probability": 0.15,
+      "route_congestion": 0.72,
+      "weather_severity": 0.30
+    },
+    "intel_feed_sequence": [
+      {
+        "t_hour": 0,
+        "friction_coefficient": 0.70,
+        "crisis_level": 1,
+        "memo": "ORNEK_KLINIK_T0: Evaporator B basinc dususu ve triyaj yogunlugu (kurgu veri)"
+      },
+      {
+        "t_hour": 1,
+        "friction_coefficient": 0.83,
+        "crisis_level": 2,
+        "memo": "ORNEK_KLINIK_T1: Kan gazi gecikmesi ve yogun bakim devir daralmasi (kurgu veri)"
+      },
+      {
+        "t_hour": 2,
+        "friction_coefficient": 0.90,
+        "crisis_level": 3,
+        "memo": "ORNEK_KLINIK_T2: Kritik ventilator basinc esigi — yedek hat mudahale penceresi (kurgu veri)"
+      }
+    ]
+  }
+}

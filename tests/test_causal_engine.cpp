@@ -3,6 +3,7 @@
 
 #include "causal_engine.h"
 #include "scenario_pack.h"
+#include "ws_emitter.h"
 #include "plugin/caelus_solver.h"
 
 #include <cmath>
@@ -310,3 +311,107 @@ TEST_CASE("JsonParser survives adversarial small inputs (fuzz corpus)") {
     }
     CHECK(true);
 }
+
+TEST_CASE("WsEmitter strict local Origin validation blocks null and prefix bypasses") {
+    using caelus::WsEmitter;
+    // Allowed loopback origins
+    CHECK(WsEmitter::is_allowed_local_origin(""));
+    CHECK(WsEmitter::is_allowed_local_origin("file:///C:/Users/Lenovo/index.html"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://127.0.0.1"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://127.0.0.1:47809"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://localhost"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://localhost:47809"));
+    CHECK(WsEmitter::is_allowed_local_origin("https://localhost:8443"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://[::1]:47809"));
+    CHECK(WsEmitter::is_allowed_local_origin("http://[::1]"));
+
+    // Rejected: Origin: null (sandboxed iframe CSWSH vector) by default
+    CHECK(!WsEmitter::is_allowed_local_origin("null", false));
+    CHECK(WsEmitter::is_allowed_local_origin("null", true));
+
+    // Rejected: prefix & subdomain spoofing, userinfo, invalid ports
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost.evil.example"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost.evil.example:47809"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://127.0.0.1.evil.com"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://127.0.0.1.evil.com:47809"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://[::1].evil.com"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost@evil.com"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:0"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:65536"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:abc"));
+    CHECK(!WsEmitter::is_allowed_local_origin("http://localhost:47809/path"));
+}
+
+TEST_CASE("Conditional deadline and hysteresis allow proactive lever to prevent outage") {
+    auto build_cond_engine = []() {
+        CausalEngine eng;
+        Node n;
+        n.id = "CRITICAL_NODE";
+        n.kind = NodeKind::Perishable;
+        n.state_fp = 850'000LL;
+        n.reported_state_fp = 850'000LL;
+        n.trust_fp = FP_ONE;
+        n.weight_fp = 500'000LL;
+        n.capacity_fp = FP_ONE;
+        n.deadline_tick = 3;
+        n.deadline_min_state_fp = 700'000LL; // Only trips if state_fp >= 0.70 at tick >= 3
+        eng.add_node(n);
+
+        Hysteresis h;
+        h.id = "HYS_CRITICAL";
+        h.threshold_tick = 3;
+        h.reversible = false;
+        h.permanent_loss_fp = 500'000LL;
+        h.condition_node_id = "CRITICAL_NODE";
+        h.min_node_state_fp = 700'000LL;
+        eng.add_hysteresis(h);
+
+        Lever lv;
+        lv.id = "MITIGATE_CRITICAL";
+        lv.target = "CRITICAL_NODE";
+        lv.success_p_fp = FP_ONE; // 100% deterministic
+        lv.cost_ticks = 4;
+        lv.lockout_ticks = 4;
+        lv.on_success.target_node_id = "CRITICAL_NODE";
+        lv.on_success.state_delta_fp = -500'000LL; // Drops state from 0.85 to 0.35 (< 0.70)
+        eng.add_lever(lv);
+        return eng;
+    };
+
+    // Branch A: Without intervention -> state stays 0.85 >= 0.70 -> outage latches at tick 3
+    CausalEngine branch_a = build_cond_engine();
+    EngineSnapshot snap_a = branch_a.run_ticks(5);
+    CHECK(snap_a.any_deadline_missed);
+    CHECK(snap_a.any_hysteresis_flip);
+    CHECK(snap_a.outage_active);
+    CHECK(snap_a.throughput_ratio_fp == 0LL);
+
+    // Branch B: With intervention before tick 3 -> state drops to 0.35 < 0.70 -> outage prevented!
+    CausalEngine branch_b = build_cond_engine();
+    CHECK(branch_b.apply_lever("MITIGATE_CRITICAL", 42u));
+    EngineSnapshot snap_b = branch_b.run_ticks(5);
+    CHECK(!snap_b.any_deadline_missed);
+    CHECK(!snap_b.any_hysteresis_flip);
+    CHECK(!snap_b.outage_active);
+    CHECK(snap_b.throughput_ratio_fp > 0LL);
+}
+
+TEST_CASE("ScenarioPack canonical_signed_payload supports V2 and V3 deterministically") {
+    std::string raw_json = R"({
+        "schema_version": "2.0.0",
+        "id": "TEST-V3",
+        "blackswan_class": "OPERATIONAL_CONTINUITY",
+        "sector": "energy_grid",
+        "min_caelus_engine": "1.0.0",
+        "meta": {"title": "Grid Test", "tick_minutes": 15, "horizon_hours": 48},
+        "extended_causal_model": {"nodes": [{"id": "N1", "state_fp": 500000}]}
+    })";
+    std::string p2, p3;
+    CHECK(caelus::ScenarioPack::canonical_signed_payload_from_json(raw_json, p2, nullptr, 2));
+    CHECK(caelus::ScenarioPack::canonical_signed_payload_from_json(raw_json, p3, nullptr, 3));
+    CHECK(p2.rfind("CAELUS_SCENARIO_PACK_V2\n", 0) == 0);
+    CHECK(p3.rfind("CAELUS_SCENARIO_PACK_V3\n", 0) == 0);
+    CHECK(p3.find("sector=\"energy_grid\"") != std::string::npos);
+    CHECK(p3.find("\"tick_minutes\":15") != std::string::npos);
+}
+

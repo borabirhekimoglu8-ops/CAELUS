@@ -14,8 +14,8 @@
 // UI aynı applySnapshotEvent / 'levers' yolundan tüketir (kod tekrarı yok).
 
 use caelus_core::{
-    fp_to_d, CausalEngine, Edge, FeedbackLoop, Hysteresis, Lever, LeverOutcome, Node, NodeKind,
-    FP_ONE,
+    fp_to_d, CausalEngine, Edge, FeedbackLoop, Hysteresis, IntelBinding, IntelBindingMode, Lever,
+    LeverOutcome, Node, NodeKind, FP_ONE,
 };
 use core::cell::UnsafeCell;
 
@@ -156,6 +156,10 @@ fn build_snapshot_json(e: &CausalEngine, scenario_id: &str) -> String {
     let snap = e.build_snapshot();
     o.push_str(",\"throughput_ratio\":");
     push_f6(&mut o, snap.throughput_ratio);
+    o.push_str(",\"intel_events_total\":");
+    push_u64(&mut o, e.intel_events_total());
+    o.push_str(",\"intel_events_unbound\":");
+    push_u64(&mut o, e.intel_events_unbound());
     o.push_str(",\"any_hysteresis_flip\":");
     o.push_str(if snap.any_hysteresis_flip { "true" } else { "false" });
     o.push_str(",\"any_deadline_missed\":");
@@ -565,9 +569,10 @@ fn apply_pack(root: &Json, eng: &mut CausalEngine) -> Vec<PackLever> {
     let mut pack_levers = Vec::new();
     eng.reset();
 
+    let mut parsed_nodes: Vec<Node> = Vec::new();
     for nv in cm.get("nodes").arr() {
         let state_fp = nv.get("state_fp").as_i(0);
-        eng.add_node(Node {
+        parsed_nodes.push(Node {
             id: nv.get("id").as_s().to_string(),
             kind: NodeKind::from_str(nv.get("kind").as_s()),
             capacity_fp: nv.get("capacity_fp").as_i(FP_ONE),
@@ -584,9 +589,24 @@ fn apply_pack(root: &Json, eng: &mut CausalEngine) -> Vec<PackLever> {
                 FP_ONE
             },
             deadline_tick: nv.get("deadline_tick").as_i(-1) as i32,
+            deadline_min_state_fp: nv.get("deadline_min_state_fp").as_i(0),
             deadline_missed: false,
             irrecoverable: nv.get("irrecoverable").as_b(false),
         });
+    }
+    for dv in cm.get("hard_deadlines").arr() {
+        let nid = dv.get("node_id").as_s();
+        let at = dv.get("at_tick").as_i(-1) as i32;
+        if let Some(node) = parsed_nodes.iter_mut().find(|n| n.id == nid) {
+            node.deadline_tick = at;
+            if dv.has("min_state_fp") {
+                node.deadline_min_state_fp = dv.get("min_state_fp").as_i(node.deadline_min_state_fp);
+            }
+        }
+    }
+    let node_ids: Vec<String> = parsed_nodes.iter().map(|n| n.id.clone()).collect();
+    for n in parsed_nodes {
+        eng.add_node(n);
     }
     for ev in cm.get("edges").arr() {
         eng.add_edge(Edge {
@@ -643,7 +663,27 @@ fn apply_pack(root: &Json, eng: &mut CausalEngine) -> Vec<PackLever> {
             threshold_tick: hv.get("threshold_tick").as_i(0) as i32,
             reversible: hv.get("reversible").as_b(true),
             permanent_loss_fp: hv.get("permanent_loss_fp").as_i(0),
+            min_friction_fp: hv.get("min_friction_fp").as_i(0),
+            condition_node_id: hv.get("condition_node_id").as_s().to_string(),
+            min_node_state_fp: hv.get("min_node_state_fp").as_i(0),
             flipped: false,
+        });
+    }
+    for bv in cm.get("intel_bindings").arr() {
+        let nid = bv.get("node_id").as_s();
+        if !node_ids.iter().any(|existing| existing == nid) {
+            continue;
+        }
+        eng.add_intel_binding(IntelBinding {
+            node_id: nid.to_string(),
+            mode: if bv.get("mode").as_s() == "add" {
+                IntelBindingMode::Add
+            } else {
+                IntelBindingMode::Max
+            },
+            scale_fp: bv.get("scale_fp").as_i(FP_ONE),
+            crisis_step_fp: bv.get("crisis_step_fp").as_i(0),
+            min_crisis_level: bv.get("min_crisis_level").as_i(0) as i32,
         });
     }
     if cm.get("nodes").arr().is_empty() {
