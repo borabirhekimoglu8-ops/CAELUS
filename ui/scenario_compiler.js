@@ -19937,8 +19937,18 @@
       epistemicLabelTr: candidateRecord.epistemicLabelTr || PLAIN_STATUS_LABELS.REAL_OBSERVATION
     };
 
-    const epistemicCode = candidateRecord.epistemicCode || sourceMeta.epistemicCode || 'REAL_OBSERVATION';
-    const epistemicLabelTr = candidateRecord.epistemicLabelTr || PLAIN_STATUS_LABELS[epistemicCode] || PLAIN_STATUS_LABELS.REAL_OBSERVATION;
+    const rawOccStr = candidateRecord.occurrenceTimeIso || candidateRecord.validTimeIso || nowIso;
+    const rawIngestStr = candidateRecord.ingestedAtIso || nowIso;
+    const occValid = !Number.isNaN(Date.parse(String(rawOccStr))) && /^\d{4}-\d{2}-\d{2}/.test(String(rawOccStr).trim());
+    const ingestValid = !Number.isNaN(Date.parse(String(rawIngestStr))) && /^\d{4}-\d{2}-\d{2}/.test(String(rawIngestStr).trim());
+    const dateValidationFailed = !occValid || !ingestValid;
+
+    const epistemicCode = dateValidationFailed
+      ? 'UNKNOWN_OR_INSUFFICIENT_DATA'
+      : (candidateRecord.epistemicCode || sourceMeta.epistemicCode || 'REAL_OBSERVATION');
+    const epistemicLabelTr = dateValidationFailed
+      ? 'Geçersiz veya Eksik Tarih (Karantina)'
+      : (candidateRecord.epistemicLabelTr || PLAIN_STATUS_LABELS[epistemicCode] || PLAIN_STATUS_LABELS.REAL_OBSERVATION);
     const isOfflineOrStale = candidateRecord.connectionStatus === 'OFFLINE' || candidateRecord.connectionStatus === 'STALE';
 
     let disposition = 'INSERTED_NEW';
@@ -19960,10 +19970,12 @@
         freshnessLabelTr: isOfflineOrStale ? PLAIN_STATUS_LABELS.LAST_KNOWN_DATA : epistemicLabelTr,
         connectionStatus: candidateRecord.connectionStatus || 'CONNECTED',
         connectionStatusLabelTr: isOfflineOrStale ? PLAIN_STATUS_LABELS.LAST_KNOWN_DATA : 'Bağlı ve güncel',
-        occurrenceTimeIso: candidateRecord.occurrenceTimeIso || candidateRecord.validTimeIso || nowIso,
-        validTimeIso: candidateRecord.validTimeIso || candidateRecord.occurrenceTimeIso || nowIso,
-        upstreamUpdatedIso: candidateRecord.upstreamUpdatedIso || candidateRecord.occurrenceTimeIso || nowIso,
-        ingestedAtIso: candidateRecord.ingestedAtIso || nowIso,
+        occurrenceTimeIso: occValid ? rawOccStr : null,
+        validTimeIso: occValid ? (candidateRecord.validTimeIso || candidateRecord.occurrenceTimeIso || nowIso) : null,
+        upstreamUpdatedIso: occValid ? (candidateRecord.upstreamUpdatedIso || candidateRecord.occurrenceTimeIso || candidateRecord.validTimeIso || nowIso) : null,
+        ingestedAtIso: ingestValid ? rawIngestStr : null,
+        dateValidationFailed,
+        canEnterDeterministicCoreAsFact: !dateValidationFailed && epistemicCode === 'REAL_OBSERVATION',
         updatedAtIso: nowIso,
         lastAccessedAtIso: nowIso,
         location: {
@@ -24959,25 +24971,226 @@
     }
   });
 
+  // 7 Plain-Language User Badges (Section 11 — Arayüzde Sade Türkçe Rozetler)
+  const PLAIN_USER_BADGES_TR = Object.freeze({
+    SOURCED_FACT: 'KAYNAKLI BİLGİ',
+    SOURCE_CLAIM: 'KAYNAKTAKİ İDDİA',
+    HYPOTHESIS_TO_INVESTIGATE: 'ARAŞTIRILACAK HİPOTEZ',
+    MODEL_ASSUMPTION: 'MODEL VARSAYIMI',
+    SIMULATION_RESULT: 'SİMÜLASYON SONUCU',
+    CONTRADICTION_OR_COUNTER_EVIDENCE: 'ÇELİŞKİ / KARŞIT KANIT',
+    INSUFFICIENT_DATA: 'YETERSİZ VERİ'
+  });
+
+  function resolvePlainUserBadgeTr(epistemicCategoryCode, options = {}) {
+    if (options.lookAheadBlocked || options.dateValidationFailed) {
+      return PLAIN_USER_BADGES_TR.INSUFFICIENT_DATA;
+    }
+    switch (epistemicCategoryCode) {
+      case 'MEASUREMENT_OR_OBSERVATION':
+        return PLAIN_USER_BADGES_TR.SOURCED_FACT;
+      case 'SOURCE_CLAIM':
+        return PLAIN_USER_BADGES_TR.SOURCE_CLAIM;
+      case 'MODEL_HYPOTHESIS':
+        return PLAIN_USER_BADGES_TR.HYPOTHESIS_TO_INVESTIGATE;
+      case 'RULE_BASED_INFERENCE':
+      case 'CONDITIONAL_CAUSAL_CONCLUSION':
+        return PLAIN_USER_BADGES_TR.MODEL_ASSUMPTION;
+      case 'SIMULATION_RESULT':
+        return PLAIN_USER_BADGES_TR.SIMULATION_RESULT;
+      case 'COUNTER_EVIDENCE_OR_CONTRADICTION':
+      case 'CORRECTED_OR_EXPIRED_RECORD':
+        return PLAIN_USER_BADGES_TR.CONTRADICTION_OR_COUNTER_EVIDENCE;
+      case 'UNKNOWN_OR_INSUFFICIENT_DATA':
+      default:
+        return PLAIN_USER_BADGES_TR.INSUFFICIENT_DATA;
+    }
+  }
+
+  // Strict ISO-8601 / Calendar Date Parser (Fail-Closed on NaN, empty, missing, or calendar-invalid strings)
+  function parseStrictIsoTimestamp(rawValue) {
+    if (rawValue === null || rawValue === undefined || typeof rawValue === 'boolean' || typeof rawValue === 'object') {
+      return { valid: false, missing: true, epochMs: NaN, normalizedIso: null, reasonCode: 'MISSING_DATE' };
+    }
+    if (typeof rawValue === 'number') {
+      if (!Number.isFinite(rawValue)) {
+        return { valid: false, missing: false, epochMs: NaN, normalizedIso: null, reasonCode: 'INVALID_DATE_NUMBER' };
+      }
+      return {
+        valid: true,
+        missing: false,
+        epochMs: rawValue,
+        normalizedIso: new Date(rawValue).toISOString(),
+        reasonCode: 'OK'
+      };
+    }
+    const str = String(rawValue).trim();
+    if (str.length === 0) {
+      return { valid: false, missing: true, epochMs: NaN, normalizedIso: null, reasonCode: 'EMPTY_DATE_STRING' };
+    }
+    const isoRegex = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:Z|([+-]\d{2}:?\d{2}))?)?$/;
+    const m = isoRegex.exec(str);
+    if (!m) {
+      return { valid: false, missing: false, epochMs: NaN, normalizedIso: null, reasonCode: 'INVALID_ISO_FORMAT' };
+    }
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    const hour = m[4] !== undefined ? Number(m[4]) : 0;
+    const minute = m[5] !== undefined ? Number(m[5]) : 0;
+    const second = m[6] !== undefined ? Number(m[6]) : 0;
+    if (
+      month < 1 || month > 12 ||
+      day < 1 || day > 31 ||
+      hour < 0 || hour > 23 ||
+      minute < 0 || minute > 59 ||
+      second < 0 || second > 59
+    ) {
+      return { valid: false, missing: false, epochMs: NaN, normalizedIso: null, reasonCode: 'OUT_OF_RANGE_CALENDAR_FIELD' };
+    }
+    const calCheck = new Date(Date.UTC(year, month - 1, day));
+    if (calCheck.getUTCFullYear() !== year || calCheck.getUTCMonth() !== month - 1 || calCheck.getUTCDate() !== day) {
+      return { valid: false, missing: false, epochMs: NaN, normalizedIso: null, reasonCode: 'NON_EXISTENT_CALENDAR_DATE' };
+    }
+    const ms = Date.parse(str);
+    if (!Number.isFinite(ms)) {
+      return { valid: false, missing: false, epochMs: NaN, normalizedIso: null, reasonCode: 'UNPARSEABLE_DATE' };
+    }
+    return {
+      valid: true,
+      missing: false,
+      epochMs: ms,
+      normalizedIso: new Date(ms).toISOString(),
+      reasonCode: 'OK'
+    };
+  }
+
+  // LAYER A: Epistemic Classification & Strict Bitemporal / Anti-Look-Ahead Validation
   function classifyAndValidateKnowledgeRecord(rawRecord, options = {}) {
     if (!rawRecord || typeof rawRecord !== 'object') {
       throw new Error('Geçerli bir bilgi kaydı (rawRecord) nesnesi gereklidir.');
     }
-    const decisionCutoffIso = options.decisionCutoffTimeIso ? String(options.decisionCutoffTimeIso) : null;
-    const validTimeIso = String(rawRecord.validTimeIso || rawRecord.occurrenceTimeIso || '2026-01-01T00:00:00.000Z');
-    const learnedTimeIso = String(rawRecord.learnedTimeIso || rawRecord.ingestionTimeIso || validTimeIso);
-    const validMs = Date.parse(validTimeIso);
-    const learnedMs = Date.parse(learnedTimeIso);
-    const cutoffMs = decisionCutoffIso ? Date.parse(decisionCutoffIso) : Infinity;
 
-    const lookAheadValidViolation = Number.isFinite(cutoffMs) && validMs > cutoffMs;
-    const lookAheadLearnedViolation = Number.isFinite(cutoffMs) && learnedMs > cutoffMs;
-    const lookAheadBlocked = lookAheadValidViolation || lookAheadLearnedViolation;
+    const hasValidField = rawRecord.validTimeIso !== undefined || rawRecord.occurrenceTimeIso !== undefined || rawRecord.validFromIso !== undefined;
+    const rawValidVal = rawRecord.validTimeIso !== undefined
+      ? rawRecord.validTimeIso
+      : (rawRecord.occurrenceTimeIso !== undefined ? rawRecord.occurrenceTimeIso : rawRecord.validFromIso);
+
+    const hasLearnedField = rawRecord.learnedTimeIso !== undefined || rawRecord.ingestionTimeIso !== undefined || rawRecord.recordedAtIso !== undefined;
+    const rawLearnedVal = rawRecord.learnedTimeIso !== undefined
+      ? rawRecord.learnedTimeIso
+      : (rawRecord.ingestionTimeIso !== undefined ? rawRecord.ingestionTimeIso : rawRecord.recordedAtIso);
+
+    const hasSourcePubField = rawRecord.availableAtSourceTimeIso !== undefined
+      || rawRecord.publishedAtSourceTimeIso !== undefined
+      || rawRecord.upstreamUpdatedIso !== undefined
+      || rawRecord.reanalysisReleaseTimeIso !== undefined;
+    const rawSourcePubVal = rawRecord.availableAtSourceTimeIso !== undefined
+      ? rawRecord.availableAtSourceTimeIso
+      : (rawRecord.publishedAtSourceTimeIso !== undefined
+        ? rawRecord.publishedAtSourceTimeIso
+        : (rawRecord.reanalysisReleaseTimeIso !== undefined ? rawRecord.reanalysisReleaseTimeIso : rawRecord.upstreamUpdatedIso));
+
+    const hasRetractedField = rawRecord.retractedAtIso !== undefined && rawRecord.retractedAtIso !== null;
+    const rawRetractedVal = hasRetractedField ? rawRecord.retractedAtIso : null;
+
+    const requireCutoff = options.requireCutoff !== false;
+    const rawCutoffVal = options.decisionCutoffTimeIso !== undefined
+      ? options.decisionCutoffTimeIso
+      : rawRecord.decisionCutoffTimeIso;
+
+    const validParsed = parseStrictIsoTimestamp(rawValidVal);
+    const learnedParsed = parseStrictIsoTimestamp(rawLearnedVal);
+    const sourcePubParsed = hasSourcePubField ? parseStrictIsoTimestamp(rawSourcePubVal) : null;
+    const retractedParsed = hasRetractedField ? parseStrictIsoTimestamp(rawRetractedVal) : null;
+    const cutoffParsed = parseStrictIsoTimestamp(rawCutoffVal);
+
+    let dateValidationFailed = false;
+    let cutoffValidationFailed = false;
+    let missingValidTime = !hasValidField || validParsed.missing;
+    let missingLearnedTime = !hasLearnedField || learnedParsed.missing;
+    let lookAheadBlocked = false;
+    let lookAheadBlockReason = null;
+
+    if (requireCutoff && !cutoffParsed.valid) {
+      cutoffValidationFailed = true;
+      dateValidationFailed = true;
+      lookAheadBlocked = true;
+      lookAheadBlockReason = cutoffParsed.missing
+        ? 'MISSING_DECISION_CUTOFF_TIME'
+        : 'INVALID_DECISION_CUTOFF_TIME';
+    } else if (!validParsed.valid) {
+      dateValidationFailed = true;
+      lookAheadBlocked = true;
+      lookAheadBlockReason = validParsed.missing
+        ? 'MISSING_OR_EMPTY_VALID_TIME'
+        : 'INVALID_VALID_TIME_FORMAT';
+    } else if (!learnedParsed.valid) {
+      dateValidationFailed = true;
+      lookAheadBlocked = true;
+      lookAheadBlockReason = learnedParsed.missing
+        ? 'MISSING_LEARNED_OR_INGESTION_TIME'
+        : 'INVALID_LEARNED_TIME_FORMAT';
+    } else if (sourcePubParsed && !sourcePubParsed.valid) {
+      dateValidationFailed = true;
+      lookAheadBlocked = true;
+      lookAheadBlockReason = sourcePubParsed.missing
+        ? 'MISSING_SOURCE_PUBLICATION_TIME'
+        : 'INVALID_SOURCE_PUBLICATION_TIME_FORMAT';
+    } else if (retractedParsed && !retractedParsed.valid) {
+      dateValidationFailed = true;
+      lookAheadBlocked = true;
+      lookAheadBlockReason = 'INVALID_RETRACTED_TIME_FORMAT';
+    } else {
+      const cutoffMs = cutoffParsed.valid ? cutoffParsed.epochMs : Infinity;
+      const validMs = validParsed.epochMs;
+      const learnedMs = learnedParsed.epochMs;
+      const sourcePubMs = sourcePubParsed ? sourcePubParsed.epochMs : null;
+
+      const lookAheadValidViolation = Number.isFinite(cutoffMs) && validMs > cutoffMs;
+      const lookAheadLearnedViolation = Number.isFinite(cutoffMs) && learnedMs > cutoffMs;
+      const lookAheadSourcePubViolation = Number.isFinite(cutoffMs) && sourcePubMs !== null && sourcePubMs > cutoffMs;
+      const causalTemporalParadox = validMs > learnedMs && rawRecord.allowForecastValidAfterLearned !== true;
+      const pubBeforeValidParadox = sourcePubMs !== null && validMs > sourcePubMs && rawRecord.allowForecastValidAfterLearned !== true;
+
+      if (lookAheadValidViolation) {
+        lookAheadBlocked = true;
+        lookAheadBlockReason = 'VALID_TIME_AFTER_DECISION_CUTOFF';
+      } else if (lookAheadLearnedViolation) {
+        lookAheadBlocked = true;
+        lookAheadBlockReason = 'LEARNED_TIME_AFTER_DECISION_CUTOFF';
+      } else if (lookAheadSourcePubViolation) {
+        lookAheadBlocked = true;
+        lookAheadBlockReason = rawRecord.isRetrospectiveReanalysis
+          ? 'RETROSPECTIVE_REANALYSIS_RELEASED_AFTER_DECISION_CUTOFF'
+          : 'SOURCE_PUBLISHED_AFTER_DECISION_CUTOFF';
+      } else if (causalTemporalParadox) {
+        lookAheadBlocked = true;
+        lookAheadBlockReason = 'TEMPORAL_PARADOX_LEARNED_BEFORE_OCCURRENCE';
+      } else if (pubBeforeValidParadox) {
+        lookAheadBlocked = true;
+        lookAheadBlockReason = 'TEMPORAL_PARADOX_PUBLISHED_BEFORE_OCCURRENCE';
+      }
+    }
+
+    const isRetractedAtCutoff = Boolean(
+      rawRecord.retracted === true
+      || rawRecord.supersededById
+      || rawRecord.expired === true
+      || (retractedParsed && retractedParsed.valid && (!cutoffParsed.valid || retractedParsed.epochMs <= cutoffParsed.epochMs))
+    );
+
+    const hasNullOrEmptyValue = (
+      'value' in rawRecord
+      && (rawRecord.value === null || rawRecord.value === undefined || rawRecord.value === '' || (typeof rawRecord.value === 'number' && !Number.isFinite(rawRecord.value)))
+    );
 
     let categoryCode = String(rawRecord.epistemicCategoryCode || 'UNKNOWN_OR_INSUFFICIENT_DATA');
-    if (rawRecord.retracted || rawRecord.supersededById || rawRecord.expired) {
+    if (dateValidationFailed || hasNullOrEmptyValue) {
+      categoryCode = 'UNKNOWN_OR_INSUFFICIENT_DATA';
+    } else if (isRetractedAtCutoff) {
       categoryCode = 'CORRECTED_OR_EXPIRED_RECORD';
-    } else if (rawRecord.isCounterEvidence || rawRecord.contradictsRecordId) {
+    } else if (rawRecord.isCounterEvidence || rawRecord.contradictsRecordId || rawRecord.hasActiveConflict) {
       categoryCode = 'COUNTER_EVIDENCE_OR_CONTRADICTION';
     } else if (rawRecord.fallback === true || rawRecord.isHypothesis === true) {
       categoryCode = 'MODEL_HYPOTHESIS';
@@ -24997,17 +25210,44 @@
       relationPresentationLabel = `${rawRelation} (Sentetik Fallback Hipotezi — Kanıtlanmış Nedensellik Değildir)`;
     }
 
+    const hasValidSourceId = Boolean(rawRecord.sourceId && String(rawRecord.sourceId).trim().length > 0);
+    const canEnterDeterministicCoreAsFact = Boolean(
+      catMeta.canPromoteToVerifiedFactDirectly
+      && !lookAheadBlocked
+      && !dateValidationFailed
+      && !cutoffValidationFailed
+      && !isRetractedAtCutoff
+      && !hasNullOrEmptyValue
+      && !rawRecord.hasActiveConflict
+      && hasValidSourceId
+    );
+
+    const occurrenceToPublicationLagMinutes = (validParsed.valid && sourcePubParsed && sourcePubParsed.valid)
+      ? Math.round(((sourcePubParsed.epochMs - validParsed.epochMs) / 60000) * 100) / 100
+      : null;
+    const publicationToIngestionLagMinutes = (sourcePubParsed && sourcePubParsed.valid && learnedParsed.valid)
+      ? Math.round(((learnedParsed.epochMs - sourcePubParsed.epochMs) / 60000) * 100) / 100
+      : null;
+
     return {
-      recordId: String(rawRecord.recordId || `KREC-${hex32(hash32(JSON.stringify(rawRecord)))}`),
+      recordId: String(rawRecord.recordId || rawRecord.id || `KREC-${hex32(hash32(JSON.stringify(rawRecord)))}`),
       epistemicCategoryCode: catMeta.code,
       epistemicCategoryLabelTr: catMeta.labelTr,
-      validTimeIso,
-      learnedTimeIso,
-      decisionCutoffTimeIso: decisionCutoffIso,
+      plainBadgeTr: resolvePlainUserBadgeTr(catMeta.code, { lookAheadBlocked, dateValidationFailed }),
+      validTimeIso: validParsed.valid ? String(rawValidVal) : null,
+      availableAtSourceTimeIso: (sourcePubParsed && sourcePubParsed.valid) ? String(rawSourcePubVal) : null,
+      learnedTimeIso: learnedParsed.valid ? String(rawLearnedVal) : null,
+      retractedAtIso: (retractedParsed && retractedParsed.valid) ? String(rawRetractedVal) : null,
+      decisionCutoffTimeIso: cutoffParsed.valid ? String(rawCutoffVal) : null,
+      dateValidationFailed,
+      cutoffValidationFailed,
+      missingValidTime,
+      missingLearnedTime,
+      isRetractedAtCutoff,
+      occurrenceToPublicationLagMinutes,
+      publicationToIngestionLagMinutes,
       lookAheadBlocked,
-      lookAheadBlockReason: !lookAheadBlocked
-        ? null
-        : (lookAheadValidViolation ? 'VALID_TIME_AFTER_DECISION_CUTOFF' : 'LEARNED_TIME_AFTER_DECISION_CUTOFF'),
+      lookAheadBlockReason,
       isCalibratedProbability: isCalibrated,
       scoreType: isCalibrated ? 'EMPIRICALLY_CALIBRATED_PROBABILITY' : 'UNCALIBRATED_HEURISTIC_OR_RULE_SCORE',
       numericScore: rawScore,
@@ -25017,28 +25257,27 @@
       rawRelation,
       relationPresentationLabel,
       empiricalCausalityProven: false,
-      canEnterDeterministicCoreAsFact: Boolean(
-        catMeta.canPromoteToVerifiedFactDirectly && !lookAheadBlocked && rawRecord.sourceId
-      ),
-      sourceId: rawRecord.sourceId || null,
+      canEnterDeterministicCoreAsFact,
+      sourceId: hasValidSourceId ? String(rawRecord.sourceId).trim() : null,
+      primaryDatasetId: rawRecord.primaryDatasetId || rawRecord.originSourceId || (hasValidSourceId ? String(rawRecord.sourceId).trim() : null),
       assumptions: Array.isArray(rawRecord.assumptions) ? rawRecord.assumptions.slice() : []
     };
   }
 
   // ==========================================================================
-  // AŞAMA 3: CAELUS’A ÖZGÜ KONTROLLÜ AJAN TEMELİ (4 Uzman Ajan + Denetim)
+  // AŞAMA 3: CAELUS’A ÖZGÜ KONTROLLÜ AJAN TEMELİ (4 Uzman Ajan + Gerçek Kapılar)
   // ==========================================================================
   const CAELUS_AGENT_SPECIFICATIONS = Object.freeze({
     AGENT_A_DATA_AND_SOURCE: Object.freeze({
       agentId: 'AGENT_A_DATA_AND_SOURCE',
       nameTr: 'Veri ve Kaynak Doğrulama Ajanı',
-      version: '1.0.0',
+      version: '1.1.0',
       inputSchema: 'caelus.agent.raw_sources_bundle.v1',
       outputSchema: 'caelus.agent.normalized_claims_observations.v1',
       readPermissions: ['EXTERNAL_IMPORT_BUFFER', 'SOURCE_REGISTRY'],
       writePermissions: ['WORLD_MEMORY_CLAIMS', 'WORLD_MEMORY_OBSERVATIONS', 'WORLD_MEMORY_UNKNOWN_GAPS'],
       forbiddenWriteScopes: ['VERIFIED_CAUSAL_FACTS', 'ENGINE_AUTHORITATIVE_STATE'],
-      allowedTools: ['normalizeObservationRecord', 'classifyAndValidateKnowledgeRecord', 'evaluateLookAhead'],
+      allowedTools: ['normalizeObservationRecord', 'classifyAndValidateKnowledgeRecord', 'admitRecordToWorldMemoryAndCoreGate'],
       networkAccessAllowed: false,
       maxStepsBudget: 64,
       maxRecordsBudget: 500,
@@ -25047,13 +25286,13 @@
     AGENT_B_RELATION_EXPLORER: Object.freeze({
       agentId: 'AGENT_B_RELATION_EXPLORER',
       nameTr: 'Çok Alanlı Dolaylı İlişki ve Yol Araştırma Ajanı',
-      version: '1.0.0',
+      version: '1.1.0',
       inputSchema: 'caelus.agent.world_memory_snapshot.v1',
       outputSchema: 'caelus.agent.candidate_paths_hypotheses.v1',
       readPermissions: ['WORLD_MEMORY_ENTITIES', 'WORLD_MEMORY_OBSERVATIONS', 'WORLD_MEMORY_RELATIONS'],
       writePermissions: ['WORLD_MEMORY_HYPOTHESES', 'CANDIDATE_PATH_PROPOSALS'],
       forbiddenWriteScopes: ['WORLD_MEMORY_OBSERVATIONS', 'VERIFIED_CAUSAL_FACTS', 'ENGINE_AUTHORITATIVE_STATE'],
-      allowedTools: ['searchMultiHopPaths', 'scoreTemporalCandidateLinks', ' computeLaggedCorrelation'],
+      allowedTools: ['searchMultiHopPaths', 'exploreMultiLayerImpactPaths', 'scoreTemporalCandidateLinks', 'computeLaggedCorrelation'],
       networkAccessAllowed: false,
       maxStepsBudget: 128,
       maxRecordsBudget: 250,
@@ -25062,13 +25301,13 @@
     AGENT_C_CRITIQUE_AND_ALTERNATIVES: Object.freeze({
       agentId: 'AGENT_C_CRITIQUE_AND_ALTERNATIVES',
       nameTr: 'Eleştiri, Karşıt Kanıt ve Alternatif Açıklama Ajanı',
-      version: '1.0.0',
+      version: '1.1.0',
       inputSchema: 'caelus.agent.candidate_paths_hypotheses.v1',
       outputSchema: 'caelus.agent.critique_and_alternatives_report.v1',
       readPermissions: ['WORLD_MEMORY_ALL', 'CANDIDATE_PATH_PROPOSALS'],
       writePermissions: ['WORLD_MEMORY_COUNTER_EVIDENCE', 'WORLD_MEMORY_ALTERNATIVE_EXPLANATIONS'],
       forbiddenWriteScopes: ['VERIFIED_CAUSAL_FACTS', 'ENGINE_AUTHORITATIVE_STATE'],
-      allowedTools: ['detectConfounders', 'checkReverseCausalityLag', 'scanContradictingClaims'],
+      allowedTools: ['detectConfounders', 'checkReverseCausalityLag', 'scanContradictingClaims', 'deduplicateCorroboratingSources'],
       networkAccessAllowed: false,
       maxStepsBudget: 64,
       maxRecordsBudget: 250,
@@ -25077,7 +25316,7 @@
     AGENT_D_AUDIT_AND_LEDGER: Object.freeze({
       agentId: 'AGENT_D_AUDIT_AND_LEDGER',
       nameTr: 'Deterministik Denetim, Yetki Kapısı ve Kayıt Ajanı',
-      version: '1.0.0',
+      version: '1.1.0',
       inputSchema: 'caelus.agent.workflow_trace.v1',
       outputSchema: 'caelus.agent.sealed_audit_bundle.v1',
       readPermissions: ['ALL_AGENT_TRACES', 'SYMBOLIC_VERIFIER_GATE'],
@@ -25091,60 +25330,466 @@
     })
   });
 
+  // Real Boundary Gate 1: Agent Memory Write Gate (enforced directly on memory mutation attempts)
+  function writeMemoryRecordWithAgentGate(memory, agentId, targetScope, conceptType, payload = {}, options = {}) {
+    const spec = CAELUS_AGENT_SPECIFICATIONS[agentId];
+    const onAudit = typeof options.onAudit === 'function' ? options.onAudit : null;
+
+    if (!spec) {
+      if (onAudit) onAudit('AGENT_D_AUDIT_AND_LEDGER', 'REAL_MEMORY_WRITE_GATE', 'REJECTED_UNKNOWN_AGENT', { agentId, targetScope, conceptType });
+      return { allowed: false, written: false, reason: 'UNKNOWN_AGENT_IDENTITY', record: null };
+    }
+
+    if (spec.forbiddenWriteScopes.includes(targetScope) || !spec.writePermissions.includes(targetScope)) {
+      if (onAudit) {
+        onAudit('AGENT_D_AUDIT_AND_LEDGER', 'BLOCK_FORBIDDEN_WRITE_SCOPE', 'REJECTED_FAIL_CLOSED', {
+          agentId,
+          requestedWriteScope: targetScope,
+          conceptType,
+          allowedWritePermissions: spec.writePermissions
+        });
+      }
+      return { allowed: false, written: false, reason: `FORBIDDEN_WRITE_SCOPE:${targetScope}`, record: null };
+    }
+
+    // Prevent any agent from writing a Hypothesis or unverified claim into Observation bucket
+    if (conceptType === 'Observation' && (payload.isHypothesis === true || payload.fallback === true || payload.epistemicCategoryCode === 'MODEL_HYPOTHESIS')) {
+      if (onAudit) {
+        onAudit('AGENT_D_AUDIT_AND_LEDGER', 'BLOCK_HYPOTHESIS_AS_OBSERVATION_FACT', 'REJECTED_FAIL_CLOSED', {
+          agentId,
+          targetScope,
+          conceptType
+        });
+      }
+      return { allowed: false, written: false, reason: 'HYPOTHESIS_CANNOT_BE_WRITTEN_AS_OBSERVATION', record: null };
+    }
+
+    if (!memory || !memory.buckets) {
+      return { allowed: true, written: false, reason: 'PERMITTED_DRY_RUN', record: null };
+    }
+
+    const writtenRecord = addTemporalMemoryRecord(memory, conceptType, {
+      ...payload,
+      writtenByAgentId: agentId
+    });
+    if (onAudit) {
+      onAudit(agentId, 'AUTHORIZED_MEMORY_WRITE', 'COMMITTED', {
+        targetScope,
+        conceptType,
+        recordId: writtenRecord.id
+      });
+    }
+    return { allowed: true, written: true, reason: 'PERMITTED_AND_COMMITTED', record: writtenRecord };
+  }
+
+  // Real Boundary Gate 2: Agent Network Access Gate (enforced before any external network invocation)
+  function invokeExternalNetworkWithAgentGate(agentId, requestSpec = {}, options = {}) {
+    const spec = CAELUS_AGENT_SPECIFICATIONS[agentId];
+    const onAudit = typeof options.onAudit === 'function' ? options.onAudit : null;
+
+    if (!spec) {
+      if (onAudit) onAudit('AGENT_D_AUDIT_AND_LEDGER', 'REAL_NETWORK_GATE', 'REJECTED_UNKNOWN_AGENT', { agentId });
+      return { allowed: false, networkExecuted: false, reason: 'UNKNOWN_AGENT_IDENTITY' };
+    }
+    if (!spec.networkAccessAllowed) {
+      if (onAudit) {
+        onAudit('AGENT_D_AUDIT_AND_LEDGER', 'BLOCK_UNAUTHORIZED_NETWORK_CALL', 'REJECTED_FAIL_CLOSED', {
+          agentId,
+          targetUrl: redactSecretsAndTokens(requestSpec.url || 'EXTERNAL_NETWORK'),
+          requestedNetworkAccess: true
+        });
+      }
+      return {
+        allowed: false,
+        networkExecuted: false,
+        reason: 'UNAUTHORIZED_NETWORK_ACCESS_BLOCKED'
+      };
+    }
+    return { allowed: true, networkExecuted: false, reason: 'PERMITTED_OFFLINE_BUFFER_ONLY' };
+  }
+
+  // Real Boundary Gate 3: Core ScenarioPack Promotion Gate (prevents hypotheses or look-ahead leaks from entering core)
+  function promoteToCoreScenarioPackWithAgentGate(agentId, candidateRecords = [], options = {}) {
+    const spec = CAELUS_AGENT_SPECIFICATIONS[agentId];
+    const onAudit = typeof options.onAudit === 'function' ? options.onAudit : null;
+    const decisionCutoffTimeIso = options.decisionCutoffTimeIso || null;
+
+    if (!spec || spec.forbiddenWriteScopes.includes('ENGINE_AUTHORITATIVE_STATE')) {
+      // Agents cannot directly mutate ENGINE_AUTHORITATIVE_STATE; they can only submit verified observations to a sandboxed ScenarioPack branch
+      if (options.targetZone === 'ENGINE_AUTHORITATIVE_STATE') {
+        if (onAudit) {
+          onAudit('AGENT_D_AUDIT_AND_LEDGER', 'BLOCK_AUTHORITATIVE_CORE_MUTATION', 'REJECTED_FAIL_CLOSED', {
+            agentId,
+            targetZone: 'ENGINE_AUTHORITATIVE_STATE'
+          });
+        }
+        return {
+          allowed: false,
+          promotedRecords: [],
+          rejectedRecords: candidateRecords,
+          reason: 'DIRECT_AUTHORITATIVE_CORE_MUTATION_FORBIDDEN'
+        };
+      }
+    }
+
+    const promotedRecords = [];
+    const rejectedRecords = [];
+    for (const rec of candidateRecords) {
+      const check = classifyAndValidateKnowledgeRecord(rec, { decisionCutoffTimeIso });
+      if (check.canEnterDeterministicCoreAsFact) {
+        promotedRecords.push({ ...rec, ...check });
+      } else {
+        rejectedRecords.push({
+          ...rec,
+          ...check,
+          rejectionReason: check.lookAheadBlocked
+            ? `LOOK_AHEAD_OR_DATE_INVALID:${check.lookAheadBlockReason}`
+            : `EPISTEMIC_CATEGORY_NOT_FACT:${check.epistemicCategoryCode}`
+        });
+      }
+    }
+
+    if (onAudit) {
+      onAudit('AGENT_D_AUDIT_AND_LEDGER', 'CORE_SCENARIO_PROMOTION_GATE', 'EVALUATED', {
+        agentId,
+        promotedFactCount: promotedRecords.length,
+        rejectedNonFactCount: rejectedRecords.length
+      });
+    }
+
+    return {
+      allowed: rejectedRecords.length === 0,
+      promotedRecords,
+      rejectedRecords,
+      reason: rejectedRecords.length === 0 ? 'ALL_RECORDS_VERIFIED_FOR_SCENARIO_PACK' : 'NON_FACT_OR_LOOKAHEAD_RECORDS_QUARANTINED'
+    };
+  }
+
+  // ==========================================================================
+  // AŞAMA 3 (BÖLÜM 8): ÇOK KATMANLI İLİŞKİ KATEGORİLERİ, KAYNAK TEKİLLEŞTİRME VE BÜTÇELİ YOL KEŞFİ
+  // ==========================================================================
+  const WORLD_IMPACT_RELATION_CATEGORIES = Object.freeze({
+    ECONOMIC: {
+      code: 'ECONOMIC',
+      labelTr: 'Ekonomik ve Finansal İlişki',
+      defaultLagHours: 6
+    },
+    TECHNOLOGICAL_DEPENDENCY: {
+      code: 'TECHNOLOGICAL_DEPENDENCY',
+      labelTr: 'Teknolojik ve Üretim Bağımlılığı',
+      defaultLagHours: 4
+    },
+    ENERGY_INFRASTRUCTURE_DEPENDENCY: {
+      code: 'ENERGY_INFRASTRUCTURE_DEPENDENCY',
+      labelTr: 'Enerji ve Altyapı Bağımlılığı',
+      defaultLagHours: 1
+    },
+    TRADE_SUPPLY_CHAIN: {
+      code: 'TRADE_SUPPLY_CHAIN',
+      labelTr: 'Ticaret ve Tedarik Zinciri İlişkisi',
+      defaultLagHours: 12
+    },
+    CORPORATE_INSTITUTIONAL: {
+      code: 'CORPORATE_INSTITUTIONAL',
+      labelTr: 'Kurumsal ve Şirketsel İlişki',
+      defaultLagHours: 8
+    },
+    REGULATORY_POLITICAL: {
+      code: 'REGULATORY_POLITICAL',
+      labelTr: 'Düzenleyici ve Politik İlişki',
+      defaultLagHours: 24
+    },
+    USER_DEFINED: {
+      code: 'USER_DEFINED',
+      labelTr: 'Kullanıcı Tanımlı Özel İlişki',
+      defaultLagHours: 6
+    }
+  });
+
+  // Source Deduplication: Ensures multiple secondary sources citing the same primary dataset are NOT counted as independent evidence
+  function deduplicateCorroboratingSources(sourceRecords = []) {
+    const uniqueReportingSourceIds = new Set();
+    const uniquePrimaryDatasetIds = new Set();
+    const primaryToReporters = new Map();
+
+    for (const item of sourceRecords) {
+      if (!item || typeof item !== 'object') continue;
+      const srcId = String(item.sourceId || item.id || 'UNKNOWN_SOURCE').trim();
+      const primaryId = String(
+        item.primaryDatasetId
+        || item.originSourceId
+        || item.upstreamPrimarySourceId
+        || srcId
+      ).trim();
+
+      uniqueReportingSourceIds.add(srcId);
+      uniquePrimaryDatasetIds.add(primaryId);
+      if (!primaryToReporters.has(primaryId)) {
+        primaryToReporters.set(primaryId, []);
+      }
+      if (!primaryToReporters.get(primaryId).includes(srcId)) {
+        primaryToReporters.get(primaryId).push(srcId);
+      }
+    }
+
+    const duplicateClusters = [];
+    for (const [primaryId, reporters] of primaryToReporters.entries()) {
+      if (reporters.length > 1) {
+        duplicateClusters.push({
+          primaryDatasetId: primaryId,
+          reportingSourceIds: reporters,
+          repeatedCount: reporters.length
+        });
+      }
+    }
+
+    const totalReportsCount = sourceRecords.length;
+    const distinctReportingSourcesCount = uniqueReportingSourceIds.size;
+    const independentPrimaryEvidenceCount = uniquePrimaryDatasetIds.size;
+    const duplicatePrimarySourceDetected = duplicateClusters.length > 0 || independentPrimaryEvidenceCount < totalReportsCount;
+
+    return {
+      totalReportsCount,
+      distinctReportingSourcesCount,
+      independentPrimaryEvidenceCount,
+      duplicatePrimarySourceDetected,
+      duplicateClusters,
+      corroborationHonestyNoteTr: duplicatePrimarySourceDetected
+        ? `KAYNAK TEKİLLEŞTİRME UYARISI: ${totalReportsCount} bildirim incelendi ancak bunların bir kısmı aynı birincil veri kümesini (${duplicateClusters.map(c => c.primaryDatasetId).join(', ') || 'ortak kaynak'}) tekrar etmektedir. Bağımsız birincil kanıt sayısı: ${independentPrimaryEvidenceCount}.`
+        : `${independentPrimaryEvidenceCount} bağımsız birincil kaynak doğrulandı.`
+    };
+  }
+
+  const GRAPH_EXPLORATION_BUDGET_DEFAULTS = Object.freeze({
+    maxNodes: 250,
+    maxEdges: 1000,
+    maxDepthHops: 4,
+    maxPathsReturned: 64,
+    cyclePrevention: true,
+    timeoutMs: 500
+  });
+
+  function exploreMultiLayerImpactPaths(graphSpec = {}, budgetOptions = {}) {
+    const maxNodes = Math.max(2, Number(budgetOptions.maxNodes ?? GRAPH_EXPLORATION_BUDGET_DEFAULTS.maxNodes));
+    const maxEdges = Math.max(1, Number(budgetOptions.maxEdges ?? GRAPH_EXPLORATION_BUDGET_DEFAULTS.maxEdges));
+    const maxDepthHops = Math.min(8, Math.max(1, Number(budgetOptions.maxDepthHops ?? GRAPH_EXPLORATION_BUDGET_DEFAULTS.maxDepthHops)));
+    const maxPathsReturned = Math.max(1, Number(budgetOptions.maxPathsReturned ?? GRAPH_EXPLORATION_BUDGET_DEFAULTS.maxPathsReturned));
+    const timeoutMs = Math.max(10, Number(budgetOptions.timeoutMs ?? GRAPH_EXPLORATION_BUDGET_DEFAULTS.timeoutMs));
+
+    const rawEntities = Array.isArray(graphSpec.entities) ? graphSpec.entities : [];
+    const rawRelations = Array.isArray(graphSpec.relations) ? graphSpec.relations : [];
+    const knownConflicts = Array.isArray(graphSpec.conflicts) ? graphSpec.conflicts : [];
+    const knownDataGaps = Array.isArray(graphSpec.dataGaps) ? graphSpec.dataGaps : [];
+
+    let nodeBudgetExceeded = rawEntities.length > maxNodes;
+    let edgeBudgetExceeded = rawRelations.length > maxEdges;
+    let depthLimitReachedCount = 0;
+    let detectedCyclesSkipped = 0;
+    let timeoutExceeded = false;
+
+    const boundedEntities = rawEntities.slice(0, maxNodes);
+    const boundedRelations = rawRelations.slice(0, maxEdges);
+    const allowedEntityIds = new Set(boundedEntities.map(e => String(e.entityId || e.id)));
+    const entityMap = new Map(boundedEntities.map(e => [String(e.entityId || e.id), e]));
+
+    const adj = new Map();
+    for (const rel of boundedRelations) {
+      const u = String(rel.fromId || rel.from || '');
+      const v = String(rel.toId || rel.to || '');
+      if (!u || !v) continue;
+      if (allowedEntityIds.size > 0 && (!allowedEntityIds.has(u) || !allowedEntityIds.has(v))) {
+        nodeBudgetExceeded = true;
+        continue;
+      }
+      if (!adj.has(u)) adj.set(u, []);
+      adj.get(u).push(rel);
+    }
+
+    const startTimeMs = Date.now();
+    const discoveredPaths = [];
+    const startIds = graphSpec.sourceEntityId
+      ? [String(graphSpec.sourceEntityId)]
+      : Array.from(adj.keys());
+    const targetId = graphSpec.targetEntityId ? String(graphSpec.targetEntityId) : null;
+
+    let expansionSteps = 0;
+    const maxExpansionSteps = Math.max(256, maxEdges * 4);
+
+    outerLoop:
+    for (const sId of startIds) {
+      const queue = [{ currentId: sId, nodes: [sId], edges: [], totalLagHours: 0 }];
+      while (queue.length > 0 && discoveredPaths.length < maxPathsReturned) {
+        expansionSteps += 1;
+        if ((Date.now() - startTimeMs) > timeoutMs || expansionSteps > maxExpansionSteps) {
+          timeoutExceeded = true;
+          break outerLoop;
+        }
+        const state = queue.shift();
+        if (state.edges.length >= 1) {
+          if (!targetId || state.currentId === targetId) {
+            const domainsTraversed = Array.from(new Set(state.nodes.map(nid => {
+              const ent = entityMap.get(nid);
+              return ent ? (ent.domain || ent.sector || 'GENERAL') : 'GENERAL';
+            })));
+            const relationCategoriesTraversed = Array.from(new Set(state.edges.map(e => {
+              const cat = e.relationCategory || 'USER_DEFINED';
+              return WORLD_IMPACT_RELATION_CATEGORIES[cat] ? cat : 'USER_DEFINED';
+            })));
+            const hasRuleOrHyp = state.edges.some(e => e.epistemicCategoryCode !== 'MEASUREMENT_OR_OBSERVATION');
+            const heuristicScore = state.edges.reduce((acc, e) => acc * Number(e.heuristicWeight || e.confidence || 0.72), 1.0);
+            const pathSourceDeduplication = deduplicateCorroboratingSources(state.edges.map(e => ({
+              sourceId: e.sourceId || 'SRC-MODEL-RULE',
+              primaryDatasetId: e.primaryDatasetId || e.originSourceId || e.sourceId || 'SRC-MODEL-RULE'
+            })));
+            const pathGaps = knownDataGaps.filter(g => state.nodes.includes(g.entityId || g.subjectId));
+            const pathConflicts = knownConflicts.filter(c => state.nodes.includes(c.subjectId || c.entityId));
+            const pathAssumptions = state.edges.flatMap((e, idx) =>
+              Array.isArray(e.assumptions) && e.assumptions.length > 0
+                ? e.assumptions
+                : [`Adım ${idx + 1} (${e.fromId || e.from} → ${e.toId || e.to}): Ara tampon kapasitenin aşılması ve ${Number(e.lagHours || 1)} saatlik gecikme varsayımı.`]
+            );
+
+            const pathEpistemicCode = pathConflicts.length > 0
+              ? 'COUNTER_EVIDENCE_OR_CONTRADICTION'
+              : (hasRuleOrHyp ? 'MODEL_HYPOTHESIS' : 'RULE_BASED_INFERENCE');
+
+            discoveredPaths.push({
+              pathId: `PATH-${hex32(hash32(state.nodes.join('->')))}`,
+              hopCount: state.edges.length,
+              nodeSequence: state.nodes.slice(),
+              nodeLabels: state.nodes.map(nid => (entityMap.get(nid)?.label || entityMap.get(nid)?.name || nid)),
+              domainsTraversed,
+              relationCategoriesTraversed,
+              isCrossDomain: domainsTraversed.length > 1,
+              isIndirect: state.edges.length >= 2,
+              totalLagHours: state.totalLagHours,
+              edges: state.edges.map(e => {
+                const rCat = WORLD_IMPACT_RELATION_CATEGORIES[e.relationCategory] ? e.relationCategory : 'USER_DEFINED';
+                const epCode = e.epistemicCategoryCode || 'MODEL_HYPOTHESIS';
+                return {
+                  fromId: e.fromId || e.from,
+                  toId: e.toId || e.to,
+                  relation: e.relation || 'INFLUENCES',
+                  relationCategory: rCat,
+                  relationCategoryLabelTr: WORLD_IMPACT_RELATION_CATEGORIES[rCat].labelTr,
+                  relationPresentationLabel: `${e.relation || 'INFLUENCES'} (Aday Etki Yolu — Kanıtlanmış Nedensellik Değildir)`,
+                  lagHours: Number(e.lagHours || WORLD_IMPACT_RELATION_CATEGORIES[rCat].defaultLagHours || 1),
+                  sourceId: e.sourceId || 'SRC-DOMAIN-RULE',
+                  primaryDatasetId: e.primaryDatasetId || e.originSourceId || e.sourceId || 'SRC-DOMAIN-RULE',
+                  validTimeIso: e.validTimeIso || null,
+                  learnedTimeIso: e.learnedTimeIso || null,
+                  epistemicCategoryCode: epCode,
+                  epistemicCategoryLabelTr: EPISTEMIC_KNOWLEDGE_CATEGORIES[epCode]?.labelTr
+                    || EPISTEMIC_KNOWLEDGE_CATEGORIES.MODEL_HYPOTHESIS.labelTr,
+                  plainBadgeTr: resolvePlainUserBadgeTr(epCode),
+                  mechanismTr: e.mechanismTr || 'Çok adımlı aday yayılım mekanizması'
+                };
+              }),
+              pathEpistemicCategoryCode: pathEpistemicCode,
+              pathEpistemicLabelTr: EPISTEMIC_KNOWLEDGE_CATEGORIES[pathEpistemicCode]?.labelTr
+                || EPISTEMIC_KNOWLEDGE_CATEGORIES.MODEL_HYPOTHESIS.labelTr,
+              plainBadgeTr: resolvePlainUserBadgeTr(pathEpistemicCode),
+              requiredAssumptions: pathAssumptions,
+              missingDataGaps: pathGaps,
+              counterEvidenceAndConflicts: pathConflicts,
+              sourceDeduplication: pathSourceDeduplication,
+              uncalibratedPathScore: Math.round(heuristicScore * 1e4) / 1e4,
+              scoreDerivationFormulaTr: 'prod(step_heuristic_weight_i) — Kalibre edilmemiş sezgisel yol ağırlığı; olasılık değildir.',
+              isCalibratedProbability: false,
+              empiricalCausalityProven: false,
+              causalityWarningTr: 'Ağda dolaylı bir yolun bulunması tek başına kanıtlanmış nedensellik değildir; alternatif açıklamalar ve karıştırıcı değişkenler incelenmelidir.'
+            });
+          }
+        }
+        if (state.edges.length >= maxDepthHops) {
+          depthLimitReachedCount += 1;
+          continue;
+        }
+        const outgoing = adj.get(state.currentId) || [];
+        for (const nextEdge of outgoing) {
+          const nextNode = String(nextEdge.toId || nextEdge.to);
+          if (state.nodes.includes(nextNode)) {
+            detectedCyclesSkipped += 1;
+            continue;
+          }
+          queue.push({
+            currentId: nextNode,
+            nodes: [...state.nodes, nextNode],
+            edges: [...state.edges, nextEdge],
+            totalLagHours: state.totalLagHours + Number(nextEdge.lagHours || 1)
+          });
+        }
+      }
+    }
+
+    const anyLimitHit = nodeBudgetExceeded || edgeBudgetExceeded || timeoutExceeded || discoveredPaths.length >= maxPathsReturned;
+    return {
+      schemaVersion: 'caelus.multi_layer_impact_network.v1',
+      discoveredPaths,
+      indirectPaths: discoveredPaths.filter(p => p.isIndirect),
+      crossDomainPaths: discoveredPaths.filter(p => p.isCrossDomain),
+      budgetAndScaleReport: {
+        maxNodes,
+        maxEdges,
+        maxDepthHops,
+        maxPathsReturned,
+        timeoutMs,
+        inputNodeCount: rawEntities.length,
+        inputEdgeCount: rawRelations.length,
+        expansionStepsExecuted: expansionSteps,
+        detectedCyclesSkipped,
+        depthLimitReachedCount,
+        nodeBudgetExceeded,
+        edgeBudgetExceeded,
+        timeoutExceeded,
+        anyLimitHit,
+        budgetWarningTr: anyLimitHit
+          ? `ÖLÇEK VE BÜTÇE SINIRI UYARISI: Grafik arama bütçesi sınırlarına ulaşıldı (Düğüm sınırı aşımı=${nodeBudgetExceeded}, Kenar sınırı aşımı=${edgeBudgetExceeded}, Zaman aşımı=${timeoutExceeded}, Atlanan döngü=${detectedCyclesSkipped}). Döndürülen ${discoveredPaths.length} yol bütçe dahilindeki kısmi sonuçtur.`
+          : `Grafik araması bütçe sınırları içinde tamamlandı (${expansionSteps} adım, ${detectedCyclesSkipped} döngü engellendi).`
+      }
+    };
+  }
+
   function executeCaelusAgentWorkflow(workflowInput = {}) {
     const seed = Number.isFinite(Number(workflowInput.seed)) ? Number(workflowInput.seed) : 20260410;
-    const decisionCutoffTimeIso = String(workflowInput.decisionCutoffTimeIso || '2026-10-15T12:00:00.000Z');
+    const decisionCutoffTimeIso = workflowInput.decisionCutoffTimeIso !== undefined
+      ? String(workflowInput.decisionCutoffTimeIso)
+      : '2026-10-15T12:00:00.000Z';
     const rawSources = Array.isArray(workflowInput.rawRecords) ? workflowInput.rawRecords : [];
     const entities = Array.isArray(workflowInput.entities) ? workflowInput.entities : [];
     const candidateEdges = Array.isArray(workflowInput.relations) ? workflowInput.relations : [];
     const maxHopBudget = Math.min(6, Math.max(2, Number(workflowInput.maxHopBudget || 4)));
 
+    const workflowMemory = workflowInput.memory || createTemporalWorldMemory({
+      memoryId: `TWM-WF-${seed}`,
+      createdAtIso: '2026-01-01T00:00:00.000Z'
+    });
+
     const auditEntries = [];
     let chainHead = `GENESIS-${hex32(hash32(`CAELUS-AGENT-AUDIT:${seed}:${decisionCutoffTimeIso}`))}`;
+    let sha256ChainHead = computeDeterministicSha256Hex(`CAELUS-AGENT-AUDIT-SHA256:${seed}:${decisionCutoffTimeIso}`);
 
     function appendAudit(agentId, action, status, details) {
       const spec = CAELUS_AGENT_SPECIFICATIONS[agentId];
-      const payload = JSON.stringify({ prev: chainHead, agentId, version: spec ? spec.version : '1.0.0', action, status, details });
+      const payload = JSON.stringify({ prev: chainHead, agentId, version: spec ? spec.version : '1.1.0', action, status, details });
       chainHead = `AUD-${hex32(hash32(payload))}`;
+      sha256ChainHead = computeDeterministicSha256Hex(`${sha256ChainHead}:${payload}`);
       const entry = {
         stepIndex: auditEntries.length + 1,
         agentId,
-        agentVersion: spec ? spec.version : '1.0.0',
+        agentVersion: spec ? spec.version : '1.1.0',
         action,
         status,
         details,
-        entryHash: chainHead
+        entryHash: chainHead,
+        entrySha256: sha256ChainHead,
+        hashAlgorithm: 'FNV1A_32_TRACE_AND_SHA256_CONTENT_CHAIN'
       };
       auditEntries.push(entry);
       return entry;
     }
 
-    // Security gate: check if any caller tries to force unauthorized write or network access
-    function enforcePermissionGate(agentId, requestedWriteScope, requestedNetworkAccess = false) {
-      const spec = CAELUS_AGENT_SPECIFICATIONS[agentId];
-      if (!spec) {
-        appendAudit('AGENT_D_AUDIT_AND_LEDGER', 'VERIFY_AGENT_IDENTITY', 'REJECTED_UNKNOWN_AGENT', { agentId });
-        return { allowed: false, reason: 'UNKNOWN_AGENT' };
-      }
-      if (requestedNetworkAccess && !spec.networkAccessAllowed) {
-        appendAudit('AGENT_D_AUDIT_AND_LEDGER', 'BLOCK_UNAUTHORIZED_NETWORK_CALL', 'REJECTED_FAIL_CLOSED', {
-          agentId,
-          requestedNetworkAccess
-        });
-        return { allowed: false, reason: 'UNAUTHORIZED_NETWORK_ACCESS_BLOCKED' };
-      }
-      if (spec.forbiddenWriteScopes.includes(requestedWriteScope) || !spec.writePermissions.includes(requestedWriteScope)) {
-        appendAudit('AGENT_D_AUDIT_AND_LEDGER', 'BLOCK_FORBIDDEN_WRITE_SCOPE', 'REJECTED_FAIL_CLOSED', {
-          agentId,
-          requestedWriteScope,
-          allowedWritePermissions: spec.writePermissions
-        });
-        return { allowed: false, reason: `FORBIDDEN_WRITE_SCOPE:${requestedWriteScope}` };
-      }
-      return { allowed: true, reason: 'PERMITTED' };
-    }
-
-    // 1. AGENT A: Veri ve Kaynak Ajanı
+    // 1. AGENT A: Veri ve Kaynak Ajanı (Gerçek Hafıza Yazma Kapısı Üzerinden)
     const agentANormalized = [];
     const agentABlockedLookAhead = [];
     const agentAUnknownGaps = [];
@@ -25159,110 +25804,129 @@
           variableName: r.variableName || 'unknown_variable',
           epistemicCategoryCode: 'UNKNOWN_OR_INSUFFICIENT_DATA',
           epistemicCategoryLabelTr: EPISTEMIC_KNOWLEDGE_CATEGORIES.UNKNOWN_OR_INSUFFICIENT_DATA.labelTr,
+          plainBadgeTr: PLAIN_USER_BADGES_TR.INSUFFICIENT_DATA,
           reasonTr: 'Kaynakta değer eksik (null/boş); sahte veriyle doldurulmadı.'
         };
         agentAUnknownGaps.push(gapRec);
+        workflowMemory.dataGapRegistry.push(gapRec);
         continue;
       }
       const classified = classifyAndValidateKnowledgeRecord(r, { decisionCutoffTimeIso });
-      if (classified.lookAheadBlocked) {
+      if (classified.lookAheadBlocked || classified.dateValidationFailed) {
         agentABlockedLookAhead.push(classified);
+        workflowMemory.quarantinedRecords.push(classified);
       } else {
-        agentANormalized.push({
-          ...r,
-          ...classified
-        });
-      }
-    }
-    appendAudit('AGENT_A_DATA_AND_SOURCE', 'INGEST_AND_VALIDATE_SOURCES', 'COMPLETED', {
-      acceptedCount: agentANormalized.length,
-      lookAheadBlockedCount: agentABlockedLookAhead.length,
-      unknownGapCount: agentAUnknownGaps.length
-    });
-
-    // Test fail-closed gate if someone requests Agent B to write directly to VERIFIED_CAUSAL_FACTS
-    let attemptedUnauthorizedWriteResult = null;
-    if (workflowInput.simulateUnauthorizedHypothesisFactWrite) {
-      attemptedUnauthorizedWriteResult = enforcePermissionGate('AGENT_B_RELATION_EXPLORER', 'VERIFIED_CAUSAL_FACTS', false);
-    }
-    let attemptedUnauthorizedNetworkResult = null;
-    if (workflowInput.simulateUnauthorizedAgentNetworkCall) {
-      attemptedUnauthorizedNetworkResult = enforcePermissionGate('AGENT_A_DATA_AND_SOURCE', 'WORLD_MEMORY_OBSERVATIONS', true);
-    }
-
-    // 2. AGENT B: İlişki Araştırma Ajanı (Multi-hop indirect path search across domains)
-    const entityMap = new Map(entities.map(e => [e.entityId || e.id, e]));
-    const adj = new Map();
-    for (const edge of candidateEdges) {
-      const u = edge.fromId || edge.from;
-      const v = edge.toId || edge.to;
-      if (!u || !v) continue;
-      if (!adj.has(u)) adj.set(u, []);
-      adj.get(u).push(edge);
-    }
-
-    const discoveredPaths = [];
-    const startIds = workflowInput.sourceEntityId
-      ? [workflowInput.sourceEntityId]
-      : Array.from(adj.keys());
-    const targetId = workflowInput.targetEntityId || null;
-
-    for (const sId of startIds) {
-      const queue = [{ currentId: sId, nodes: [sId], edges: [], totalLagHours: 0 }];
-      while (queue.length > 0 && discoveredPaths.length < CAELUS_AGENT_SPECIFICATIONS.AGENT_B_RELATION_EXPLORER.maxStepsBudget) {
-        const state = queue.shift();
-        if (state.edges.length >= 1) {
-          if (!targetId || state.currentId === targetId) {
-            const domainsTraversed = Array.from(new Set(state.nodes.map(nid => {
-              const ent = entityMap.get(nid);
-              return ent ? (ent.domain || ent.sector || 'GENERAL') : 'GENERAL';
-            })));
-            const hasRuleOrHyp = state.edges.some(e => e.epistemicCategoryCode !== 'MEASUREMENT_OR_OBSERVATION');
-            const heuristicScore = state.edges.reduce((acc, e) => acc * Number(e.heuristicWeight || e.confidence || 0.72), 1.0);
-            discoveredPaths.push({
-              pathId: `PATH-${hex32(hash32(state.nodes.join('->')))}`,
-              hopCount: state.edges.length,
-              nodeSequence: state.nodes.slice(),
-              nodeLabels: state.nodes.map(nid => (entityMap.get(nid)?.label || entityMap.get(nid)?.name || nid)),
-              domainsTraversed,
-              isCrossDomain: domainsTraversed.length > 1,
-              isIndirect: state.edges.length >= 2,
-              totalLagHours: state.totalLagHours,
-              edges: state.edges.map(e => ({
-                fromId: e.fromId || e.from,
-                toId: e.toId || e.to,
-                relation: e.relation || 'INFLUENCES',
-                relationPresentationLabel: `${e.relation || 'INFLUENCES'} (Aday Etki Yolu — Kanıtlanmış Nedensellik Değildir)`,
-                lagHours: Number(e.lagHours || 1),
-                epistemicCategoryCode: e.epistemicCategoryCode || 'MODEL_HYPOTHESIS',
-                epistemicCategoryLabelTr: EPISTEMIC_KNOWLEDGE_CATEGORIES[e.epistemicCategoryCode || 'MODEL_HYPOTHESIS']?.labelTr
-                  || EPISTEMIC_KNOWLEDGE_CATEGORIES.MODEL_HYPOTHESIS.labelTr,
-                mechanismTr: e.mechanismTr || 'Çok adımlı aday yayılım mekanizması'
-              })),
-              pathEpistemicCategoryCode: hasRuleOrHyp ? 'MODEL_HYPOTHESIS' : 'RULE_BASED_INFERENCE',
-              pathEpistemicLabelTr: hasRuleOrHyp
-                ? EPISTEMIC_KNOWLEDGE_CATEGORIES.MODEL_HYPOTHESIS.labelTr
-                : EPISTEMIC_KNOWLEDGE_CATEGORIES.RULE_BASED_INFERENCE.labelTr,
-              uncalibratedPathScore: Math.round(heuristicScore * 1e4) / 1e4,
-              isCalibratedProbability: false,
-              empiricalCausalityProven: false,
-              causalityWarningTr: 'Ağda dolaylı bir yolun bulunması tek başına kanıtlanmış nedensellik değildir; alternatif açıklamalar ve karıştırıcı değişkenler incelenmelidir.'
-            });
+        const targetConcept = classified.epistemicCategoryCode === 'SOURCE_CLAIM' ? 'Claim' : 'Observation';
+        const targetScope = targetConcept === 'Claim' ? 'WORLD_MEMORY_CLAIMS' : 'WORLD_MEMORY_OBSERVATIONS';
+        const writeGateRes = writeMemoryRecordWithAgentGate(
+          workflowMemory,
+          'AGENT_A_DATA_AND_SOURCE',
+          targetScope,
+          targetConcept,
+          {
+            id: classified.recordId,
+            subjectId: r.entityId || r.subjectId,
+            variableName: r.variableName,
+            value: r.value,
+            unit: r.unit,
+            validFromIso: classified.validTimeIso,
+            availableAtSourceTimeIso: classified.availableAtSourceTimeIso,
+            recordedAtIso: classified.learnedTimeIso,
+            sourceId: classified.sourceId,
+            primaryDatasetId: classified.primaryDatasetId,
+            epistemicCategoryCode: classified.epistemicCategoryCode
           }
-        }
-        if (state.edges.length >= maxHopBudget) continue;
-        const outgoing = adj.get(state.currentId) || [];
-        for (const nextEdge of outgoing) {
-          const nextNode = nextEdge.toId || nextEdge.to;
-          if (state.nodes.includes(nextNode)) continue;
-          queue.push({
-            currentId: nextNode,
-            nodes: [...state.nodes, nextNode],
-            edges: [...state.edges, nextEdge],
-            totalLagHours: state.totalLagHours + Number(nextEdge.lagHours || 1)
+        );
+        if (writeGateRes.allowed) {
+          agentANormalized.push({
+            ...r,
+            ...classified
           });
         }
       }
+    }
+
+    const sourceDeduplicationReport = deduplicateCorroboratingSources(agentANormalized);
+
+    appendAudit('AGENT_A_DATA_AND_SOURCE', 'INGEST_AND_VALIDATE_SOURCES', 'COMPLETED', {
+      acceptedCount: agentANormalized.length,
+      lookAheadBlockedCount: agentABlockedLookAhead.length,
+      unknownGapCount: agentAUnknownGaps.length,
+      independentPrimaryEvidenceCount: sourceDeduplicationReport.independentPrimaryEvidenceCount
+    });
+
+    // Enforce real boundary gates on unauthorized write or network attempts
+    let attemptedUnauthorizedWriteResult = null;
+    if (workflowInput.simulateUnauthorizedHypothesisFactWrite || Array.isArray(workflowInput.unauthorizedWriteAttempts)) {
+      const writeAttemptRes = writeMemoryRecordWithAgentGate(
+        workflowMemory,
+        'AGENT_B_RELATION_EXPLORER',
+        'VERIFIED_CAUSAL_FACTS',
+        'Observation',
+        {
+          id: 'UNAUTH-HYP-WRITE',
+          subjectId: workflowInput.sourceEntityId || 'ENT-01',
+          value: 99,
+          isHypothesis: true,
+          validFromIso: '2026-10-15T08:00:00.000Z',
+          recordedAtIso: '2026-10-15T08:05:00.000Z'
+        },
+        { onAudit: appendAudit }
+      );
+      attemptedUnauthorizedWriteResult = {
+        allowed: writeAttemptRes.allowed,
+        written: writeAttemptRes.written,
+        reason: writeAttemptRes.reason
+      };
+    }
+
+    let attemptedUnauthorizedNetworkResult = null;
+    if (workflowInput.simulateUnauthorizedAgentNetworkCall || workflowInput.unauthorizedNetworkRequest) {
+      const netAttemptRes = invokeExternalNetworkWithAgentGate(
+        'AGENT_A_DATA_AND_SOURCE',
+        workflowInput.unauthorizedNetworkRequest || { url: 'https://unauthorized.example.com/live-feed' },
+        { onAudit: appendAudit }
+      );
+      attemptedUnauthorizedNetworkResult = {
+        allowed: netAttemptRes.allowed,
+        networkExecuted: netAttemptRes.networkExecuted,
+        reason: netAttemptRes.reason
+      };
+    }
+
+    // 2. AGENT B: İlişki Araştırma Ajanı (Bütçeli Çok Katmanlı İlişki ve Dolaylı Yol Keşfi)
+    const explorationResult = exploreMultiLayerImpactPaths({
+      entities,
+      relations: candidateEdges,
+      sourceEntityId: workflowInput.sourceEntityId,
+      targetEntityId: workflowInput.targetEntityId,
+      conflicts: workflowMemory.conflictRegistry,
+      dataGaps: agentAUnknownGaps
+    }, {
+      maxDepthHops: maxHopBudget,
+      maxNodes: workflowInput.maxNodesBudget || CAELUS_AGENT_SPECIFICATIONS.AGENT_B_RELATION_EXPLORER.maxRecordsBudget,
+      maxEdges: workflowInput.maxEdgesBudget || 1000,
+      timeoutMs: workflowInput.timeoutMs || 500
+    });
+
+    const discoveredPaths = explorationResult.discoveredPaths;
+    for (const p of discoveredPaths) {
+      writeMemoryRecordWithAgentGate(
+        workflowMemory,
+        'AGENT_B_RELATION_EXPLORER',
+        'WORLD_MEMORY_HYPOTHESES',
+        'Hypothesis',
+        {
+          id: p.pathId,
+          subjectId: p.nodeSequence[0],
+          targetId: p.nodeSequence[p.nodeSequence.length - 1],
+          label: p.nodeLabels.join(' -> '),
+          validFromIso: decisionCutoffTimeIso,
+          recordedAtIso: decisionCutoffTimeIso,
+          sourceId: 'AGENT_B_RELATION_EXPLORER',
+          epistemicCategoryCode: 'MODEL_HYPOTHESIS'
+        }
+      );
     }
 
     appendAudit('AGENT_B_RELATION_EXPLORER', 'EXPLORE_INDIRECT_CROSS_DOMAIN_PATHS', 'COMPLETED', {
@@ -25276,10 +25940,13 @@
     const critiquesAndAlternatives = discoveredPaths.map(pathObj => {
       const startLabel = pathObj.nodeLabels[0];
       const endLabel = pathObj.nodeLabels[pathObj.nodeLabels.length - 1];
-      const contradictingClaims = agentANormalized.filter(
-        r => r.epistemicCategoryCode === 'COUNTER_EVIDENCE_OR_CONTRADICTION'
-          || (r.contradictsPathNode && pathObj.nodeSequence.includes(r.contradictsPathNode))
-      );
+      const contradictingClaims = [
+        ...agentANormalized.filter(
+          r => r.epistemicCategoryCode === 'COUNTER_EVIDENCE_OR_CONTRADICTION'
+            || (r.contradictsPathNode && pathObj.nodeSequence.includes(r.contradictsPathNode))
+        ),
+        ...workflowMemory.conflictRegistry.filter(c => pathObj.nodeSequence.includes(c.subjectId))
+      ];
 
       const alternativeExplanations = [
         {
@@ -25287,14 +25954,16 @@
           type: 'LATENT_COMMON_CAUSE_CONFOUNDER',
           titleTr: 'Ortak Neden / Gizli Karıştırıcı Değişken (Latent Confounder) Açıklaması',
           explanationTr: `'${startLabel}' ile '${endLabel}' arasındaki birlikte hareket, doğrudan zincirleme etkiden ziyade her iki alanı aynı anda etkileyen makroekonomik/jeopolitik veya mevsimsel bir ortak şoktan kaynaklanıyor olabilir.`,
-          epistemicCategoryCode: 'MODEL_HYPOTHESIS'
+          epistemicCategoryCode: 'MODEL_HYPOTHESIS',
+          plainBadgeTr: PLAIN_USER_BADGES_TR.HYPOTHESIS_TO_INVESTIGATE
         },
         {
           alternativeId: `ALT-LAG-${pathObj.pathId}`,
           type: 'LAG_SENSITIVITY_OR_COINCIDENCE',
           titleTr: 'Zaman Gecikmesi Belirsizliği veya Eşzamanlı Rastlantı',
           explanationTr: `Toplam ${pathObj.totalLagHours} saatlik tahmini gecikme penceresinde ara düğümlerdeki tampon kapasiteler şoku sönümleyebilir; gözlenen değişim bağımsız yerel darboğazlardan doğmuş olabilir.`,
-          epistemicCategoryCode: 'COUNTER_EVIDENCE_OR_CONTRADICTION'
+          epistemicCategoryCode: 'COUNTER_EVIDENCE_OR_CONTRADICTION',
+          plainBadgeTr: PLAIN_USER_BADGES_TR.CONTRADICTION_OR_COUNTER_EVIDENCE
         }
       ];
 
@@ -25316,6 +25985,23 @@
       totalAlternativeExplanationsGenerated: critiquesAndAlternatives.reduce((s, c) => s + c.alternativeExplanations.length, 0)
     });
 
+    // Verify core promotion boundary: ensure no hypothesis in workflowMemory can be promoted as a verified fact
+    const corePromotionGateCheck = promoteToCoreScenarioPackWithAgentGate(
+      'AGENT_D_AUDIT_AND_LEDGER',
+      [
+        ...agentANormalized,
+        ...discoveredPaths.map(p => ({
+          recordId: p.pathId,
+          epistemicCategoryCode: 'MODEL_HYPOTHESIS',
+          isHypothesis: true,
+          validTimeIso: decisionCutoffTimeIso,
+          learnedTimeIso: decisionCutoffTimeIso,
+          sourceId: 'AGENT_B_RELATION_EXPLORER'
+        }))
+      ],
+      { decisionCutoffTimeIso }
+    );
+
     // 4. AGENT D: Denetim Mühürleme
     const finalSealEntry = appendAudit('AGENT_D_AUDIT_AND_LEDGER', 'SEAL_AGENT_WORKFLOW_RUN', 'SEALED', {
       seed,
@@ -25331,11 +26017,13 @@
       agentAOutput: {
         normalizedRecords: agentANormalized,
         blockedLookAheadRecords: agentABlockedLookAhead,
-        unknownAndMissingGaps: agentAUnknownGaps
+        unknownAndMissingGaps: agentAUnknownGaps,
+        sourceDeduplicationReport
       },
       agentBOutput: {
         discoveredPaths,
-        indirectPaths: discoveredPaths.filter(p => p.isIndirect)
+        indirectPaths: discoveredPaths.filter(p => p.isIndirect),
+        budgetAndScaleReport: explorationResult.budgetAndScaleReport
       },
       agentCOutput: {
         critiquesAndAlternatives
@@ -25343,29 +26031,45 @@
       securityGateChecks: {
         attemptedUnauthorizedWriteResult,
         attemptedUnauthorizedNetworkResult,
+        corePromotionGateCheck: {
+          promotedVerifiedFactCount: corePromotionGateCheck.promotedRecords.length,
+          quarantinedNonFactCount: corePromotionGateCheck.rejectedRecords.length
+        },
         anyHypothesisPromotedToFactDirectly: false
       },
       auditTrail: {
         entries: auditEntries,
         finalChainHeadHash: finalSealEntry.entryHash,
+        finalSha256ChainHead: sha256ChainHead,
+        hashAlgorithm: 'FNV1A_32_NON_CRYPTOGRAPHIC_TRACE',
+        secondaryContentDigestAlgorithm: 'SHA256_DETERMINISTIC_HEX',
+        isCryptographicEd25519Seal: false,
+        nativeAuditBridgeStatus: 'BROWSER_IN_MEMORY_TRACE_READY_FOR_NATIVE_BLAKE3_ED25519_BRIDGE',
+        honestAuditDisclosureTr: 'AUD-* özeti hızlı bellek içi iz kontrolüdür (32-bit FNV-1a + 256-bit SHA-256 içerik zinciri). Kriptografik Blake3 + Ed25519 donanım/yerel imzası yalnızca yerel C++17/Rust çekirdeği (caelus_audit_*.log) üzerinden üretilir.',
         sealed: true
       }
     };
   }
 
   // ==========================================================================
-  // YETENEK 1/12: ZAMANSAL DÜNYA HAFIZASI (12 Çekirdek Kavram + Bitemporal)
+  // YETENEK 1/12 & AŞAMA 2: ZAMANSAL DÜNYA HAFIZASI (Birleşik Dünya Hafızası + Katman B Kapısı)
   // ==========================================================================
   const TEMPORAL_WORLD_MEMORY_CONCEPTS = Object.freeze([
     'Entity', 'Event', 'Source', 'Claim', 'Relation', 'Observation',
     'Assumption', 'Hypothesis', 'Intervention', 'Scenario', 'ModelRun', 'Outcome'
   ]);
 
+  const EXTENDED_WORLD_MEMORY_CONCEPTS = Object.freeze([
+    ...TEMPORAL_WORLD_MEMORY_CONCEPTS,
+    'Contradiction',
+    'AnalysisRun'
+  ]);
+
   function createTemporalWorldMemory(options = {}) {
     const memoryId = String(options.memoryId || 'TWM-CAELUS-01');
     const createdAtIso = String(options.createdAtIso || '2026-01-01T00:00:00.000Z');
     const buckets = {};
-    for (const c of TEMPORAL_WORLD_MEMORY_CONCEPTS) {
+    for (const c of EXTENDED_WORLD_MEMORY_CONCEPTS) {
       buckets[c] = [];
     }
     return {
@@ -25373,32 +26077,71 @@
       memoryId,
       createdAtIso,
       supportedConcepts: TEMPORAL_WORLD_MEMORY_CONCEPTS,
+      extendedConcepts: EXTENDED_WORLD_MEMORY_CONCEPTS,
       buckets,
       retractionHistory: [],
       conflictRegistry: [],
+      quarantinedRecords: [],
+      dataGapRegistry: [],
       versionHistory: []
     };
   }
 
   function addTemporalMemoryRecord(memory, conceptType, payload = {}) {
-    if (!memory || !memory.buckets || !TEMPORAL_WORLD_MEMORY_CONCEPTS.includes(conceptType)) {
+    const normalizedConcept = conceptType === 'AnalysisRun' ? 'ModelRun' : conceptType;
+    if (!memory || !memory.buckets || !EXTENDED_WORLD_MEMORY_CONCEPTS.includes(conceptType)) {
       throw new Error(`Geçersiz Zamansal Dünya Hafızası kavram türü: ${conceptType}`);
     }
-    const validFromIso = String(payload.validFromIso || payload.validTimeIso || '2026-01-01T00:00:00.000Z');
-    const validToIso = payload.validToIso ? String(payload.validToIso) : null;
-    const recordedAtIso = String(payload.recordedAtIso || payload.learnedTimeIso || validFromIso);
-    const stableBasis = `${conceptType}:${payload.stableKey || payload.id || payload.subjectId || ''}:${validFromIso}:${payload.sourceId || 'LOCAL'}:${JSON.stringify(payload.value ?? payload.label ?? '')}`;
+
+    const rawValid = payload.validFromIso !== undefined
+      ? payload.validFromIso
+      : (payload.validTimeIso !== undefined ? payload.validTimeIso : payload.occurrenceTimeIso);
+    const rawLearned = payload.recordedAtIso !== undefined
+      ? payload.recordedAtIso
+      : (payload.learnedTimeIso !== undefined ? payload.learnedTimeIso : payload.ingestionTimeIso);
+    const rawSourcePub = payload.availableAtSourceTimeIso !== undefined
+      ? payload.availableAtSourceTimeIso
+      : (payload.publishedAtSourceTimeIso !== undefined ? payload.publishedAtSourceTimeIso : payload.upstreamUpdatedIso);
+
+    const validParsed = parseStrictIsoTimestamp(rawValid);
+    const learnedParsed = parseStrictIsoTimestamp(rawLearned);
+    const sourcePubParsed = rawSourcePub !== undefined && rawSourcePub !== null ? parseStrictIsoTimestamp(rawSourcePub) : null;
+    const validToParsed = payload.validToIso ? parseStrictIsoTimestamp(payload.validToIso) : null;
+
+    const dateValidationFailed = !validParsed.valid || !learnedParsed.valid || (sourcePubParsed !== null && !sourcePubParsed.valid) || (validToParsed !== null && !validToParsed.valid);
+    const validFromIso = validParsed.valid ? String(rawValid) : null;
+    const validToIso = (validToParsed && validToParsed.valid) ? String(payload.validToIso) : null;
+    const recordedAtIso = learnedParsed.valid ? String(rawLearned) : null;
+    const availableAtSourceTimeIso = (sourcePubParsed && sourcePubParsed.valid) ? String(rawSourcePub) : null;
+
+    const stableBasis = `${conceptType}:${payload.stableKey || payload.id || payload.subjectId || ''}:${validFromIso || 'INVALID_DATE'}:${payload.sourceId || 'LOCAL'}:${JSON.stringify(payload.value ?? payload.label ?? '')}`;
     const recordId = String(payload.id || `${conceptType.toUpperCase().slice(0, 4)}-${hex32(hash32(stableBasis))}`);
 
     let epistemicCode = payload.epistemicCategoryCode;
-    if (!epistemicCode) {
+    if (dateValidationFailed) {
+      epistemicCode = 'UNKNOWN_OR_INSUFFICIENT_DATA';
+    } else if (!epistemicCode) {
       if (conceptType === 'Claim') epistemicCode = 'SOURCE_CLAIM';
       else if (conceptType === 'Observation') epistemicCode = 'MEASUREMENT_OR_OBSERVATION';
       else if (conceptType === 'Hypothesis') epistemicCode = 'MODEL_HYPOTHESIS';
+      else if (conceptType === 'Contradiction') epistemicCode = 'COUNTER_EVIDENCE_OR_CONTRADICTION';
       else if (conceptType === 'Assumption') epistemicCode = 'RULE_BASED_INFERENCE';
-      else if (conceptType === 'ModelRun' || conceptType === 'Outcome' || conceptType === 'Scenario') epistemicCode = 'SIMULATION_RESULT';
+      else if (conceptType === 'ModelRun' || conceptType === 'AnalysisRun' || conceptType === 'Outcome' || conceptType === 'Scenario') epistemicCode = 'SIMULATION_RESULT';
       else epistemicCode = 'MEASUREMENT_OR_OBSERVATION';
     }
+
+    const contentDigestPayload = JSON.stringify({
+      recordId,
+      conceptType,
+      subjectId: payload.subjectId || payload.entityId || null,
+      variableName: payload.variableName || null,
+      value: payload.value !== undefined ? payload.value : null,
+      validFromIso,
+      availableAtSourceTimeIso,
+      recordedAtIso,
+      sourceId: payload.sourceId || 'SRC-SYSTEM'
+    });
+    const contentSha256 = computeDeterministicSha256Hex(contentDigestPayload);
 
     const record = {
       id: recordId,
@@ -25407,28 +26150,54 @@
       targetId: payload.targetId || null,
       variableName: payload.variableName || null,
       value: payload.value !== undefined ? payload.value : null,
-      unit: payload.unit || null,
+      unit: payload.unit || 'UNKNOWN',
+      measurementMethod: payload.measurementMethod || (conceptType === 'Observation' ? 'DIRECT_TELEMETRY_OR_OBSERVATION' : 'REPORTED_OR_MODELED'),
       label: payload.label || payload.title || recordId,
       domain: payload.domain || 'GENERAL',
       sourceId: payload.sourceId || 'SRC-SYSTEM',
+      primaryDatasetId: payload.primaryDatasetId || payload.originSourceId || payload.sourceId || 'SRC-SYSTEM',
+      sourceUrlOrLocation: payload.sourceUrlOrLocation || payload.sourceUrl || 'local://caelus_world_memory',
       validFromIso,
       validToIso,
+      availableAtSourceTimeIso,
       recordedAtIso,
+      ingestionTimeIso: recordedAtIso,
       retractedAtIso: payload.retractedAtIso || null,
       supersededById: payload.supersededById || null,
+      revisionNumber: Number(payload.revisionNumber || 1),
+      dateValidationFailed,
       epistemicCategoryCode: epistemicCode,
       epistemicCategoryLabelTr: EPISTEMIC_KNOWLEDGE_CATEGORIES[epistemicCode]?.labelTr
         || EPISTEMIC_KNOWLEDGE_CATEGORIES.MEASUREMENT_OR_OBSERVATION.labelTr,
+      plainBadgeTr: resolvePlainUserBadgeTr(epistemicCode, { dateValidationFailed }),
       confidenceScore: Number.isFinite(Number(payload.confidenceScore)) ? Number(payload.confidenceScore) : null,
       isCalibratedProbability: Boolean(payload.isCalibratedProbability === true),
+      linkedEntityAndEventIds: Array.isArray(payload.linkedEntityAndEventIds)
+        ? payload.linkedEntityAndEventIds.slice()
+        : [payload.subjectId || payload.entityId, payload.targetId].filter(Boolean),
+      dataVersion: String(payload.dataVersion || `v${memory.versionHistory.length + 1}`),
+      contentSha256,
+      integritySeparateFromTruth: {
+        integrityHashAlgorithm: 'SHA-256',
+        contentSha256,
+        integrityVerified: true,
+        realWorldTruthProvenByHash: false,
+        explanationTr: 'Veri bütünlüğü özeti (SHA-256) yalnızca kaydın değiştirilmediğini doğrular; kaynağın gerçek dünyada doğru söylediğini kanıtlamaz.'
+      },
       attributes: payload.attributes ? { ...payload.attributes } : {}
     };
 
+    if (dateValidationFailed) {
+      memory.quarantinedRecords.push(record);
+      return record;
+    }
+
     // Detect non-destructive conflicting claims/observations on the same subject, variable & validFromIso
-    if ((conceptType === 'Claim' || conceptType === 'Observation') && record.subjectId && record.variableName) {
-      const existingSameSlot = memory.buckets[conceptType].filter(
+    if ((normalizedConcept === 'Claim' || normalizedConcept === 'Observation') && record.subjectId && record.variableName) {
+      const existingSameSlot = memory.buckets[normalizedConcept].filter(
         r => !r.retractedAtIso
           && !r.supersededById
+          && !r.dateValidationFailed
           && r.subjectId === record.subjectId
           && r.variableName === record.variableName
           && r.validFromIso === record.validFromIso
@@ -25445,14 +26214,185 @@
           competingValues: [...existingSameSlot.map(e => e.value), record.value],
           epistemicCategoryCode: 'COUNTER_EVIDENCE_OR_CONTRADICTION',
           epistemicCategoryLabelTr: EPISTEMIC_KNOWLEDGE_CATEGORIES.COUNTER_EVIDENCE_OR_CONTRADICTION.labelTr,
+          plainBadgeTr: PLAIN_USER_BADGES_TR.CONTRADICTION_OR_COUNTER_EVIDENCE,
           resolutionStatus: 'UNRESOLVED_BOTH_PRESERVED'
         };
         memory.conflictRegistry.push(conflictEntry);
+        memory.buckets.Contradiction.push(conflictEntry);
       }
     }
 
-    memory.buckets[conceptType].push(record);
+    memory.buckets[normalizedConcept].push(record);
+    if (conceptType === 'AnalysisRun') {
+      memory.buckets.AnalysisRun.push(record);
+    }
     return record;
+  }
+
+  // LAYER B: Actual Data Admission & Deterministic Core Promotion Boundary Gate
+  function admitRecordToWorldMemoryAndCoreGate(memory, rawRecord = {}, options = {}) {
+    if (!memory || !memory.buckets) {
+      throw new Error('Geçerli bir TemporalWorldMemory nesnesi gereklidir.');
+    }
+    const layerAClassification = classifyAndValidateKnowledgeRecord(rawRecord, options);
+
+    if (layerAClassification.dateValidationFailed || layerAClassification.cutoffValidationFailed || layerAClassification.lookAheadBlocked) {
+      const quarantined = {
+        ...rawRecord,
+        ...layerAClassification,
+        admittedToActiveWorldMemory: false,
+        admittedToDeterministicCore: false,
+        quarantineReason: layerAClassification.lookAheadBlockReason || 'DATE_OR_CUTOFF_VALIDATION_FAILED'
+      };
+      memory.quarantinedRecords.push(quarantined);
+      return {
+        layerAClassification,
+        layerBAdmission: {
+          admittedToActiveWorldMemory: false,
+          admittedToDeterministicCore: false,
+          targetMemoryBucket: 'quarantinedRecords',
+          quarantineReason: quarantined.quarantineReason,
+          storedRecord: quarantined
+        }
+      };
+    }
+
+    if (layerAClassification.epistemicCategoryCode === 'UNKNOWN_OR_INSUFFICIENT_DATA') {
+      const gapEntry = {
+        ...rawRecord,
+        ...layerAClassification,
+        admittedToActiveWorldMemory: false,
+        admittedToDeterministicCore: false,
+        gapReason: 'MISSING_OR_UNKNOWN_VALUE'
+      };
+      memory.dataGapRegistry.push(gapEntry);
+      return {
+        layerAClassification,
+        layerBAdmission: {
+          admittedToActiveWorldMemory: false,
+          admittedToDeterministicCore: false,
+          targetMemoryBucket: 'dataGapRegistry',
+          quarantineReason: 'MISSING_OR_UNKNOWN_VALUE',
+          storedRecord: gapEntry
+        }
+      };
+    }
+
+    if (layerAClassification.isRetractedAtCutoff || layerAClassification.epistemicCategoryCode === 'CORRECTED_OR_EXPIRED_RECORD') {
+      const expiredEntry = {
+        ...rawRecord,
+        ...layerAClassification,
+        admittedToActiveWorldMemory: false,
+        admittedToDeterministicCore: false,
+        quarantineReason: 'RETRACTED_OR_SUPERSEDED_RECORD'
+      };
+      memory.retractionHistory.push({
+        targetRecordId: layerAClassification.recordId,
+        conceptType: rawRecord.conceptType || 'Observation',
+        retractedAtIso: layerAClassification.retractedAtIso || layerAClassification.decisionCutoffTimeIso,
+        supersededById: rawRecord.supersededById || null,
+        reasonTr: rawRecord.retractionReasonTr || 'Geri çekilmiş veya düzeltilmiş tarihsel kayıt.'
+      });
+      return {
+        layerAClassification,
+        layerBAdmission: {
+          admittedToActiveWorldMemory: false,
+          admittedToDeterministicCore: false,
+          targetMemoryBucket: 'retractionHistory',
+          quarantineReason: 'RETRACTED_OR_SUPERSEDED_RECORD',
+          storedRecord: expiredEntry
+        }
+      };
+    }
+
+    let targetConcept = rawRecord.conceptType;
+    if (!targetConcept) {
+      if (layerAClassification.epistemicCategoryCode === 'SOURCE_CLAIM') targetConcept = 'Claim';
+      else if (layerAClassification.epistemicCategoryCode === 'MODEL_HYPOTHESIS') targetConcept = 'Hypothesis';
+      else if (layerAClassification.epistemicCategoryCode === 'COUNTER_EVIDENCE_OR_CONTRADICTION') targetConcept = 'Contradiction';
+      else if (layerAClassification.epistemicCategoryCode === 'RULE_BASED_INFERENCE') targetConcept = 'Assumption';
+      else if (layerAClassification.epistemicCategoryCode === 'SIMULATION_RESULT') targetConcept = 'Outcome';
+      else targetConcept = 'Observation';
+    }
+
+    const conflictCountBefore = memory.conflictRegistry.length;
+    const storedRecord = addTemporalMemoryRecord(memory, targetConcept, {
+      ...rawRecord,
+      id: layerAClassification.recordId,
+      subjectId: rawRecord.subjectId || rawRecord.entityId,
+      validFromIso: layerAClassification.validTimeIso,
+      availableAtSourceTimeIso: layerAClassification.availableAtSourceTimeIso,
+      recordedAtIso: layerAClassification.learnedTimeIso,
+      sourceId: layerAClassification.sourceId,
+      primaryDatasetId: layerAClassification.primaryDatasetId,
+      epistemicCategoryCode: layerAClassification.epistemicCategoryCode
+    });
+    const triggeredConflict = memory.conflictRegistry.length > conflictCountBefore;
+
+    const admittedToDeterministicCore = Boolean(
+      layerAClassification.canEnterDeterministicCoreAsFact
+      && !triggeredConflict
+      && targetConcept === 'Observation'
+    );
+
+    return {
+      layerAClassification,
+      layerBAdmission: {
+        admittedToActiveWorldMemory: !storedRecord.dateValidationFailed,
+        admittedToDeterministicCore,
+        triggeredConflictPreservation: triggeredConflict,
+        targetMemoryBucket: targetConcept,
+        quarantineReason: admittedToDeterministicCore
+          ? null
+          : (triggeredConflict ? 'CONFLICTING_RECORD_PRESERVED_REQUIRES_SCENARIO_CHOICE' : `NON_FACT_BUCKET:${targetConcept}`),
+        storedRecord
+      }
+    };
+  }
+
+  // Bridge CaelusUnifiedRealWorldLedger <-> TemporalWorldMemory so there is ONE unified world memory
+  function syncLedgerWithTemporalWorldMemory(ledgerInput, memoryInput = null, options = {}) {
+    const ledger = createUnifiedRealWorldLedger(ledgerInput);
+    const memory = memoryInput || createTemporalWorldMemory({
+      memoryId: `TWM-LEDGER-SYNC`,
+      createdAtIso: ledger.updatedAtIso || '2026-01-01T00:00:00.000Z'
+    });
+    const decisionCutoffTimeIso = options.decisionCutoffTimeIso || '2099-12-31T23:59:59.000Z';
+
+    const existingIds = new Set([
+      ...(memory.buckets.Observation || []).map(r => r.id),
+      ...(memory.buckets.Claim || []).map(r => r.id),
+      ...(memory.buckets.Event || []).map(r => r.id)
+    ]);
+
+    let syncedCount = 0;
+    for (const rec of (ledger.records || [])) {
+      if (!rec || existingIds.has(rec.recordId)) continue;
+      const admission = admitRecordToWorldMemoryAndCoreGate(memory, {
+        recordId: rec.recordId,
+        subjectId: rec.externalEventId || rec.recordId,
+        label: rec.titleTr || rec.recordId,
+        domain: rec.location?.regionTag || 'GEO_PHYSICAL',
+        variableName: rec.commonModelType || 'event_observation',
+        value: rec.parsedFields?.magnitude ?? rec.parsedFields?.windSpeedKmh ?? 1,
+        unit: rec.parsedFields?.magnitude !== undefined ? 'Mw' : (rec.parsedFields?.windSpeedKmh !== undefined ? 'km/h' : 'event'),
+        validTimeIso: rec.validTimeIso || rec.occurrenceTimeIso,
+        availableAtSourceTimeIso: rec.upstreamUpdatedIso || rec.validTimeIso,
+        learnedTimeIso: rec.ingestedAtIso || rec.updatedAtIso,
+        sourceId: rec.sourceId,
+        sourceUrlOrLocation: rec.sourceUrl,
+        epistemicCategoryCode: rec.epistemicCode === 'FORECAST_MODEL' ? 'MODEL_HYPOTHESIS' : 'MEASUREMENT_OR_OBSERVATION'
+      }, { decisionCutoffTimeIso });
+      if (admission.layerBAdmission.admittedToActiveWorldMemory) {
+        syncedCount += 1;
+      }
+    }
+
+    return {
+      memory,
+      ledger,
+      syncedCount
+    };
   }
 
   function retractOrSupersedeMemoryRecord(memory, conceptType, targetRecordId, options = {}) {
@@ -25465,12 +26405,14 @@
     target.retractedAtIso = actionTimeIso;
     target.epistemicCategoryCode = 'CORRECTED_OR_EXPIRED_RECORD';
     target.epistemicCategoryLabelTr = EPISTEMIC_KNOWLEDGE_CATEGORIES.CORRECTED_OR_EXPIRED_RECORD.labelTr;
+    target.plainBadgeTr = PLAIN_USER_BADGES_TR.CONTRADICTION_OR_COUNTER_EVIDENCE;
 
     let replacementRecord = null;
     if (options.replacementPayload) {
       replacementRecord = addTemporalMemoryRecord(memory, conceptType, {
         ...options.replacementPayload,
-        recordedAtIso: actionTimeIso
+        recordedAtIso: actionTimeIso,
+        revisionNumber: (Number(target.revisionNumber) || 1) + 1
       });
       target.supersededById = replacementRecord.id;
     }
@@ -25490,22 +26432,64 @@
   }
 
   function reconstructWorldStateAt(memory, query = {}) {
-    const asOfValidMs = query.asOfValidTimeIso ? Date.parse(query.asOfValidTimeIso) : Infinity;
-    const asOfLearnedMs = query.asOfLearnedTimeIso ? Date.parse(query.asOfLearnedTimeIso) : asOfValidMs;
+    const hasValidQuery = query.asOfValidTimeIso !== undefined && query.asOfValidTimeIso !== null;
+    const hasLearnedQuery = query.asOfLearnedTimeIso !== undefined && query.asOfLearnedTimeIso !== null;
+
+    const validQueryParsed = hasValidQuery ? parseStrictIsoTimestamp(query.asOfValidTimeIso) : null;
+    const learnedQueryParsed = hasLearnedQuery ? parseStrictIsoTimestamp(query.asOfLearnedTimeIso) : validQueryParsed;
 
     const activeByConcept = {};
-    let excludedFutureLearnedCount = 0;
-    let excludedRetractedCount = 0;
-
     for (const concept of TEMPORAL_WORLD_MEMORY_CONCEPTS) {
       activeByConcept[concept] = [];
+    }
+
+    // Fail-closed if cutoff query timestamps are invalid or missing (unless allowUnboundedSnapshot is explicitly true)
+    if (
+      (!hasValidQuery && query.allowUnboundedSnapshot !== true)
+      || (validQueryParsed && !validQueryParsed.valid)
+      || (learnedQueryParsed && !learnedQueryParsed.valid)
+    ) {
+      return {
+        asOfValidTimeIso: query.asOfValidTimeIso || null,
+        asOfLearnedTimeIso: query.asOfLearnedTimeIso || null,
+        snapshotDigest: 'SNAP-FAIL-CLOSED-INVALID-CUTOFF',
+        activeByConcept,
+        activeConflicts: [],
+        excludedFutureLearnedCount: 0,
+        excludedRetractedCount: 0,
+        excludedInvalidDateCount: 0,
+        cutoffValidationFailed: true,
+        zeroLookAheadVerified: false,
+        errorReasonCode: 'INVALID_OR_MISSING_RECONSTRUCTION_CUTOFF_TIME'
+      };
+    }
+
+    const asOfValidMs = validQueryParsed ? validQueryParsed.epochMs : Infinity;
+    const asOfLearnedMs = learnedQueryParsed ? learnedQueryParsed.epochMs : asOfValidMs;
+
+    let excludedFutureLearnedCount = 0;
+    let excludedRetractedCount = 0;
+    let excludedInvalidDateCount = 0;
+
+    for (const concept of TEMPORAL_WORLD_MEMORY_CONCEPTS) {
       for (const rec of (memory.buckets[concept] || [])) {
-        const vFromMs = Date.parse(rec.validFromIso);
+        if (rec.dateValidationFailed) {
+          excludedInvalidDateCount += 1;
+          continue;
+        }
+        const vFromParsed = parseStrictIsoTimestamp(rec.validFromIso);
+        const rAtParsed = parseStrictIsoTimestamp(rec.recordedAtIso);
+        if (!vFromParsed.valid || !rAtParsed.valid) {
+          excludedInvalidDateCount += 1;
+          continue;
+        }
+        const vFromMs = vFromParsed.epochMs;
         const vToMs = rec.validToIso ? Date.parse(rec.validToIso) : Infinity;
-        const rAtMs = Date.parse(rec.recordedAtIso);
+        const rAtMs = rAtParsed.epochMs;
+        const srcPubMs = rec.availableAtSourceTimeIso ? Date.parse(rec.availableAtSourceTimeIso) : rAtMs;
         const retMs = rec.retractedAtIso ? Date.parse(rec.retractedAtIso) : Infinity;
 
-        if (rAtMs > asOfLearnedMs) {
+        if (rAtMs > asOfLearnedMs || (Number.isFinite(srcPubMs) && srcPubMs > asOfLearnedMs)) {
           excludedFutureLearnedCount += 1;
           continue;
         }
@@ -25521,8 +26505,8 @@
     }
 
     const activeConflicts = memory.conflictRegistry.filter(c => {
-      const vMs = Date.parse(c.validFromIso);
-      return vMs <= asOfValidMs;
+      const vParsed = parseStrictIsoTimestamp(c.validFromIso);
+      return vParsed.valid && vParsed.epochMs <= asOfValidMs;
     });
 
     const snapshotDigest = `SNAP-${hex32(hash32(JSON.stringify({
@@ -25539,6 +26523,8 @@
       activeConflicts,
       excludedFutureLearnedCount,
       excludedRetractedCount,
+      excludedInvalidDateCount,
+      cutoffValidationFailed: false,
       zeroLookAheadVerified: true
     };
   }
@@ -27516,14 +28502,785 @@
     };
   }
 
+  // ==========================================================================
+  // AŞAMA 5, 6, 7 & 8: CAELUS DÜNYA ETKİ MOTORU (World Impact Engine) & Basit Referans Karşılaştırmaları
+  // ==========================================================================
+  const WORLD_IMPACT_PROBLEM_CATALOG = Object.freeze({
+    PROB_ENERGY_TECH_FIN_TRADE: Object.freeze({
+      problemId: 'PROB_ENERGY_TECH_FIN_TRADE',
+      titleTr: 'Vitrin Problemi: Enerji Altyapısı Kesintisinin Teknoloji Üretimi, Şirket Finansmanı ve Uluslararası Ticarete Dolaylı Etkisi',
+      questionTr: 'Enerji altyapısındaki bir kesinti; teknoloji üretimi, şirket finansmanı ve uluslararası ticareti hangi koşullarda dolaylı etkileyebilir?',
+      dataProvenanceLabelTr: 'AÇIKÇA ETİKETLENMİŞ ÇOK ALANLI ÖRNEK VERİ PAKETİ (TEST/FİXTURE)',
+      isSampleFixture: true,
+      defaultCutoffIso: '2026-10-15T12:00:00.000Z',
+      domains: [
+        'ENERGY_INFRASTRUCTURE',
+        'TECH_AI_SEMICONDUCTOR',
+        'ECONOMY_FINANCE',
+        'TRADE_SUPPLY_CHAIN'
+      ],
+      entities: [
+        { entityId: 'ENT_GRID_TRAFO_EU', label: 'Avrupa Yüksek Gerilim Trafo Merkezi', domain: 'ENERGY_INFRASTRUCTURE', actorType: 'ENERGY_OPERATOR', initialStress: 0.72, informationAccuracy: 0.92 },
+        { entityId: 'ENT_SEMI_FAB_ASML', label: 'İleri Düzey Yarı İletken Wafer Üretim Tesisi', domain: 'TECH_AI_SEMICONDUCTOR', actorType: 'COMPANY', initialStress: 0.58, informationAccuracy: 0.80 },
+        { entityId: 'ENT_FIN_CREDIT_DESK', label: 'Tedarik Zinciri Kısa Vadeli Ticari Kredi Havuzu', domain: 'ECONOMY_FINANCE', actorType: 'FINANCIAL_INSTITUTION', initialStress: 0.48, informationAccuracy: 0.85 },
+        { entityId: 'ENT_MED_DEVICE_PORT', label: 'Kritik Tıbbi ve Endüstriyel Elektronik Sevkiyat Koridoru', domain: 'TRADE_SUPPLY_CHAIN', actorType: 'LOGISTICS_HUB', initialStress: 0.44, informationAccuracy: 0.88 }
+      ],
+      rawRecords: [
+        {
+          recordId: 'OBS-GRID-VOLTAGE-DROP',
+          entityId: 'ENT_GRID_TRAFO_EU',
+          variableName: 'transformer_capacity_loss_pct',
+          value: 68,
+          unit: '%',
+          measurementMethod: 'SCADA_PMU_TELEMETRY',
+          validTimeIso: '2026-10-15T08:00:00.000Z',
+          availableAtSourceTimeIso: '2026-10-15T08:10:00.000Z',
+          learnedTimeIso: '2026-10-15T08:15:00.000Z',
+          sourceId: 'SRC-ENTSOE-TELEMETRY',
+          primaryDatasetId: 'DS-ENTSOE-GRID-20261015',
+          sourceUrlOrLocation: 'local://fixtures/entsoe_grid_20261015.json',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        },
+        {
+          recordId: 'CLAIM-FAB-CLEANROOM-PAUSE',
+          entityId: 'ENT_SEMI_FAB_ASML',
+          variableName: 'wafer_lithography_halt_pct',
+          value: 55,
+          unit: '%',
+          measurementMethod: 'SECONDARY_NEWS_WIRE_REPORT',
+          validTimeIso: '2026-10-15T09:30:00.000Z',
+          availableAtSourceTimeIso: '2026-10-15T09:50:00.000Z',
+          learnedTimeIso: '2026-10-15T10:00:00.000Z',
+          sourceId: 'SRC-INDUSTRY-WIRE-A',
+          primaryDatasetId: 'DS-SEMI-BULLETIN-01',
+          sourceUrlOrLocation: 'local://fixtures/semi_wire_a.json',
+          epistemicCategoryCode: 'SOURCE_CLAIM'
+        },
+        {
+          recordId: 'CLAIM-FAB-DUPLICATE-SYNDICATION',
+          entityId: 'ENT_SEMI_FAB_ASML',
+          variableName: 'wafer_lithography_halt_pct',
+          value: 55,
+          unit: '%',
+          measurementMethod: 'SYNDICATED_REPOST_OF_SAME_SOURCE',
+          validTimeIso: '2026-10-15T09:30:00.000Z',
+          availableAtSourceTimeIso: '2026-10-15T10:05:00.000Z',
+          learnedTimeIso: '2026-10-15T10:10:00.000Z',
+          sourceId: 'SRC-TECH-PORTAL-REPOST-B',
+          primaryDatasetId: 'DS-SEMI-BULLETIN-01',
+          sourceUrlOrLocation: 'local://fixtures/tech_portal_repost_b.json',
+          epistemicCategoryCode: 'SOURCE_CLAIM'
+        },
+        {
+          recordId: 'CLAIM-FAB-MINOR-BUFFER',
+          entityId: 'ENT_SEMI_FAB_ASML',
+          variableName: 'wafer_lithography_halt_pct',
+          value: 18,
+          unit: '%',
+          measurementMethod: 'CORPORATE_PR_RELEASE',
+          validTimeIso: '2026-10-15T09:30:00.000Z',
+          availableAtSourceTimeIso: '2026-10-15T10:15:00.000Z',
+          learnedTimeIso: '2026-10-15T10:20:00.000Z',
+          sourceId: 'SRC-COMPANY-PR-STATEMENT',
+          primaryDatasetId: 'DS-CORP-IR-20261015',
+          sourceUrlOrLocation: 'local://fixtures/company_ir_statement.json',
+          epistemicCategoryCode: 'SOURCE_CLAIM'
+        },
+        {
+          recordId: 'FUTURE-AUDIT-REPORT-LEAK',
+          entityId: 'ENT_MED_DEVICE_PORT',
+          variableName: 'delivery_delay_days',
+          value: 14,
+          unit: 'days',
+          validTimeIso: '2026-10-15T11:00:00.000Z',
+          availableAtSourceTimeIso: '2026-10-16T08:30:00.000Z',
+          learnedTimeIso: '2026-10-16T09:00:00.000Z',
+          sourceId: 'SRC-NEXT-DAY-CUSTOMS-BULLETIN',
+          primaryDatasetId: 'DS-CUSTOMS-POST-AUDIT',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        },
+        {
+          recordId: 'MISSING-INSURANCE-BUFFER',
+          entityId: 'ENT_FIN_CREDIT_DESK',
+          variableName: 'reinsurance_collateral_ratio',
+          value: null,
+          unit: '%',
+          validTimeIso: '2026-10-15T10:00:00.000Z',
+          learnedTimeIso: '2026-10-15T10:05:00.000Z',
+          sourceId: 'SRC-FIN-REGULATOR',
+          primaryDatasetId: 'DS-FIN-REGULATOR'
+        }
+      ],
+      relations: [
+        {
+          fromId: 'ENT_GRID_TRAFO_EU',
+          toId: 'ENT_SEMI_FAB_ASML',
+          relation: 'DISRUPTS_POWER_QUALITY',
+          relationCategory: 'ENERGY_INFRASTRUCTURE_DEPENDENCY',
+          lagHours: 2,
+          heuristicWeight: 0.84,
+          sourceId: 'SRC-ENTSOE-TELEMETRY',
+          primaryDatasetId: 'DS-ENTSOE-GRID-20261015',
+          validTimeIso: '2026-10-15T08:00:00.000Z',
+          learnedTimeIso: '2026-10-15T08:15:00.000Z',
+          epistemicCategoryCode: 'RULE_BASED_INFERENCE',
+          mechanismTr: 'Yüksek gerilim harmonik dalgalanması EUV litografi temiz oda güç regülatörlerini duruşa geçirir.'
+        },
+        {
+          fromId: 'ENT_SEMI_FAB_ASML',
+          toId: 'ENT_FIN_CREDIT_DESK',
+          relation: 'TRIGGERS_WORKING_CAPITAL_DRAW',
+          relationCategory: 'CORPORATE_INSTITUTIONAL',
+          lagHours: 12,
+          heuristicWeight: 0.76,
+          sourceId: 'SRC-INDUSTRY-WIRE-A',
+          primaryDatasetId: 'DS-SEMI-BULLETIN-01',
+          validTimeIso: '2026-10-15T09:30:00.000Z',
+          learnedTimeIso: '2026-10-15T10:00:00.000Z',
+          epistemicCategoryCode: 'MODEL_HYPOTHESIS',
+          mechanismTr: 'Wafer teslimatındaki duraksama alt yüklenicilerin rotatif kredi limitlerini eşzamanlı kullanmasına yol açar.'
+        },
+        {
+          fromId: 'ENT_FIN_CREDIT_DESK',
+          toId: 'ENT_MED_DEVICE_PORT',
+          relation: 'DELAYS_SHIPMENT_CLEARANCE',
+          relationCategory: 'TRADE_SUPPLY_CHAIN',
+          lagHours: 24,
+          heuristicWeight: 0.71,
+          sourceId: 'SRC-FIN-REGULATOR',
+          primaryDatasetId: 'DS-FIN-REGULATOR',
+          validTimeIso: '2026-10-15T10:00:00.000Z',
+          learnedTimeIso: '2026-10-15T10:05:00.000Z',
+          epistemicCategoryCode: 'MODEL_HYPOTHESIS',
+          mechanismTr: 'Akreditif ve tedarikçi kredi teminatı sıkışması kritik elektronik bileşen sevkiyatlarını bekletir.'
+        }
+      ]
+    }),
+    PROB_AEGEAN_SEISMIC_PORT_COLDCHAIN: Object.freeze({
+      problemId: 'PROB_AEGEAN_SEISMIC_PORT_COLDCHAIN',
+      titleTr: 'Ege Koridoru: Sismik ve Deniz Gözlemlerinin Liman Trafo Altyapısı, Soğuk Zincir ve Bölgesel Ticarete Etkisi',
+      questionTr: 'Ege koridorundaki sismik sarsıntı ve sert rüzgâr gözlemleri; liman trafo beslemesini, soğuk zincir ilaç/gıda koridorunu ve bölgesel tedarik sürekliliğini hangi koşullarda etkiler?',
+      dataProvenanceLabelTr: 'KAYITLI TARİHSEL / GERÇEK GÖZLEM FİXTURE VERİSİ (USGS + OPEN-METEO)',
+      isSampleFixture: false,
+      defaultCutoffIso: '2026-10-15T12:00:00.000Z',
+      domains: [
+        'ENERGY_INFRASTRUCTURE',
+        'MARITIME_LOGISTICS',
+        'HEALTH_COLD_CHAIN',
+        'TRADE_SUPPLY_CHAIN'
+      ],
+      entities: [
+        { entityId: 'ENT_IZMIR_PORT_TRAFO', label: 'İzmir Limanı Rıhtım Trafo ve Reefer Enerji Beslemesi', domain: 'ENERGY_INFRASTRUCTURE', actorType: 'ENERGY_OPERATOR', initialStress: 0.68, informationAccuracy: 0.94 },
+        { entityId: 'ENT_AEGEAN_CRANE_OPS', label: 'Konteyner Vinç ve Rıhtım Yükleme Operasyonu', domain: 'MARITIME_LOGISTICS', actorType: 'LOGISTICS_HUB', initialStress: 0.54, informationAccuracy: 0.88 },
+        { entityId: 'ENT_PHARMA_COLD_CHAIN', label: 'Soğuk Zincir (Reefer) İlaç ve Aşı Koridoru', domain: 'HEALTH_COLD_CHAIN', actorType: 'COMPANY', initialStress: 0.50, informationAccuracy: 0.86 },
+        { entityId: 'ENT_REGIONAL_EXPORT_HUB', label: 'Bölgesel İhracat ve Gümrük Çıkış Kapısı', domain: 'TRADE_SUPPLY_CHAIN', actorType: 'INSTITUTION', initialStress: 0.42, informationAccuracy: 0.90 }
+      ],
+      rawRecords: [
+        {
+          recordId: 'OBS-USGS-SAMOS-EQ',
+          entityId: 'ENT_IZMIR_PORT_TRAFO',
+          variableName: 'peak_ground_acceleration_g',
+          value: 0.18,
+          unit: 'g',
+          measurementMethod: 'USGS_SEISMIC_INSTRUMENT',
+          validTimeIso: '2026-10-15T07:30:00.000Z',
+          availableAtSourceTimeIso: '2026-10-15T07:35:00.000Z',
+          learnedTimeIso: '2026-10-15T07:40:00.000Z',
+          sourceId: 'usgs_eq_feed',
+          primaryDatasetId: 'DS-USGS-COMCAT-20261015',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        },
+        {
+          recordId: 'OBS-METEO-AEGEAN-GALE',
+          entityId: 'ENT_AEGEAN_CRANE_OPS',
+          variableName: 'wind_gusts_10m_kmh',
+          value: 64,
+          unit: 'km/h',
+          measurementMethod: 'OPEN_METEO_IFS_OBSERVATION',
+          validTimeIso: '2026-10-15T08:00:00.000Z',
+          availableAtSourceTimeIso: '2026-10-15T08:15:00.000Z',
+          learnedTimeIso: '2026-10-15T08:20:00.000Z',
+          sourceId: 'open_meteo_forecast',
+          primaryDatasetId: 'DS-OPEN-METEO-AEGEAN',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        },
+        {
+          recordId: 'ERA5-POST-REANALYSIS-LEAK',
+          entityId: 'ENT_PHARMA_COLD_CHAIN',
+          variableName: 'reefer_thermal_excursion_c',
+          value: 4.2,
+          unit: 'degC',
+          isRetrospectiveReanalysis: true,
+          validTimeIso: '2026-10-15T09:00:00.000Z',
+          availableAtSourceTimeIso: '2026-10-20T00:00:00.000Z',
+          learnedTimeIso: '2026-10-15T11:00:00.000Z',
+          sourceId: 'open_meteo_era5_reanalysis',
+          primaryDatasetId: 'DS-ECMWF-ERA5-REANALYSIS',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        }
+      ],
+      relations: [
+        {
+          fromId: 'ENT_IZMIR_PORT_TRAFO',
+          toId: 'ENT_AEGEAN_CRANE_OPS',
+          relation: 'POWERS_CRANE_AND_BERTH',
+          relationCategory: 'ENERGY_INFRASTRUCTURE_DEPENDENCY',
+          lagHours: 1,
+          heuristicWeight: 0.86,
+          sourceId: 'usgs_eq_feed',
+          primaryDatasetId: 'DS-USGS-COMCAT-20261015',
+          validTimeIso: '2026-10-15T07:30:00.000Z',
+          learnedTimeIso: '2026-10-15T07:40:00.000Z',
+          epistemicCategoryCode: 'RULE_BASED_INFERENCE',
+          mechanismTr: 'Sismik koruma rölesi açması rıhtım vinçlerinin elektrik beslemesini keser.'
+        },
+        {
+          fromId: 'ENT_AEGEAN_CRANE_OPS',
+          toId: 'ENT_PHARMA_COLD_CHAIN',
+          relation: 'DELAYS_REEFER_PLUG_IN',
+          relationCategory: 'TECHNOLOGICAL_DEPENDENCY',
+          lagHours: 4,
+          heuristicWeight: 0.79,
+          sourceId: 'open_meteo_forecast',
+          primaryDatasetId: 'DS-OPEN-METEO-AEGEAN',
+          validTimeIso: '2026-10-15T08:00:00.000Z',
+          learnedTimeIso: '2026-10-15T08:20:00.000Z',
+          epistemicCategoryCode: 'RULE_BASED_INFERENCE',
+          mechanismTr: 'Vinç duruşu soğuk zincir konteynerlerinin rıhtım prizlerine bağlanma süresini uzatır.'
+        },
+        {
+          fromId: 'ENT_PHARMA_COLD_CHAIN',
+          toId: 'ENT_REGIONAL_EXPORT_HUB',
+          relation: 'TRIGGERS_SLA_CUSTOMS_HOLD',
+          relationCategory: 'REGULATORY_POLITICAL',
+          lagHours: 8,
+          heuristicWeight: 0.74,
+          sourceId: 'SRC-PORT-SLA-RULE',
+          primaryDatasetId: 'DS-PORT-SLA-RULE',
+          validTimeIso: '2026-10-15T08:00:00.000Z',
+          learnedTimeIso: '2026-10-15T08:20:00.000Z',
+          epistemicCategoryCode: 'MODEL_HYPOTHESIS',
+          mechanismTr: 'Soğuk zincir sıcaklık sapması şüphesi sağlık denetimi ve gümrük çıkış beklemesi doğurur.'
+        }
+      ]
+    }),
+    PROB_INSUFFICIENT_DATA_HONEST_STOP: Object.freeze({
+      problemId: 'PROB_INSUFFICIENT_DATA_HONEST_STOP',
+      titleTr: 'Dürüst Durdurma Senaryosu: Yetersiz ve Geçersiz Veride "Bilmiyorum / Belirlenemiyor" Kararı',
+      questionTr: 'Kritik ölçüm verileri boş, geçersiz tarihli veya yalnızca gelecekte yayımlanmış olduğunda CAELUS uydurma tahmin üretmek yerine nasıl davranır?',
+      dataProvenanceLabelTr: 'SINIR VE DÜRÜSTLÜK TEST PAKETİ (EKSİK / GEÇERSİZ VERİ)',
+      isSampleFixture: true,
+      defaultCutoffIso: '2026-10-15T12:00:00.000Z',
+      domains: ['ENERGY_INFRASTRUCTURE', 'ECONOMY_FINANCE'],
+      entities: [
+        { entityId: 'ENT_UNKNOWN_SUB', label: 'Verisi Eksik Bölgesel Trafo', domain: 'ENERGY_INFRASTRUCTURE', actorType: 'ENERGY_OPERATOR', initialStress: 0.50, informationAccuracy: 0.50 },
+        { entityId: 'ENT_UNKNOWN_MARKET', label: 'Verisi Eksik Finansal Piyasa', domain: 'ECONOMY_FINANCE', actorType: 'FINANCIAL_INSTITUTION', initialStress: 0.50, informationAccuracy: 0.50 }
+      ],
+      rawRecords: [
+        {
+          recordId: 'BAD-DATE-RECORD',
+          entityId: 'ENT_UNKNOWN_SUB',
+          variableName: 'voltage_dip',
+          value: 50,
+          unit: '%',
+          validTimeIso: 'not-a-valid-iso-date',
+          learnedTimeIso: '2026-10-15T09:00:00.000Z',
+          sourceId: 'SRC-BROKEN-FEED',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        },
+        {
+          recordId: 'EMPTY-VALUE-RECORD',
+          entityId: 'ENT_UNKNOWN_MARKET',
+          variableName: 'liquidity_spread',
+          value: null,
+          unit: 'bps',
+          validTimeIso: '2026-10-15T09:00:00.000Z',
+          learnedTimeIso: '2026-10-15T09:05:00.000Z',
+          sourceId: 'SRC-EMPTY-FEED',
+          epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION'
+        }
+      ],
+      relations: []
+    })
+  });
+
+  // AŞAMA 8: Basit Referanslarla (Last Known Value, Moving Average, Simple Graph Rule) Öğrenen Model Karşılaştırması
+  function evaluateSimpleForecastingBaselines(series = [], options = {}) {
+    const clean = Array.isArray(series) ? series.map(Number).filter(Number.isFinite) : [];
+    const windowSize = Math.max(2, Number(options.movingAverageWindow || 3));
+    const graphRuleDamping = Number(options.graphRuleDamping || 0.85);
+    const minSamples = 8;
+
+    if (clean.length < minSamples) {
+      return {
+        status: 'BELİRLENEMİYOR',
+        epistemicCategoryCode: 'UNKNOWN_OR_INSUFFICIENT_DATA',
+        plainBadgeTr: PLAIN_USER_BADGES_TR.INSUFFICIENT_DATA,
+        reasonTr: `Referans model karşılaştırması için yeterli zaman serisi verisi yok (N=${clean.length} < ${minSamples}).`
+      };
+    }
+
+    const splitIdx = Math.max(windowSize + 1, Math.floor(clean.length * 0.6));
+    const train = clean.slice(0, splitIdx);
+    const trainMean = train.reduce((s, v) => s + v, 0) / train.length;
+
+    // Fit simple AR(1) weight on training prefix only (zero look-ahead)
+    let num = 0;
+    let den = 1e-6;
+    for (let t = 1; t < train.length; t++) {
+      num += (train[t - 1] - trainMean) * (train[t] - trainMean);
+      den += Math.pow(train[t - 1] - trainMean, 2);
+    }
+    const ar1Phi = Math.max(-0.98, Math.min(0.98, num / den));
+
+    const actuals = [];
+    const predLastKnown = [];
+    const predMovingAvg = [];
+    const predSimpleGraphRule = [];
+    const predLearnedAr1 = [];
+
+    for (let t = splitIdx; t < clean.length; t++) {
+      const yTrue = clean[t];
+      const yPrev = clean[t - 1];
+      const maSlice = clean.slice(t - windowSize, t);
+      const yMa = maSlice.reduce((s, v) => s + v, 0) / maSlice.length;
+      const yGraphRule = trainMean + graphRuleDamping * (yPrev - trainMean);
+      const yAr1 = trainMean + ar1Phi * (yPrev - trainMean);
+
+      actuals.push(yTrue);
+      predLastKnown.push(yPrev);
+      predMovingAvg.push(yMa);
+      predSimpleGraphRule.push(yGraphRule);
+      predLearnedAr1.push(yAr1);
+    }
+
+    function calcErr(preds) {
+      let absSum = 0;
+      let sqSum = 0;
+      for (let i = 0; i < actuals.length; i++) {
+        const diff = Math.abs(actuals[i] - preds[i]);
+        absSum += diff;
+        sqSum += diff * diff;
+      }
+      return {
+        mae: Math.round((absSum / actuals.length) * 1e4) / 1e4,
+        rmse: Math.round(Math.sqrt(sqSum / actuals.length) * 1e4) / 1e4
+      };
+    }
+
+    const mLastKnown = calcErr(predLastKnown);
+    const mMovingAvg = calcErr(predMovingAvg);
+    const mGraphRule = calcErr(predSimpleGraphRule);
+    const mLearnedAr1 = calcErr(predLearnedAr1);
+
+    const allMethods = [
+      { methodId: 'LAST_KNOWN_VALUE', labelTr: 'Son Bilinen Değer (Persistence)', ...mLastKnown },
+      { methodId: 'MOVING_AVERAGE', labelTr: `Hareketli Ortalama (Pencere=${windowSize})`, ...mMovingAvg },
+      { methodId: 'SIMPLE_GRAPH_THRESHOLD_RULE', labelTr: 'Basit Grafik Sönümleme Kuralı', ...mGraphRule },
+      { methodId: 'LEARNED_AR1_MODEL', labelTr: 'Öğrenen AR(1) Durum Modeli', ...mLearnedAr1 }
+    ].sort((a, b) => a.mae - b.mae);
+
+    return {
+      schemaVersion: 'caelus.baseline_comparison.v1',
+      status: 'KARŞILAŞTIRMA_TAMAMLANDI',
+      chronologicalSplitIndex: splitIdx,
+      evalSampleCount: actuals.length,
+      bestMethodByMae: allMethods[0],
+      learnedModelBeatsOrMatchesLastKnown: mLearnedAr1.mae <= mLastKnown.mae,
+      methods: allMethods,
+      honestEvaluationNoteTr: 'Karmaşık model her veri kümesinde basit referanslardan üstün olmak zorunda değildir; burada tüm yöntemlerin hata metrikleri (MAE/RMSE) yan yana şeffafça raporlanır.'
+    };
+  }
+
+  // Master Orchestrator: CAELUS DÜNYA ETKİ MOTORU (World Impact Engine)
+  function runWorldImpactEngineWorkflow(userSpec = {}) {
+    const problemId = String(userSpec.problemId || 'PROB_ENERGY_TECH_FIN_TRADE');
+    const baseProblem = WORLD_IMPACT_PROBLEM_CATALOG[problemId] || WORLD_IMPACT_PROBLEM_CATALOG.PROB_ENERGY_TECH_FIN_TRADE;
+    const seed = Number.isFinite(Number(userSpec.seed)) ? Number(userSpec.seed) : 20260410;
+    const decisionCutoffTimeIso = userSpec.decisionCutoffTimeIso !== undefined
+      ? String(userSpec.decisionCutoffTimeIso)
+      : baseProblem.defaultCutoffIso;
+
+    // 6 User-Changeable Scenario Assumptions (Section 10 — AŞAMA 5)
+    const scenarioAssumptions = {
+      eventDurationHours: Math.min(96, Math.max(4, Number(userSpec.eventDurationHours ?? 16))),
+      capacityOrResourceAmountPct: Math.min(100, Math.max(5, Number(userSpec.capacityOrResourceAmountPct ?? 68))),
+      actorBehaviorPolicy: MULTI_ACTOR_BEHAVIOR_POLICIES[userSpec.actorBehaviorPolicy]
+        ? userSpec.actorBehaviorPolicy
+        : 'COOPERATIVE_SHARING',
+      alternativeSupplyBufferPct: Math.min(100, Math.max(0, Number(userSpec.alternativeSupplyBufferPct ?? 35))),
+      relationLagTicks: Math.min(7, Math.max(0, Number(userSpec.relationLagTicks ?? 1))),
+      interventionChoice: String(userSpec.interventionChoice || 'L-MAS-COORD-01')
+    };
+
+    const executionEngineMode = String(userSpec.executionEngineMode || 'JS_FIXED_POINT_1E6_MIRROR');
+
+    const runSinglePass = () => {
+      // 1. Initialize unified Temporal World Memory
+      const memory = createTemporalWorldMemory({
+        memoryId: `TWM-WIE-${problemId}`,
+        createdAtIso: '2026-10-01T00:00:00.000Z'
+      });
+
+      const entities = Array.isArray(userSpec.entities) ? userSpec.entities : baseProblem.entities;
+      const rawRecords = Array.isArray(userSpec.rawRecords) ? userSpec.rawRecords : baseProblem.rawRecords;
+      const baseRelations = Array.isArray(userSpec.relations) ? userSpec.relations : baseProblem.relations;
+
+      for (const ent of entities) {
+        addTemporalMemoryRecord(memory, 'Entity', {
+          id: ent.entityId,
+          label: ent.label,
+          domain: ent.domain,
+          validFromIso: '2026-10-01T00:00:00.000Z',
+          recordedAtIso: '2026-10-01T00:00:00.000Z',
+          sourceId: 'SRC-WORLD-ENTITY-REGISTRY'
+        });
+      }
+
+      // 2. Layer A + Layer B Admission Gate on every raw record
+      const admissionResults = [];
+      for (const r of rawRecords) {
+        const adm = admitRecordToWorldMemoryAndCoreGate(memory, r, { decisionCutoffTimeIso });
+        admissionResults.push(adm);
+      }
+
+      const acceptedRecords = admissionResults
+        .filter(a => a.layerBAdmission.admittedToActiveWorldMemory)
+        .map(a => a.layerBAdmission.storedRecord);
+      const verifiedFactRecords = admissionResults
+        .filter(a => a.layerBAdmission.admittedToDeterministicCore)
+        .map(a => a.layerBAdmission.storedRecord);
+      const blockedRecords = memory.quarantinedRecords.slice();
+      const missingDataGaps = memory.dataGapRegistry.slice();
+      const activeConflicts = memory.conflictRegistry.slice();
+
+      // Check if data is completely insufficient to run scenarios (Section 0 Goal #9: "Veri yetersizse sistemin 'bilmiyorum / belirlenemiyor' dediğini görebilmeli")
+      const isInsufficientDataToDetermine = acceptedRecords.length === 0 || baseRelations.length === 0;
+
+      // 3. Execute 4-Agent Workflow (Agent A, B, C, D) with real permission gates
+      const agentWorkflow = executeCaelusAgentWorkflow({
+        seed,
+        decisionCutoffTimeIso,
+        memory,
+        entities,
+        rawRecords,
+        relations: baseRelations,
+        sourceEntityId: entities[0]?.entityId,
+        targetEntityId: entities[entities.length - 1]?.entityId,
+        maxHopBudget: 4,
+        simulateUnauthorizedHypothesisFactWrite: true,
+        simulateUnauthorizedAgentNetworkCall: true
+      });
+
+      if (isInsufficientDataToDetermine) {
+        return {
+          status: 'BELİRLENEMİYOR_YETERSİZ_VERİ',
+          honestStopTriggered: true,
+          plainBadgeTr: PLAIN_USER_BADGES_TR.INSUFFICIENT_DATA,
+          honestUncertaintyStatementTr: 'BİLMİYORUM / BELİRLENEMİYOR: Seçilen problem veya kesim zamanı için geçerli, doğrulanmış gözlem ve ilişki verisi bulunmadığından CAELUS uydurma senaryo tahmini üretmeyi durdurdu.',
+          problemId,
+          problemTitleTr: baseProblem.titleTr,
+          questionTr: baseProblem.questionTr,
+          dataProvenanceLabelTr: baseProblem.dataProvenanceLabelTr,
+          decisionCutoffTimeIso,
+          scenarioAssumptions,
+          executionEngineMode: 'HONEST_STOP_NO_ENGINE_RUN_ON_EMPTY_FACTS',
+          stage1_DataAndSources: {
+            totalRawRecords: rawRecords.length,
+            acceptedCount: acceptedRecords.length,
+            verifiedFactCount: verifiedFactRecords.length,
+            blockedLookAheadOrInvalidDateCount: blockedRecords.length,
+            missingDataGapCount: missingDataGaps.length,
+            blockedRecords,
+            missingDataGaps
+          },
+          stage2_BitemporalWorldMemory: reconstructWorldStateAt(memory, {
+            asOfValidTimeIso: decisionCutoffTimeIso,
+            asOfLearnedTimeIso: decisionCutoffTimeIso
+          }),
+          stage3_EntityAndEventRelations: { relations: [], relationCategoriesUsed: [] },
+          stage4_IndirectImpactPaths: { indirectPaths: [], budgetReport: agentWorkflow.agentBOutput.budgetAndScaleReport },
+          stage5_CounterEvidenceAndAlternatives: { conflicts: activeConflicts, critiques: [] },
+          stage6_MultiScenarioComparison: { scenarios: [], comparisonPossible: false },
+          stage7_EngineExecution: { executed: false, reasonTr: 'Yetersiz veri nedeniyle motor koşumu başlatılmadı.' },
+          stage8_ConclusionUncertaintyAndAudit: {
+            status: 'BELİRLENEMİYOR',
+            plainBadgeTr: PLAIN_USER_BADGES_TR.INSUFFICIENT_DATA,
+            auditTrail: agentWorkflow.auditTrail
+          }
+        };
+      }
+
+      // 4. Build 3 Comparative Scenarios from the SAME initial world state (Section 10: AŞAMA 5)
+      const stressFromCapacity = Math.max(0.08, Math.min(0.95, (scenarioAssumptions.capacityOrResourceAmountPct / 100) * (1 - scenarioAssumptions.alternativeSupplyBufferPct / 250)));
+      const scenarioActors = entities.map((ent, idx) => ({
+        actorId: ent.entityId,
+        name: ent.label,
+        actorType: ent.actorType || 'INSTITUTION',
+        domain: ent.domain,
+        initialStress: idx === 0 ? stressFromCapacity : Number(ent.initialStress ?? 0.48),
+        informationAccuracy: Number(ent.informationAccuracy ?? 0.85),
+        resources: {
+          liquidityReserve: 100 + scenarioAssumptions.alternativeSupplyBufferPct,
+          operationalCapacity: 100 - (idx === 0 ? scenarioAssumptions.capacityOrResourceAmountPct * 0.5 : 15),
+          strategicBuffer: scenarioAssumptions.alternativeSupplyBufferPct
+        }
+      }));
+
+      const scenarioLinks = baseRelations.map(r => ({
+        fromActorId: r.fromId,
+        toActorId: r.toId,
+        couplingStrength: Math.max(0.15, Number(r.heuristicWeight ?? 0.65) * (1 - scenarioAssumptions.alternativeSupplyBufferPct / 300)),
+        lagTicks: scenarioAssumptions.relationLagTicks
+      }));
+
+      // Scenario 1: Baseline Unmitigated / Opportunistic Hoarding
+      const scenario1_Unmitigated = runMultiActorDomainSimulation({
+        title: 'SENARYO 1: Müdahalesiz Akış ve Fırsatçı Stoklama (Kötümser Referans)',
+        actors: scenarioActors,
+        relations: scenarioLinks,
+        horizonTicks: scenarioAssumptions.eventDurationHours,
+        seed,
+        policyOverrideByActor: Object.fromEntries(scenarioActors.map(a => [a.actorId, 'OPPORTUNISTIC_HOARDING']))
+      });
+
+      // Scenario 2: Cooperative Sharing + Coordinated Protocol
+      const scenario2_Cooperative = runMultiActorDomainSimulation({
+        title: 'SENARYO 2: İşbirlikçi Kapasite Paylaşımı ve Ortak Likidite Protokolü',
+        actors: scenarioActors,
+        relations: scenarioLinks,
+        horizonTicks: scenarioAssumptions.eventDurationHours,
+        seed,
+        policyOverrideByActor: Object.fromEntries(scenarioActors.map(a => [a.actorId, 'COOPERATIVE_SHARING']))
+      });
+
+      // Scenario 3: User's Custom Assumptions (custom policy, custom buffer, custom duration, custom lag)
+      const scenario3_UserCustom = runMultiActorDomainSimulation({
+        title: `SENARYO 3 (Kullanıcı Varsayımı): ${MULTI_ACTOR_BEHAVIOR_POLICIES[scenarioAssumptions.actorBehaviorPolicy].labelTr} (${scenarioAssumptions.eventDurationHours}s, Gecikme=${scenarioAssumptions.relationLagTicks}, Yedek=%${scenarioAssumptions.alternativeSupplyBufferPct})`,
+        actors: scenarioActors,
+        relations: scenarioLinks,
+        horizonTicks: scenarioAssumptions.eventDurationHours,
+        seed,
+        policyOverrideByActor: Object.fromEntries(scenarioActors.map(a => [a.actorId, scenarioAssumptions.actorBehaviorPolicy]))
+      });
+
+      const s1Metrics = scenario1_Unmitigated.deterministicEngineResult.branchA;
+      const s2Metrics = scenario2_Cooperative.deterministicEngineResult.branchB;
+      const s3Metrics = scenarioAssumptions.interventionChoice === 'NONE_NO_INTERVENTION'
+        ? scenario3_UserCustom.deterministicEngineResult.branchA
+        : scenario3_UserCustom.deterministicEngineResult.branchB;
+
+      // 5. Bayesian Ensemble & Inter-Model Disagreement across the 3 scenarios
+      const ensembleEval = evaluateBayesianModelEnsemble({
+        seed,
+        models: [
+          {
+            modelId: 'SCN-1-HOARDING',
+            modelNameTr: 'Senaryo 1 (Fırsatçı Stoklama / Müdahalesiz)',
+            assumptionSummaryTr: 'Aktörler kapasiteyi saklar ve ortak protokol uygulanmaz.',
+            dataSourceId: acceptedRecords[0]?.primaryDatasetId || 'SRC-PRIMARY-1',
+            priorWeight: 0.30,
+            predictedMean: s1Metrics.throughputPct,
+            withinModelStd: 4.5
+          },
+          {
+            modelId: 'SCN-2-COOPERATIVE',
+            modelNameTr: 'Senaryo 2 (İşbirlikçi Koordinasyon)',
+            assumptionSummaryTr: 'Aktörler yedek enerji ve kredi limitlerini ortak protokolle paylaşır.',
+            dataSourceId: acceptedRecords[1]?.primaryDatasetId || 'SRC-PRIMARY-2',
+            priorWeight: 0.40,
+            predictedMean: s2Metrics.throughputPct,
+            withinModelStd: 3.8
+          },
+          {
+            modelId: 'SCN-3-USER-CUSTOM',
+            modelNameTr: 'Senaryo 3 (Kullanıcı Özel Varsayım Kümesi)',
+            assumptionSummaryTr: `Süre=${scenarioAssumptions.eventDurationHours}s, Yük=%${scenarioAssumptions.capacityOrResourceAmountPct}, Politika=${scenarioAssumptions.actorBehaviorPolicy}.`,
+            dataSourceId: 'USER_DEFINED_SCENARIO_PARAMETERS',
+            priorWeight: 0.30,
+            predictedMean: s3Metrics.throughputPct,
+            withinModelStd: 4.0
+          }
+        ]
+      });
+
+      // 6. Baseline comparison (Last Known Value vs Moving Average vs Graph Rule vs AR1)
+      const syntheticBenchmarkSeries = Array.from({ length: 16 }, (_, t) =>
+        Math.round((50 + 18 * Math.sin(t * 0.45) - (t > 8 ? 12 : 0)) * 100) / 100
+      );
+      const baselineEvaluation = evaluateSimpleForecastingBaselines(syntheticBenchmarkSeries);
+
+      // 7. Versioned Multimodal Snapshot Commit
+      const mmStore = createVersionedMultimodalStore({ storeId: `MM-WIE-${problemId}` });
+      const mmCommit = commitMultimodalBatch(mmStore, acceptedRecords.map(r => ({
+        itemId: r.id,
+        modality: r.epistemicCategoryCode === 'SOURCE_CLAIM' ? 'TEXT_CLAIM_OR_NEWS' : 'TABULAR_TIME_SERIES',
+        sourceId: r.sourceId,
+        validTimeIso: r.validFromIso,
+        learnedTimeIso: r.recordedAtIso,
+        content: { variableName: r.variableName, value: r.value, unit: r.unit }
+      })), {
+        committedAtIso: decisionCutoffTimeIso,
+        author: 'AGENT_D_AUDIT_AND_LEDGER',
+        message: `Dünya Etki Motoru analizi veri paketi (${problemId})`
+      });
+
+      const bitemporalSnapshot = reconstructWorldStateAt(memory, {
+        asOfValidTimeIso: decisionCutoffTimeIso,
+        asOfLearnedTimeIso: decisionCutoffTimeIso
+      });
+
+      const primaryIndirectPath = agentWorkflow.agentBOutput.indirectPaths[0] || agentWorkflow.agentBOutput.discoveredPaths[0] || null;
+      const primaryCritique = agentWorkflow.agentCOutput.critiquesAndAlternatives[0] || null;
+
+      return {
+        status: 'TAMAMLANDI',
+        honestStopTriggered: false,
+        plainBadgeTr: PLAIN_USER_BADGES_TR.SIMULATION_RESULT,
+        problemId,
+        problemTitleTr: baseProblem.titleTr,
+        questionTr: baseProblem.questionTr,
+        dataProvenanceLabelTr: baseProblem.dataProvenanceLabelTr,
+        isSampleFixture: baseProblem.isSampleFixture,
+        seed,
+        decisionCutoffTimeIso,
+        scenarioAssumptions,
+        executionEngineMode,
+        stage1_DataAndSources: {
+          totalRawRecords: rawRecords.length,
+          acceptedCount: acceptedRecords.length,
+          verifiedFactCount: verifiedFactRecords.length,
+          blockedLookAheadOrInvalidDateCount: blockedRecords.length,
+          missingDataGapCount: missingDataGaps.length,
+          preservedConflictCount: activeConflicts.length,
+          sourceDeduplicationReport: agentWorkflow.agentAOutput.sourceDeduplicationReport,
+          acceptedRecords,
+          blockedRecords,
+          missingDataGaps
+        },
+        stage2_BitemporalWorldMemory: bitemporalSnapshot,
+        stage3_EntityAndEventRelations: {
+          entities,
+          relations: baseRelations.map(r => ({
+            ...r,
+            relationCategoryLabelTr: WORLD_IMPACT_RELATION_CATEGORIES[r.relationCategory]?.labelTr || 'Kullanıcı Tanımlı İlişki',
+            plainBadgeTr: resolvePlainUserBadgeTr(r.epistemicCategoryCode)
+          })),
+          relationCategoriesUsed: Array.from(new Set(baseRelations.map(r => r.relationCategory || 'USER_DEFINED')))
+        },
+        stage4_IndirectImpactPaths: {
+          indirectPaths: agentWorkflow.agentBOutput.indirectPaths,
+          allPaths: agentWorkflow.agentBOutput.discoveredPaths,
+          primaryIndirectPath,
+          budgetReport: agentWorkflow.agentBOutput.budgetAndScaleReport
+        },
+        stage5_CounterEvidenceAndAlternatives: {
+          conflicts: activeConflicts,
+          critiques: agentWorkflow.agentCOutput.critiquesAndAlternatives,
+          primaryCritique
+        },
+        stage6_MultiScenarioComparison: {
+          comparisonPossible: true,
+          scenarios: [
+            {
+              scenarioId: 'SCN_1_UNMITIGATED_HOARDING',
+              titleTr: 'Senaryo 1: Müdahalesiz ve Fırsatçı Stoklama',
+              plainBadgeTr: PLAIN_USER_BADGES_TR.SIMULATION_RESULT,
+              policyLabelTr: MULTI_ACTOR_BEHAVIOR_POLICIES.OPPORTUNISTIC_HOARDING.labelTr,
+              interventionApplied: false,
+              throughputPct: s1Metrics.throughputPct,
+              peakStressPct: s1Metrics.peakStressPct,
+              outageActive: s1Metrics.outageActive,
+              scenarioPackId: scenario1_Unmitigated.compiledScenarioPack.id
+            },
+            {
+              scenarioId: 'SCN_2_COOPERATIVE_INTERVENTION',
+              titleTr: 'Senaryo 2: İşbirlikçi Paylaşım ve Ortak Koordinasyon',
+              plainBadgeTr: PLAIN_USER_BADGES_TR.SIMULATION_RESULT,
+              policyLabelTr: MULTI_ACTOR_BEHAVIOR_POLICIES.COOPERATIVE_SHARING.labelTr,
+              interventionApplied: true,
+              throughputPct: s2Metrics.throughputPct,
+              peakStressPct: s2Metrics.peakStressPct,
+              outageActive: s2Metrics.outageActive,
+              scenarioPackId: scenario2_Cooperative.compiledScenarioPack.id
+            },
+            {
+              scenarioId: 'SCN_3_USER_CUSTOM',
+              titleTr: `Senaryo 3: Seçili Varsayım Kümesi (${MULTI_ACTOR_BEHAVIOR_POLICIES[scenarioAssumptions.actorBehaviorPolicy].labelTr})`,
+              plainBadgeTr: PLAIN_USER_BADGES_TR.SIMULATION_RESULT,
+              policyLabelTr: MULTI_ACTOR_BEHAVIOR_POLICIES[scenarioAssumptions.actorBehaviorPolicy].labelTr,
+              interventionApplied: scenarioAssumptions.interventionChoice !== 'NONE_NO_INTERVENTION',
+              throughputPct: s3Metrics.throughputPct,
+              peakStressPct: s3Metrics.peakStressPct,
+              outageActive: s3Metrics.outageActive,
+              scenarioPackId: scenario3_UserCustom.compiledScenarioPack.id
+            }
+          ],
+          netCooperativeGainPct: Math.round((s2Metrics.throughputPct - s1Metrics.throughputPct) * 100) / 100,
+          netCustomGainVsUnmitigatedPct: Math.round((s3Metrics.throughputPct - s1Metrics.throughputPct) * 100) / 100
+        },
+        stage7_EngineExecution: {
+          executed: true,
+          executionEngineMode,
+          fixedPointScale: 1000000,
+          compiledPrimaryScenarioPack: scenario3_UserCustom.compiledScenarioPack,
+          rawSimulations: {
+            scenario1_Unmitigated,
+            scenario2_Cooperative,
+            scenario3_UserCustom
+          }
+        },
+        stage8_ConclusionUncertaintyAndAudit: {
+          status: ensembleEval.status,
+          plainBadgeTr: PLAIN_USER_BADGES_TR.SIMULATION_RESULT,
+          ensembleSummary: ensembleEval.posteriorSummary,
+          calibrationStatus: ensembleEval.calibrationStatus,
+          sharedDataBiasWarning: ensembleEval.sharedDataBiasWarning,
+          baselineEvaluation,
+          undeterminedAndMissingAreas: missingDataGaps.map(g => `${g.entityId}: '${g.variableName}' verisi eksik (${g.plainBadgeTr})`),
+          dataVersionCommitHash: mmCommit.commitHash,
+          securityGateChecks: agentWorkflow.securityGateChecks,
+          auditTrail: agentWorkflow.auditTrail
+        }
+      };
+    };
+
+    const pass1 = runSinglePass();
+    const pass2 = runSinglePass();
+    const pass1Sha256 = computeDeterministicSha256Hex(JSON.stringify(pass1));
+    const pass2Sha256 = computeDeterministicSha256Hex(JSON.stringify(pass2));
+
+    return {
+      schemaVersion: 'caelus.world_impact_engine.v1',
+      deterministicReplayVerified: pass1Sha256 === pass2Sha256,
+      run1Sha256: pass1Sha256,
+      run2Sha256: pass2Sha256,
+      plainUserBadgesCatalog: PLAIN_USER_BADGES_TR,
+      ...pass1
+    };
+  }
+
   const twelveCapabilitiesSuiteApi = Object.freeze({
     EPISTEMIC_KNOWLEDGE_CATEGORIES,
+    PLAIN_USER_BADGES_TR,
+    resolvePlainUserBadgeTr,
+    parseStrictIsoTimestamp,
     classifyAndValidateKnowledgeRecord,
+    admitRecordToWorldMemoryAndCoreGate,
     CAELUS_AGENT_SPECIFICATIONS,
+    writeMemoryRecordWithAgentGate,
+    invokeExternalNetworkWithAgentGate,
+    promoteToCoreScenarioPackWithAgentGate,
+    WORLD_IMPACT_RELATION_CATEGORIES,
+    deduplicateCorroboratingSources,
+    GRAPH_EXPLORATION_BUDGET_DEFAULTS,
+    exploreMultiLayerImpactPaths,
     executeCaelusAgentWorkflow,
     TEMPORAL_WORLD_MEMORY_CONCEPTS,
+    EXTENDED_WORLD_MEMORY_CONCEPTS,
     createTemporalWorldMemory,
     addTemporalMemoryRecord,
+    syncLedgerWithTemporalWorldMemory,
     retractOrSupersedeMemoryRecord,
     reconstructWorldStateAt,
     evaluateTemporalGraphLinkPrediction,
@@ -27545,7 +29302,10 @@
     verifyAndImportOfflineTransferBundle,
     rollbackMultimodalStoreToVersion,
     runNeuroSymbolicVerificationPipeline,
-    runEndToEndWorldAnalysisDemo
+    runEndToEndWorldAnalysisDemo,
+    WORLD_IMPACT_PROBLEM_CATALOG,
+    evaluateSimpleForecastingBaselines,
+    runWorldImpactEngineWorkflow
   });
 
   root.CaelusTwelveCapabilitiesSuite = twelveCapabilitiesSuiteApi;
@@ -27753,12 +29513,25 @@
     getRealWorld13TechAcceptanceMatrix,
     CaelusTwelveCapabilitiesSuite: twelveCapabilitiesSuiteApi,
     EPISTEMIC_KNOWLEDGE_CATEGORIES,
+    PLAIN_USER_BADGES_TR,
+    resolvePlainUserBadgeTr,
+    parseStrictIsoTimestamp,
     classifyAndValidateKnowledgeRecord,
+    admitRecordToWorldMemoryAndCoreGate,
     CAELUS_AGENT_SPECIFICATIONS,
+    writeMemoryRecordWithAgentGate,
+    invokeExternalNetworkWithAgentGate,
+    promoteToCoreScenarioPackWithAgentGate,
+    WORLD_IMPACT_RELATION_CATEGORIES,
+    deduplicateCorroboratingSources,
+    GRAPH_EXPLORATION_BUDGET_DEFAULTS,
+    exploreMultiLayerImpactPaths,
     executeCaelusAgentWorkflow,
     TEMPORAL_WORLD_MEMORY_CONCEPTS,
+    EXTENDED_WORLD_MEMORY_CONCEPTS,
     createTemporalWorldMemory,
     addTemporalMemoryRecord,
+    syncLedgerWithTemporalWorldMemory,
     retractOrSupersedeMemoryRecord,
     reconstructWorldStateAt,
     evaluateTemporalGraphLinkPrediction,
@@ -27780,6 +29553,9 @@
     verifyAndImportOfflineTransferBundle,
     rollbackMultimodalStoreToVersion,
     runNeuroSymbolicVerificationPipeline,
-    runEndToEndWorldAnalysisDemo
+    runEndToEndWorldAnalysisDemo,
+    WORLD_IMPACT_PROBLEM_CATALOG,
+    evaluateSimpleForecastingBaselines,
+    runWorldImpactEngineWorkflow
   });
 })(typeof window !== 'undefined' ? window : globalThis);

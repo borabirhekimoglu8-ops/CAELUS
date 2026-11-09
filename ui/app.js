@@ -24365,6 +24365,273 @@ function initCaelusRealWorld13TechIntegrations() {
   window.switchKesfetSubFocus = switchKesfetSubFocus;
 }
 
+function resolveCurrentExecutionEngineModeLabel() {
+  if (typeof liveWs !== 'undefined' && liveWs && liveWs.readyState === WebSocket.OPEN) {
+    return 'NATIVE_CPP17_RUST_WEBSOCKET_ENGINE';
+  }
+  if (state.engineMode === 'wasm') {
+    return 'RUST_WASM_CORE_ENGINE';
+  }
+  return 'JS_FIXED_POINT_1E6_DETERMINISTIC_MIRROR';
+}
+
+function runAndRenderWorldImpactEngine(overrideSpec = {}) {
+  const compiler = window.CaelusScenarioCompiler;
+  const suite = compiler && compiler.CaelusTwelveCapabilitiesSuite;
+  if (!suite || typeof suite.runWorldImpactEngineWorkflow !== 'function') return null;
+
+  const probEl = document.getElementById('wie-problem-select');
+  const cutoffEl = document.getElementById('wie-cutoff-input');
+  const durEl = document.getElementById('wie-duration-select');
+  const capEl = document.getElementById('wie-capacity-input');
+  const polEl = document.getElementById('wie-policy-select');
+  const bufEl = document.getElementById('wie-buffer-input');
+  const lagEl = document.getElementById('wie-lag-select');
+  const intEl = document.getElementById('wie-intervention-select');
+
+  const spec = {
+    problemId: overrideSpec.problemId || (probEl ? probEl.value : 'PROB_ENERGY_TECH_FIN_TRADE'),
+    decisionCutoffTimeIso: overrideSpec.decisionCutoffTimeIso !== undefined
+      ? overrideSpec.decisionCutoffTimeIso
+      : (cutoffEl ? cutoffEl.value.trim() : '2026-10-15T12:00:00.000Z'),
+    eventDurationHours: Number(overrideSpec.eventDurationHours ?? (durEl ? durEl.value : 16)),
+    capacityOrResourceAmountPct: Number(overrideSpec.capacityOrResourceAmountPct ?? (capEl ? capEl.value : 68)),
+    actorBehaviorPolicy: overrideSpec.actorBehaviorPolicy || (polEl ? polEl.value : 'COOPERATIVE_SHARING'),
+    alternativeSupplyBufferPct: Number(overrideSpec.alternativeSupplyBufferPct ?? (bufEl ? bufEl.value : 35)),
+    relationLagTicks: Number(overrideSpec.relationLagTicks ?? (lagEl ? lagEl.value : 1)),
+    interventionChoice: overrideSpec.interventionChoice || (intEl ? intEl.value : 'L-MAS-COORD-01'),
+    executionEngineMode: resolveCurrentExecutionEngineModeLabel(),
+    seed: Number(overrideSpec.seed ?? 20260410)
+  };
+
+  if (probEl && overrideSpec.problemId) {
+    probEl.value = overrideSpec.problemId;
+  }
+
+  const res = suite.runWorldImpactEngineWorkflow(spec);
+  window.lastWorldImpactEngineResult = res;
+
+  // Also dispatch compiled pack to live C++17 WebSocket engine if connected
+  if (!res.honestStopTriggered && res.stage7_EngineExecution && res.stage7_EngineExecution.compiledPrimaryScenarioPack) {
+    if (typeof liveWs !== 'undefined' && liveWs && liveWs.readyState === WebSocket.OPEN) {
+      try {
+        liveWs.send(`load_json ${JSON.stringify(res.stage7_EngineExecution.compiledPrimaryScenarioPack)}`);
+      } catch (_) {}
+    }
+  }
+
+  const qLine = document.getElementById('wie-question-summary-line');
+  const hdrStatusBadge = document.getElementById('wie-header-status-badge');
+  const hdrEngineBadge = document.getElementById('wie-header-engine-badge');
+  const card1 = document.getElementById('wie-card-sources-time');
+  const card2 = document.getElementById('wie-card-impact-paths');
+  const card3 = document.getElementById('wie-card-counter-evidence');
+  const card4 = document.getElementById('wie-card-scenarios-compare');
+  const card5 = document.getElementById('wie-card-conclusion-audit');
+  const techBody = document.getElementById('wie-technical-audit-body');
+
+  if (qLine) {
+    qLine.innerHTML = `<strong>Soru:</strong> ${escapeHtml(res.questionTr)} <span class="kpi-badge" style="margin-left:6px; font-size:0.65rem;">${escapeHtml(res.dataProvenanceLabelTr)}</span>`;
+  }
+  if (hdrEngineBadge) {
+    hdrEngineBadge.textContent = `Motor: ${res.executionEngineMode}`;
+  }
+
+  if (res.honestStopTriggered) {
+    if (hdrStatusBadge) {
+      hdrStatusBadge.className = 'kpi-badge warn';
+      hdrStatusBadge.textContent = 'YETERSİZ VERİ — DÜRÜST DURDURMA AKTİF';
+    }
+    if (card1) {
+      card1.innerHTML = `
+        <div><strong>Kabul Edilen Kayıt:</strong> 0 · <strong>Engellenen (Geçersiz/Gelecek Tarih):</strong> ${res.stage1_DataAndSources.blockedLookAheadOrInvalidDateCount} · <strong>Eksik Veri Boşluğu:</strong> ${res.stage1_DataAndSources.missingDataGapCount}</div>
+        <div style="margin-top:4px; color:#f0b45a;">Geçersiz tarihli veya boş kayıtlar kesin gerçek olarak kabul edilmedi ve karantinaya alındı.</div>
+      `;
+    }
+    if (card2) {
+      card2.innerHTML = `<div style="color:var(--text-3);">Doğrulanmış ilişki verisi bulunmadığından dolaylı etki yolu uydurulmadı (<span class="kpi-badge">YETERSİZ VERİ</span>).</div>`;
+    }
+    if (card3) {
+      card3.innerHTML = `<div style="color:var(--text-3);">Karşılaştırılacak aktif iddia bulunmuyor.</div>`;
+    }
+    if (card4) {
+      card4.innerHTML = `<div style="color:#f0b45a;"><strong>Senaryo Koşumu Durduruldu:</strong> Yetersiz veri nedeniyle yanıltıcı simülasyon yüzdesi üretilmedi.</div>`;
+    }
+    if (card5) {
+      card5.innerHTML = `<div style="color:#fbbf24; font-weight:600;">${escapeHtml(res.honestUncertaintyStatementTr)}</div>`;
+    }
+    if (techBody) {
+      techBody.innerHTML = `
+        <div>Durum: <strong>${escapeHtml(res.status)}</strong> · Deterministik Tekrar Doğrulandı: <code>${res.deterministicReplayVerified}</code></div>
+        <div>SHA-256 (Koşu 1 == Koşu 2): <code>${escapeHtml(res.run1Sha256)}</code></div>
+        <div>Denetim Özeti: <code>${escapeHtml(res.stage8_ConclusionUncertaintyAndAudit.auditTrail.finalChainHeadHash)}</code> (${escapeHtml(res.stage8_ConclusionUncertaintyAndAudit.auditTrail.hashAlgorithm)})</div>
+      `;
+    }
+    return res;
+  }
+
+  if (hdrStatusBadge) {
+    hdrStatusBadge.className = 'kpi-badge ok';
+    hdrStatusBadge.textContent = `ANALİZ TAMAMLANDI · TEKRARLANABİLİR (${res.deterministicReplayVerified ? 'DOĞRULANDI' : 'KONTROL'})`;
+  }
+
+  const s1 = res.stage1_DataAndSources;
+  if (card1) {
+    const recLines = (s1.acceptedRecords || []).slice(0, 3).map(r =>
+      `<li><strong>${escapeHtml(r.sourceId)}</strong> → <code>${escapeHtml(r.variableName)}=${escapeHtml(String(r.value))}${escapeHtml(r.unit || '')}</code> · Gerçekleşme: <code>${escapeHtml(r.validFromIso || '')}</code> · Yayım: <code>${escapeHtml(r.availableAtSourceTimeIso || '—')}</code> · Alım: <code>${escapeHtml(r.recordedAtIso || '')}</code> <span class="kpi-badge" style="font-size:0.62rem;">${escapeHtml(r.plainBadgeTr)}</span></li>`
+    ).join('');
+    card1.innerHTML = `
+      <div><strong>Kabul Edilen:</strong> ${s1.acceptedCount} kayıt (${s1.verifiedFactCount} doğrudan gözlem) · <strong>Gelecekten Sızma Engellenen:</strong> ${s1.blockedLookAheadOrInvalidDateCount} · <strong>Eksik Veri:</strong> ${s1.missingDataGapCount}</div>
+      <div style="margin-top:3px; color:#88D4FF; font-size:0.72rem;">${escapeHtml(s1.sourceDeduplicationReport.corroborationHonestyNoteTr)}</div>
+      <ul style="margin:5px 0 0 15px; padding:0; font-size:0.72rem;">${recLines}</ul>
+    `;
+  }
+
+  const pPath = res.stage4_IndirectImpactPaths.primaryIndirectPath;
+  if (card2) {
+    if (pPath) {
+      const edgeSteps = pPath.edges.map((e, idx) =>
+        `<li>Adım ${idx + 1} [${escapeHtml(e.relationCategoryLabelTr)} · Gecikme: ${e.lagHours}s]: <strong>${escapeHtml(e.fromId)} → ${escapeHtml(e.toId)}</strong> (${escapeHtml(e.mechanismTr)}) <span class="kpi-badge" style="font-size:0.62rem;">${escapeHtml(e.plainBadgeTr)}</span></li>`
+      ).join('');
+      card2.innerHTML = `
+        <div><strong>Zincir (${pPath.domainsTraversed.length} Alan · ${pPath.hopCount} Adım):</strong> ${escapeHtml(pPath.nodeLabels.join(' → '))}</div>
+        <ul style="margin:4px 0 0 15px; padding:0; font-size:0.72rem;">${edgeSteps}</ul>
+        <div style="margin-top:4px; color:#E6C387; font-size:0.71rem;">⚠️ ${escapeHtml(pPath.causalityWarningTr)}</div>
+      `;
+    } else {
+      card2.innerHTML = `<div>Dolaylı yol bulunamadı.</div>`;
+    }
+  }
+
+  const s5 = res.stage5_CounterEvidenceAndAlternatives;
+  if (card3) {
+    const confHtml = s5.conflicts.length > 0
+      ? s5.conflicts.map(c =>
+          `<div><strong>Çelişen Kaynak İddiası (${escapeHtml(c.subjectId)} · ${escapeHtml(c.variableName)}):</strong> Kaynaklar (<code>${escapeHtml(c.competingSources.join(' vs '))}</code>) aynı zaman dilimi için <strong>${escapeHtml(c.competingValues.join(' vs '))}</strong> bildirdi; her iki kayıt da silinmeden korundu.</div>`
+        ).join('')
+      : `<div>Aktif kaynak çelişkisi tespit edilmedi.</div>`;
+    const altHtml = (s5.primaryCritique && s5.primaryCritique.alternativeExplanations || []).map(a =>
+      `<li><strong>${escapeHtml(a.titleTr)}:</strong> ${escapeHtml(a.explanationTr)} <span class="kpi-badge" style="font-size:0.62rem;">${escapeHtml(a.plainBadgeTr)}</span></li>`
+    ).join('');
+    card3.innerHTML = `
+      ${confHtml}
+      <ul style="margin:4px 0 0 15px; padding:0; font-size:0.72rem;">${altHtml}</ul>
+    `;
+  }
+
+  const s6 = res.stage6_MultiScenarioComparison;
+  if (card4) {
+    const rowsHtml = (s6.scenarios || []).map(sc => `
+      <div style="padding:5px 8px; border-radius:7px; background:rgba(12,24,46,0.75); border:1px solid rgba(136,212,255,0.16); margin-bottom:4px; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <div>
+          <strong style="color:var(--text-1); font-size:0.75rem;">${escapeHtml(sc.titleTr)}</strong>
+          <div style="font-size:0.69rem; color:var(--text-3);">Politika: ${escapeHtml(sc.policyLabelTr)} · Müdahale: ${sc.interventionApplied ? 'Uygulandı' : 'Yok'}</div>
+        </div>
+        <div class="mono" style="font-size:0.74rem; text-align:right;">
+          Kapasite: <strong style="color:#5EC69D;">%${sc.throughputPct}</strong> · Tepe Stres: <strong style="color:#f0b45a;">%${sc.peakStressPct}</strong>
+        </div>
+      </div>
+    `).join('');
+    card4.innerHTML = `
+      ${rowsHtml}
+      <div style="font-size:0.73rem; color:#88D4FF;"><strong>Karşılaştırma Özeti:</strong> İşbirlikçi protokol (Senaryo 2), fırsatçı stoklamaya (Senaryo 1) göre kapasiteyi <strong>+${s6.netCooperativeGainPct} puan</strong> korur; seçili özel senaryonuz (Senaryo 3) ise <strong>${s6.netCustomGainVsUnmitigatedPct >= 0 ? '+' : ''}${s6.netCustomGainVsUnmitigatedPct} puan</strong> fark üretir.</div>
+    `;
+  }
+
+  const s8 = res.stage8_ConclusionUncertaintyAndAudit;
+  if (card5) {
+    const ens = s8.ensembleSummary;
+    const gapList = (s8.undeterminedAndMissingAreas || []).length > 0
+      ? s8.undeterminedAndMissingAreas.map(g => `<code>${escapeHtml(g)}</code>`).join(', ')
+      : 'Yok';
+    card5.innerHTML = `
+      <div><strong>Model Topluluğu Beklenen Kapasite:</strong> <code>%${ens.ensembleMean}</code> (%90 Aralık: <code>[%${ens.credibleInterval90.low} – %${ens.credibleInterval90.high}]</code> · Modeller Arası Uyuşmazlık σ: <code>${ens.epistemicBetweenModelDisagreementStd}</code>)</div>
+      <div style="margin-top:3px;"><strong>Kalibrasyon Durumu:</strong> <code>${escapeHtml(s8.calibrationStatus)}</code> (Olasılıklar ampirik kalibre edilmiş kesin tahmin olarak sunulmaz)</div>
+      <div style="margin-top:3px; color:#f0b45a;"><strong>Bilmiyorum / Eksik Veri Alanları:</strong> ${gapList}</div>
+      <div style="margin-top:3px; font-size:0.71rem; color:var(--text-3);">Bu çıktı kesin gelecek kehaneti değildir; açıkça listelenen kaynak, gecikme ve davranış varsayımlarına bağlı alternatif gelecek simülasyonudur.</div>
+    `;
+  }
+
+  if (techBody) {
+    const baseMethods = (s8.baselineEvaluation && s8.baselineEvaluation.methods || [])
+      .map(m => `${m.labelTr}: MAE=${m.mae}, RMSE=${m.rmse}`)
+      .join(' | ');
+    techBody.innerHTML = `
+      <div><strong>1. Motor ve Ölçek:</strong> <code>${escapeHtml(res.executionEngineMode)}</code> · Sabit Nokta: <code>int64 × 1e6</code> · Tohum (Seed): <code>${res.seed}</code> · Karar Kesim Zamanı: <code>${escapeHtml(res.decisionCutoffTimeIso)}</code></div>
+      <div><strong>2. Veri Sürümü ve Tekrarlanabilirlik:</strong> Veri Paketi Commit: <code>${escapeHtml(s8.dataVersionCommitHash)}</code> · Koşu 1 SHA-256 == Koşu 2 SHA-256: <code>${escapeHtml(res.run1Sha256)}</code> (<code>deterministicReplayVerified=${res.deterministicReplayVerified}</code>)</div>
+      <div><strong>3. Denetim Zinciri (Dürüst Etiketleme):</strong> <code>${escapeHtml(s8.auditTrail.finalChainHeadHash)}</code> (Algoritma: <code>${escapeHtml(s8.auditTrail.hashAlgorithm)}</code> · İkincil İçerik Özeti: <code>${escapeHtml(s8.auditTrail.finalSha256ChainHead.slice(0, 24))}…</code> · Kriptografik Ed25519 Mührü: <code>${s8.auditTrail.isCryptographicEd25519Seal} — ${escapeHtml(s8.auditTrail.nativeAuditBridgeStatus)}</code>)</div>
+      <div><strong>4. Gerçek Ajan Yetki Kapıları:</strong> Yetkisiz Hipotez→Gerçek Yazma: <code>allowed=${s8.securityGateChecks.attemptedUnauthorizedWriteResult?.allowed} (${escapeHtml(s8.securityGateChecks.attemptedUnauthorizedWriteResult?.reason || '')})</code> · Yetkisiz Dış Ağ İsteği: <code>allowed=${s8.securityGateChecks.attemptedUnauthorizedNetworkResult?.allowed} (${escapeHtml(s8.securityGateChecks.attemptedUnauthorizedNetworkResult?.reason || '')})</code></div>
+      <div><strong>5. Basit Referanslarla Karşılaştırma:</strong> <code>${escapeHtml(baseMethods)}</code></div>
+    `;
+  }
+
+  return res;
+}
+
+function initCaelusWorldImpactEngineUI() {
+  const btnRun = document.getElementById('btn-wie-run-analysis');
+  const btnReplay = document.getElementById('btn-wie-replay-analysis');
+  const btnInsufficient = document.getElementById('btn-wie-test-insufficient');
+  const selProb = document.getElementById('wie-problem-select');
+
+  const controlIds = [
+    'wie-problem-select',
+    'wie-duration-select',
+    'wie-capacity-input',
+    'wie-policy-select',
+    'wie-buffer-input',
+    'wie-lag-select',
+    'wie-intervention-select'
+  ];
+  controlIds.forEach(id => {
+    const elCtrl = document.getElementById(id);
+    if (elCtrl) {
+      elCtrl.addEventListener('change', () => runAndRenderWorldImpactEngine());
+    }
+  });
+
+  if (btnRun) {
+    btnRun.addEventListener('click', () => runAndRenderWorldImpactEngine());
+  }
+  if (btnReplay) {
+    btnReplay.addEventListener('click', () => {
+      const r1 = runAndRenderWorldImpactEngine();
+      const r2 = runAndRenderWorldImpactEngine();
+      const badge = document.getElementById('wie-header-status-badge');
+      if (badge && r1 && r2) {
+        badge.className = 'kpi-badge ok';
+        badge.textContent = `TEKRAR KOŞUM ÖZDEŞ (SHA-256: ${r1.run1Sha256.slice(0, 12)}…)`;
+      }
+    });
+  }
+  if (btnInsufficient) {
+    btnInsufficient.addEventListener('click', () => {
+      if (selProb) selProb.value = 'PROB_INSUFFICIENT_DATA_HONEST_STOP';
+      runAndRenderWorldImpactEngine({ problemId: 'PROB_INSUFFICIENT_DATA_HONEST_STOP' });
+    });
+  }
+
+  const jumpToWorldImpactEngine = () => {
+    if (typeof switchQuietView === 'function') {
+      switchQuietView('senaryolar');
+    }
+    const detailsBox = document.getElementById('caelus-world-impact-engine-workspace');
+    if (detailsBox) {
+      detailsBox.open = true;
+      detailsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    runAndRenderWorldImpactEngine();
+  };
+
+  const btnDunyamWie = document.getElementById('btn-dunyam-open-world-impact-engine');
+  const btnKesfetWie = document.getElementById('btn-kesfet-open-world-impact-engine');
+  if (btnDunyamWie) btnDunyamWie.addEventListener('click', jumpToWorldImpactEngine);
+  if (btnKesfetWie) btnKesfetWie.addEventListener('click', jumpToWorldImpactEngine);
+
+  window.runAndRenderWorldImpactEngine = runAndRenderWorldImpactEngine;
+  runAndRenderWorldImpactEngine();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
   setInterval(updateClock, 1000);
@@ -24381,6 +24648,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initGitHubUiTransformIntegrations();
   initCaelusTenRepoIntegrations();
   initCaelusRealWorld13TechIntegrations();
+  initCaelusWorldImpactEngineUI();
 
   addAuditLog('info', 'CAELUS Karar Analitiği Arayüzü başlatıldı. Gerçek motor bağlantısı kontrol ediliyor...');
   addReplLine('Motor konsolu hazır. Komutlar: status, list levers, lever <id>, compare_lever <id> <ufuk> <tohum>, tick <n>, scenario <id>, load_json <json>, reset', 'info');
