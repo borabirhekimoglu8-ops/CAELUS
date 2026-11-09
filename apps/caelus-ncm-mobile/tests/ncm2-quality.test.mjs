@@ -90,3 +90,44 @@ test("temporal observer authoritative paketi değiştirmeden snapshot gözlemler
   assert.equal(observed.analysis.observerTick, 11);
   assert.notDeepEqual(observed.analysis.horizons, original.analysis.horizons);
 });
+
+test("AŞAMA 2: 9 epistemik bilgi kategorisi, fallback hipotez ayrımı, kalibre edilmemiş skor şeffaflığı ve çift zaman damgası çalışır", () => {
+  const result = compileNeuralScenario(
+    "Liman gümrük kapısında 36 saatlik fırtına ve enerji kesintisi soğuk zincir ilaç sevkiyatını geciktirirse",
+    {
+      eventValidTimeIso: "2026-03-10T08:00:00.000Z",
+      systemLearnedTimeIso: "2026-03-10T14:00:00.000Z",
+      decisionCutoffTimeIso: "2026-03-10T10:00:00.000Z",
+    }
+  );
+  const disc = result.analysis.epistemicDiscipline;
+  assert.ok(disc);
+  assert.equal(Object.keys(disc.categoriesCatalog).length, 9);
+  assert.equal(disc.confidenceIsCalibratedProbability, false);
+  assert.equal(disc.empiricalCausalityProven, false);
+  assert.equal(result.analysis.confidenceIsCalibratedProbability, false);
+  assert.ok(disc.causalityDisclaimerTr.includes("hipotezlerdir"));
+
+  for (const rel of result.analysis.strongestRelations) {
+    assert.equal(rel.empiricalCausalityProven, false);
+    assert.equal(rel.isCalibratedProbability, false);
+    assert.ok(rel.relationPresentationLabel.includes("Kanıtlanmış Nedensellik Değildir"));
+    assert.equal(typeof rel.fallback, "boolean");
+    assert.ok(rel.epistemicCategory);
+    assert.ok(rel.scoreFormula);
+  }
+
+  for (const edge of result.analysis.observerProposal.edges) {
+    assert.equal(edge.empiricalCausalityProven, false);
+    assert.equal(edge.isCalibratedProbability, false);
+    if (edge.fallback) {
+      assert.equal(edge.epistemicCategoryCode, "MODEL_HYPOTHESIS");
+      assert.equal(edge.scoreType, "FALLBACK_SYNTHETIC_DEFAULT_SCORE");
+    }
+  }
+
+  assert.equal(result.analysis.bitemporalContext.eventValidTimeIso, "2026-03-10T08:00:00.000Z");
+  assert.equal(result.analysis.bitemporalContext.systemLearnedTimeIso, "2026-03-10T14:00:00.000Z");
+  assert.equal(result.analysis.bitemporalContext.lookAheadBlocked, true);
+  assert.equal(result.analysis.bitemporalContext.lookAheadStatus, "BLOCKED_LEARNED_AFTER_DECISION_CUTOFF");
+});

@@ -27,14 +27,20 @@ jobs:
           g++ --version | head -1
           python3 --version
 
-      - name: Validate universal browser scenario compiler
+      - name: Run full CI pipeline (builds dist/caelus_os and verifies C++/Rust core)
+        run: |
+          chmod +x build.sh ci.sh
+          ./ci.sh
+
+      - name: Validate universal browser scenario compiler & NCM-2 against native Linux binary
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
         run: |
           node --check ui/scenario_compiler.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
-
-      - name: Run full CI pipeline
-        run: ./ci.sh
+          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
 
       - name: Extract deterministic CDET block
         run: |
@@ -95,6 +101,17 @@ jobs:
           CAELUS_CXX: MSVC
           PYTHONUTF8: "1"
         run: ci.bat
+
+      - name: Validate universal browser scenario compiler & NCM-2 against native Windows binary
+        shell: pwsh
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
+        run: |
+          node --check ui/scenario_compiler.js
+          node --check ui/app.js
+          node --test tests/universal_scenario_compiler.test.mjs
+          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
 
       - name: Determinism diagnostics
         if: failure()
