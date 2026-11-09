@@ -3,6 +3,7 @@ import { parseSituation } from "./ncm2/frame-parser.mjs";
 import {
   buildNeuralGate,
   buildSemanticGraph,
+  NCM2_EPISTEMIC_CATEGORIES,
   runTemporalObserver,
   snapshotStates,
   TEMPORAL_MODEL_INFO,
@@ -388,6 +389,14 @@ function relationNarrative(edge, nodeByKey) {
     to: to?.label || edge.to,
     confidence: edge.confidenceFp / 1_000_000,
     relation: edge.relation,
+    relationPresentationLabel: edge.relationPresentationLabel || `${edge.relation} (Kural Önerisi / Hipotez — Kanıtlanmış Nedensellik Değildir)`,
+    epistemicCategory: edge.epistemicCategory || (edge.fallback ? NCM2_EPISTEMIC_CATEGORIES.MODEL_HYPOTHESIS : NCM2_EPISTEMIC_CATEGORIES.RULE_BASED_INFERENCE),
+    epistemicCategoryCode: edge.epistemicCategoryCode || (edge.fallback ? "MODEL_HYPOTHESIS" : "RULE_BASED_INFERENCE"),
+    fallback: Boolean(edge.fallback),
+    empiricalCausalityProven: false,
+    isCalibratedProbability: false,
+    scoreType: edge.scoreType || (edge.fallback ? "FALLBACK_SYNTHETIC_DEFAULT_SCORE" : "UNCALIBRATED_HEURISTIC_RULE_SCORE"),
+    scoreFormula: edge.scoreFormula || "edge.confidenceFp / 1000000",
     mechanism: edge.mechanism,
     lagTicks: edge.lagTicks,
     polarity: edge.polarity,
@@ -395,7 +404,7 @@ function relationNarrative(edge, nodeByKey) {
   };
 }
 
-export function compileNeuralScenario(input) {
+export function compileNeuralScenario(input, options = {}) {
   const sourceText = String(input || "").replace(/\s+/g, " ").trim().slice(0, 600);
   if (sourceText.length < 8) throw new Error("NCM-2 için aktör, olay veya süre içeren daha açıklayıcı bir durum yazın.");
 
@@ -560,6 +569,41 @@ export function compileNeuralScenario(input) {
   };
 
   const strongestRelations = positiveEdges.slice(0, 5).map((edge) => relationNarrative(edge, nodeByKey));
+  const eventValidTimeIso = String(options.eventValidTimeIso || "2026-01-01T00:00:00.000Z");
+  const systemLearnedTimeIso = String(options.systemLearnedTimeIso || eventValidTimeIso);
+  const decisionCutoffTimeIso = String(options.decisionCutoffTimeIso || systemLearnedTimeIso);
+  const lookAheadViolation = Date.parse(systemLearnedTimeIso) > Date.parse(decisionCutoffTimeIso);
+
+  const epistemicDiscipline = {
+    schema: "caelus.ncm2.epistemic_discipline.v1",
+    categoriesCatalog: NCM2_EPISTEMIC_CATEGORIES,
+    confidenceIsCalibratedProbability: false,
+    empiricalCausalityProven: false,
+    confidenceDerivationFormula: "clamp(0.45 + coverage*0.30 + min(0.18, explicitCount*0.03) + maxDomainProb*0.12 - negationPenalty, 0.38, 0.96)",
+    causalityDisclaimerTr: "Bu katmandaki bağlantılar ('CAUSES', 'TRIGGERS', vb.) ontoloji kuralları ve yerel nöro-sezgisel ağırlıklardan üretilen hipotezlerdir; istatistiksel olarak kalibre edilmiş olasılık veya ampirik kanıtlanmış nedensellik değildir.",
+    countsByCategory: {
+      sourceClaims: concepts.filter((c) => c.explicit).length,
+      measurementsOrObservations: Number(options.observedRecordCount || 0),
+      ruleBasedInferences: semanticEdges.filter((e) => !e.fallback).length + concepts.filter((c) => !c.explicit).length,
+      modelHypotheses: semanticEdges.filter((e) => e.fallback).length,
+      conditionalCausalConclusions: deep.counterfactuals.length,
+      simulationResults: deep.horizons.length,
+      counterEvidenceOrContradictions: situation.negatedEvents.length,
+      unknownsOrInsufficientData: deep.unknowns.length,
+      correctedOrExpiredRecords: Number(options.correctedRecordCount || 0),
+    },
+    fallbackEdgesCount: semanticEdges.filter((e) => e.fallback).length,
+    nonFallbackEdgesCount: semanticEdges.filter((e) => !e.fallback).length,
+  };
+
+  const bitemporalContext = {
+    eventValidTimeIso,
+    systemLearnedTimeIso,
+    decisionCutoffTimeIso,
+    lookAheadBlocked: lookAheadViolation,
+    lookAheadStatus: lookAheadViolation ? "BLOCKED_LEARNED_AFTER_DECISION_CUTOFF" : "ALLOWED_NO_FUTURE_LEAKAGE",
+  };
+
   const observerProposal = {
     schema: "ncm-observer/2",
     modelVersion: NCM2_VERSION,
@@ -569,6 +613,8 @@ export function compileNeuralScenario(input) {
     edges: semanticEdges,
     forecasts,
     gateAudit,
+    epistemicDiscipline,
+    bitemporalContext,
     initialStatesFp: nodes.map((node) => node.state_fp),
   };
 
@@ -582,6 +628,8 @@ export function compileNeuralScenario(input) {
       sectorLabel: deep.domainLabel,
       activeDomains: situation.activeDomains.map((row) => row.sector),
       confidence: situation.confidence,
+      confidenceIsCalibratedProbability: false,
+      confidenceScoreType: "UNCALIBRATED_HEURISTIC_COVERAGE_SCORE",
       severity: situation.severity,
       synopsis: deep.executiveSummary,
       executiveSummary: deep.executiveSummary,
@@ -594,6 +642,8 @@ export function compileNeuralScenario(input) {
       unknowns: deep.unknowns,
       criticalSignals: deep.criticalSignals,
       gateAudit,
+      epistemicDiscipline,
+      bitemporalContext,
       evidence: deep.evidence,
       observerProposal,
       observerTick: 0,

@@ -1,9 +1,32 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 await import('../ui/scenario_compiler.js');
 
 const compiler = globalThis.CaelusScenarioCompiler;
+
+/**
+ * Resolves the platform-native CAELUS C++17 binary (`dist/caelus_os.exe` on Windows,
+ * `dist/caelus_os` on Linux/macOS, or `process.env.CAELUS_BIN` if explicitly set).
+ */
+function resolveCaelusBinaryPath() {
+  if (process.env.CAELUS_BIN && fs.existsSync(process.env.CAELUS_BIN)) {
+    return path.resolve(process.env.CAELUS_BIN);
+  }
+  const distDir = path.resolve(process.cwd(), 'dist');
+  const nativeName = process.platform === 'win32' ? 'caelus_os.exe' : 'caelus_os';
+  const candidate = path.join(distDir, nativeName);
+  return candidate;
+}
+
+/**
+ * Returns true when running in strict offline deterministic test mode (`CAELUS_OFFLINE_ONLY=1`).
+ */
+function isOfflineTestMode() {
+  return process.env.CAELUS_OFFLINE_ONLY === '1' || process.env.CI_OFFLINE === '1';
+}
 
 test('serbest metin aynı ScenarioPack çıktısını deterministik üretir', () => {
   assert.ok(compiler);
@@ -1224,8 +1247,8 @@ test('Test 19: Real-World Data (Open-Meteo Weather + Marine) -> Digital World ->
   assert.equal(snapT1.canExecuteEngine, true);
   assert.equal(snapT2.canExecuteEngine, true);
 
-  // Run both snapshots through the real C++17 binary (dist/caelus_os.exe --det-mode --repl)
-  const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
+  // Run both snapshots through the real C++17 binary (dist/caelus_os[.exe] --det-mode --repl)
+  const exePath = resolveCaelusBinaryPath();
   function runPackInCppEngine(scenarioPack, leverId, horizonTicks, seed) {
     const stdinCmds = [
       `load_json ${JSON.stringify(scenarioPack)}`,
@@ -1276,7 +1299,11 @@ test('Test 19: Real-World Data (Open-Meteo Weather + Marine) -> Digital World ->
   assert.ok(snapT2.engineComparison.epistemicRepeatabilityNotice.includes('fiziksel doğruluğu anlamına gelmez'));
 });
 
-test('Test 20: Live Open-Meteo Weather + Marine API Fetch (İzmir Körfezi 38.44, 27.15) -> End-to-End C++17 Engine Execution (Acceptance Test 9)', async () => {
+test('Test 20: Live Open-Meteo Weather + Marine API Fetch (İzmir Körfezi 38.44, 27.15) -> End-to-End C++17 Engine Execution (Acceptance Test 9)', async (t) => {
+  if (isOfflineTestMode()) {
+    t.skip('CAELUS_OFFLINE_ONLY=1: Canlı dış ağ testi (Open-Meteo Live API) çevrimdışı modda açıkça atlandı (SKIPPED_OFFLINE_MODE)');
+    return;
+  }
   const { spawnSync } = await import('node:child_process');
   const path = await import('node:path');
   const connMgr = compiler.CaelusDataConnectorManager;
@@ -1304,8 +1331,7 @@ test('Test 20: Live Open-Meteo Weather + Marine API Fetch (İzmir Körfezi 38.44
   }
 
   if (!fetchedLive) {
-    // If test environment has no internet access, verify that offline fallback is NOT silently used and skip live assertions with explicit notice
-    assert.equal(fetchedLive, false);
+    t.skip('DOĞRULANAMAYAN DIŞ SERVİS: Open-Meteo canlı servisine erişilemedi; çevrimdışı yedek veriyle sahte geçiş yapılmadı');
     return;
   }
 
@@ -1352,7 +1378,7 @@ test('Test 20: Live Open-Meteo Weather + Marine API Fetch (İzmir Körfezi 38.44
   });
   assert.equal(snapLive.canExecuteEngine, true);
 
-  const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
+  const exePath = resolveCaelusBinaryPath();
   const stdinCmds = [
     `load_json ${JSON.stringify(snapLive.scenarioPack)}`,
     `compare_lever ${snapLive.selectedLeverId} ${snapLive.horizonTicks} ${snapLive.seed}`,
@@ -1544,7 +1570,7 @@ test('Test 21: Universal Data Network (Evrensel Veri Ağı) — Catalog, User Op
   assert.equal(snapSeismicT1.canExecuteEngine, true);
   assert.equal(snapSeismicT2.canExecuteEngine, true);
 
-  const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
+  const exePath = resolveCaelusBinaryPath();
   function runSeismicInCpp(pack, lever, horizon, seed) {
     const stdinCmds = [
       `load_json ${JSON.stringify(pack)}`,
@@ -1576,7 +1602,11 @@ test('Test 21: Universal Data Network (Evrensel Veri Ağı) — Catalog, User Op
   assert.ok(globeMarkers.nonGeoRecords.some(r => r.category === 'ECONOMY_MACRO'), 'Country-level macroeconomic records must be kept in nonGeoRecords and NEVER placed at random 3D Globe coordinates');
 });
 
-test('Test 22: Live HTTPS Fetch Verification for USGS Earthquake GeoJSON, World Bank Open Data, ECB Frankfurter & Open-Meteo Geocoding -> C++17 Engine', async () => {
+test('Test 22: Live HTTPS Fetch Verification for USGS Earthquake GeoJSON, World Bank Open Data, ECB Frankfurter & Open-Meteo Geocoding -> C++17 Engine', async (t) => {
+  if (isOfflineTestMode()) {
+    t.skip('CAELUS_OFFLINE_ONLY=1: Canlı dış ağ testi (USGS/WB/ECB/Open-Meteo Live HTTPS) çevrimdışı modda açıkça atlandı (SKIPPED_OFFLINE_MODE)');
+    return;
+  }
   const { spawnSync } = await import('node:child_process');
   const path = await import('node:path');
   const connMgr = compiler.CaelusDataConnectorManager;
@@ -1607,6 +1637,11 @@ test('Test 22: Live HTTPS Fetch Verification for USGS Earthquake GeoJSON, World 
     if (gRes.status === 'fulfilled' && gRes.value.ok) geoJson = await gRes.value.json();
   } catch (_) {
     // Offline environment handled gracefully
+  }
+
+  if (!usgsJson && !wbJson && !ecbJson && !geoJson) {
+    t.skip('DOĞRULANAMAYAN DIŞ SERVİS: USGS/WB/ECB canlı servislerine erişilemedi');
+    return;
   }
 
   const nowIso = new Date().toISOString();
@@ -1655,7 +1690,7 @@ test('Test 22: Live HTTPS Fetch Verification for USGS Earthquake GeoJSON, World 
     });
     assert.equal(snapMacro.canExecuteEngine, true);
 
-    const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
+    const exePath = resolveCaelusBinaryPath();
     const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
       input: `load_json ${JSON.stringify(snapMacro.scenarioPack)}\ncompare_lever ${snapMacro.selectedLeverId} 24 20260405\nquit\n`,
       encoding: 'utf8',
@@ -1742,7 +1777,7 @@ test('Test 23: Real Historical Incident End-to-End Verification (30 Oct 2020 Aeg
   connMgr.attachUserRecordsToIncident(ws, '');
 
   // 4. Define real C++17 binary execution callback and run twice to prove deterministic reproducibility
-  const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
+  const exePath = resolveCaelusBinaryPath();
   const runOnCpp17Engine = (compiledPack, leverId, meta) => {
     const proc = spawnSync(exePath, ['--det-mode', '--repl'], {
       input: `load_json ${JSON.stringify(compiledPack)}\ncompare_lever ${leverId} ${meta.horizonTicks} 20260405\nquit\n`,
@@ -1817,7 +1852,11 @@ test('Test 23: Real Historical Incident End-to-End Verification (30 Oct 2020 Aeg
   assert.ok(repBundle.json.includes('"INC-2020-10-30-AEGEAN-IZMIR"'));
 });
 
-test('Test 24: Live HTTPS Historical Query for 30 Oct 2020 Aegean Incident (USGS Event API + Open-Meteo ERA5 Archive + Marine Null Check -> C++17 Engine)', async () => {
+test('Test 24: Live HTTPS Historical Query for 30 Oct 2020 Aegean Incident (USGS Event API + Open-Meteo ERA5 Archive + Marine Null Check -> C++17 Engine)', async (t) => {
+  if (isOfflineTestMode()) {
+    t.skip('CAELUS_OFFLINE_ONLY=1: Canlı dış ağ testi (30 Oct 2020 Live HTTPS Historical Query) çevrimdışı modda açıkça atlandı (SKIPPED_OFFLINE_MODE)');
+    return;
+  }
   const connMgr = compiler.CaelusDataConnectorManager;
   const recPayloads = connMgr.getRecorded2020AegeanIncidentPayloads();
   const urls = recPayloads.liveEndpoints;
@@ -2374,7 +2413,7 @@ test('Test 36: Independent Audit — Planner Default JS CausalEngine Mirror vs R
   const os = await import('node:os');
   const path = await import('node:path');
   const { spawnSync } = await import('node:child_process');
-  const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
+  const exePath = resolveCaelusBinaryPath();
 
   const wm = CaelusScenarioCompiler.CaelusLearnedWorldModel;
   const catalog = wm.getWorldModelBenchmarkDatasets();
@@ -2453,8 +2492,8 @@ test('Test 37: Independent Audit — Executable dist/caelus_os.exe Save Safety A
   const os = await import('node:os');
   const path = await import('node:path');
   const { spawnSync } = await import('node:child_process');
-  const exePath = path.resolve(process.cwd(), 'dist', 'caelus_os.exe');
-  assert.equal(fs.existsSync(exePath), true, 'dist/caelus_os.exe must exist');
+  const exePath = resolveCaelusBinaryPath();
+  assert.equal(fs.existsSync(exePath), true, 'Platform-native caelus_os binary must exist');
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'caelus-audit-worldstore-'));
   try {
@@ -3668,7 +3707,11 @@ test('Test 48: Real-World 13-Tech Integration Suite — 15-Field Observation Con
   assert.equal(tech13.length, 13);
 });
 
-test('Test 49: Live HTTPS Verification — NASA EONET v3, USGS GeoJSON, Open-Meteo & NASA JPL Horizons API -> Normalized Ledger -> Immutable Snapshot & Replay', async () => {
+test('Test 49: Live HTTPS Verification — NASA EONET v3, USGS GeoJSON, Open-Meteo & NASA JPL Horizons API -> Normalized Ledger -> Immutable Snapshot & Replay', async (t) => {
+  if (isOfflineTestMode()) {
+    t.skip('CAELUS_OFFLINE_ONLY=1: Canlı dış ağ testi (NASA EONET v3 & JPL Horizons Live HTTPS) çevrimdışı modda açıkça atlandı (SKIPPED_OFFLINE_MODE)');
+    return;
+  }
   const suite = compiler.CaelusRealWorldIntegrationSuite;
   const ledger = compiler.createUnifiedRealWorldLedger();
 
@@ -3776,6 +3819,518 @@ test('Test 50: Holographic Atmosphere Visual Identity, Brand Assets, Plain-Langu
   assert.equal(fs.existsSync(hdrPath), true, 'include/caelus_logo_asset.h must exist');
   assert.ok(fs.statSync(pngPath).size > 10000, 'caelus-logo.png must be a valid high-resolution PNG');
 });
+
+test('Test 51: AŞAMA 2 & AŞAMA 3 — 9 Epistemic Knowledge Categories, Bitemporal Anti-Look-Ahead, Uncalibrated Score Honesty & Controlled 4-Agent Workflow (A/B/C/D)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+  assert.ok(suite, 'CaelusTwelveCapabilitiesSuite must be exported');
+
+  // 1. Verify all 9 mandatory epistemic categories
+  const cats = suite.EPISTEMIC_KNOWLEDGE_CATEGORIES;
+  assert.equal(Object.keys(cats).length, 9);
+  assert.equal(cats.SOURCE_CLAIM.labelTr, '1. KAYNAKTAKİ İDDİA');
+  assert.equal(cats.MEASUREMENT_OR_OBSERVATION.labelTr, '2. ÖLÇÜM VEYA GÖZLEM');
+  assert.equal(cats.RULE_BASED_INFERENCE.labelTr, '3. KURAL TABANLI ÇIKARIM');
+  assert.equal(cats.MODEL_HYPOTHESIS.labelTr, '4. MODEL TARAFINDAN ÖNERİLEN HİPOTEZ');
+  assert.equal(cats.CONDITIONAL_CAUSAL_CONCLUSION.labelTr, '5. BELİRLİ VARSAYIMLARA BAĞLI NEDENSEL SONUÇ');
+  assert.equal(cats.SIMULATION_RESULT.labelTr, '6. SİMÜLASYON SONUCU');
+  assert.equal(cats.COUNTER_EVIDENCE_OR_CONTRADICTION.labelTr, '7. KARŞIT KANIT VEYA ÇELİŞKİ');
+  assert.equal(cats.UNKNOWN_OR_INSUFFICIENT_DATA.labelTr, '8. BİLİNMEYEN / YETERSİZ VERİ');
+  assert.equal(cats.CORRECTED_OR_EXPIRED_RECORD.labelTr, '9. DÜZELTİLMİŞ VEYA GEÇERLİLİĞİ SONA ERMİŞ KAYIT');
+
+  // 2. Verify uncalibrated score disclosure, CAUSES relabeling, and bitemporal look-ahead blocking
+  const uncalibratedCauses = suite.classifyAndValidateKnowledgeRecord({
+    recordId: 'REC-HYP-01',
+    epistemicCategoryCode: 'RULE_BASED_INFERENCE',
+    relation: 'CAUSES',
+    confidence: 0.78,
+    validTimeIso: '2026-10-10T08:00:00.000Z',
+    learnedTimeIso: '2026-10-10T09:00:00.000Z',
+    sourceId: 'SRC-RULE-ENGINE'
+  }, { decisionCutoffTimeIso: '2026-10-10T12:00:00.000Z' });
+  assert.equal(uncalibratedCauses.isCalibratedProbability, false);
+  assert.equal(uncalibratedCauses.empiricalCausalityProven, false);
+  assert.equal(uncalibratedCauses.canEnterDeterministicCoreAsFact, false);
+  assert.ok(uncalibratedCauses.relationPresentationLabel.includes('Kanıtlanmış Nedensellik Değildir'));
+
+  const futureLearnedLeak = suite.classifyAndValidateKnowledgeRecord({
+    recordId: 'REC-LEAK-01',
+    epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION',
+    validTimeIso: '2026-10-10T08:00:00.000Z',
+    learnedTimeIso: '2026-10-11T08:00:00.000Z',
+    sourceId: 'SRC-SENSOR'
+  }, { decisionCutoffTimeIso: '2026-10-10T12:00:00.000Z' });
+  assert.equal(futureLearnedLeak.lookAheadBlocked, true);
+  assert.equal(futureLearnedLeak.lookAheadBlockReason, 'LEARNED_TIME_AFTER_DECISION_CUTOFF');
+  assert.equal(futureLearnedLeak.canEnterDeterministicCoreAsFact, false);
+
+  // 3. Verify 4-Agent Workflow (Agent A, Agent B, Agent C, Agent D) & Permission Gates
+  const wf1 = suite.executeCaelusAgentWorkflow({
+    seed: 20260410,
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    entities: [
+      { entityId: 'E_ENERGY', label: 'Enerji Şebekesi', domain: 'ENERGY' },
+      { entityId: 'E_CHIP', label: 'Çip Fabrikası', domain: 'TECH' },
+      { entityId: 'E_BANK', label: 'Tedarikçi Kredi Masası', domain: 'FINANCE' }
+    ],
+    rawRecords: [
+      { recordId: 'R1', entityId: 'E_ENERGY', variableName: 'grid_load', value: 88, validTimeIso: '2026-10-15T09:00:00.000Z', learnedTimeIso: '2026-10-15T09:05:00.000Z', sourceId: 'SRC-1', epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION' },
+      { recordId: 'R2-LEAK', entityId: 'E_CHIP', variableName: 'yield_drop', value: 40, validTimeIso: '2026-10-15T10:00:00.000Z', learnedTimeIso: '2026-10-16T10:00:00.000Z', sourceId: 'SRC-2', epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION' },
+      { recordId: 'R3-GAP', entityId: 'E_BANK', variableName: 'liquidity_buffer', value: null, validTimeIso: '2026-10-15T10:00:00.000Z', learnedTimeIso: '2026-10-15T10:05:00.000Z', sourceId: 'SRC-3' }
+    ],
+    relations: [
+      { fromId: 'E_ENERGY', toId: 'E_CHIP', relation: 'DISRUPTS', lagHours: 3, epistemicCategoryCode: 'RULE_BASED_INFERENCE' },
+      { fromId: 'E_CHIP', toId: 'E_BANK', relation: 'STRAINS_CREDIT', lagHours: 8, epistemicCategoryCode: 'MODEL_HYPOTHESIS' }
+    ],
+    sourceEntityId: 'E_ENERGY',
+    targetEntityId: 'E_BANK',
+    simulateUnauthorizedHypothesisFactWrite: true,
+    simulateUnauthorizedAgentNetworkCall: true
+  });
+  const wf2 = suite.executeCaelusAgentWorkflow({
+    seed: 20260410,
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    entities: [
+      { entityId: 'E_ENERGY', label: 'Enerji Şebekesi', domain: 'ENERGY' },
+      { entityId: 'E_CHIP', label: 'Çip Fabrikası', domain: 'TECH' },
+      { entityId: 'E_BANK', label: 'Tedarikçi Kredi Masası', domain: 'FINANCE' }
+    ],
+    rawRecords: [
+      { recordId: 'R1', entityId: 'E_ENERGY', variableName: 'grid_load', value: 88, validTimeIso: '2026-10-15T09:00:00.000Z', learnedTimeIso: '2026-10-15T09:05:00.000Z', sourceId: 'SRC-1', epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION' },
+      { recordId: 'R2-LEAK', entityId: 'E_CHIP', variableName: 'yield_drop', value: 40, validTimeIso: '2026-10-15T10:00:00.000Z', learnedTimeIso: '2026-10-16T10:00:00.000Z', sourceId: 'SRC-2', epistemicCategoryCode: 'MEASUREMENT_OR_OBSERVATION' },
+      { recordId: 'R3-GAP', entityId: 'E_BANK', variableName: 'liquidity_buffer', value: null, validTimeIso: '2026-10-15T10:00:00.000Z', learnedTimeIso: '2026-10-15T10:05:00.000Z', sourceId: 'SRC-3' }
+    ],
+    relations: [
+      { fromId: 'E_ENERGY', toId: 'E_CHIP', relation: 'DISRUPTS', lagHours: 3, epistemicCategoryCode: 'RULE_BASED_INFERENCE' },
+      { fromId: 'E_CHIP', toId: 'E_BANK', relation: 'STRAINS_CREDIT', lagHours: 8, epistemicCategoryCode: 'MODEL_HYPOTHESIS' }
+    ],
+    sourceEntityId: 'E_ENERGY',
+    targetEntityId: 'E_BANK',
+    simulateUnauthorizedHypothesisFactWrite: true,
+    simulateUnauthorizedAgentNetworkCall: true
+  });
+
+  assert.equal(wf1.agentAOutput.normalizedRecords.length, 1);
+  assert.equal(wf1.agentAOutput.blockedLookAheadRecords.length, 1);
+  assert.equal(wf1.agentAOutput.unknownAndMissingGaps.length, 1);
+  assert.equal(wf1.agentBOutput.indirectPaths.length, 1);
+  assert.equal(wf1.agentBOutput.indirectPaths[0].empiricalCausalityProven, false);
+  assert.ok(wf1.agentCOutput.critiquesAndAlternatives[0].alternativeExplanations.length >= 2);
+  assert.equal(wf1.securityGateChecks.attemptedUnauthorizedWriteResult.allowed, false);
+  assert.equal(wf1.securityGateChecks.attemptedUnauthorizedNetworkResult.allowed, false);
+  assert.equal(wf1.securityGateChecks.anyHypothesisPromotedToFactDirectly, false);
+  assert.equal(wf1.auditTrail.sealed, true);
+  assert.equal(wf1.auditTrail.finalChainHeadHash, wf2.auditTrail.finalChainHeadHash, 'Agent workflow audit chain must be 100% deterministic');
+});
+
+test('Test 52: Capability 1/12 (Temporal World Memory) & Capability 2/12 (Temporal Graph Learning vs Baselines)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+
+  // 1/12: Temporal World Memory — all 12 concepts, conflicting claims preserved, retraction/revision, point-in-time reconstruction
+  const mem = suite.createTemporalWorldMemory({ memoryId: 'TWM-TEST-01' });
+  assert.equal(mem.supportedConcepts.length, 12);
+
+  const c1 = suite.addTemporalMemoryRecord(mem, 'Claim', {
+    id: 'CLM-A',
+    subjectId: 'ENT-CHIP-FAB',
+    variableName: 'capacity_loss_pct',
+    value: 60,
+    unit: '%',
+    sourceId: 'SRC-REUTERS-WIRE',
+    validFromIso: '2026-05-10T08:00:00.000Z',
+    recordedAtIso: '2026-05-10T08:30:00.000Z'
+  });
+  const c2 = suite.addTemporalMemoryRecord(mem, 'Claim', {
+    id: 'CLM-B',
+    subjectId: 'ENT-CHIP-FAB',
+    variableName: 'capacity_loss_pct',
+    value: 15,
+    unit: '%',
+    sourceId: 'SRC-COMPANY-IR',
+    validFromIso: '2026-05-10T08:00:00.000Z',
+    recordedAtIso: '2026-05-10T09:00:00.000Z'
+  });
+  assert.ok(c1 && c2);
+  assert.equal(mem.conflictRegistry.length, 1, 'Conflicting claims at same valid time must both be preserved and registered');
+  assert.deepEqual(mem.conflictRegistry[0].competingValues, [60, 15]);
+
+  // Add a future-learned observation and test point-in-time reconstruction before it was learned
+  suite.addTemporalMemoryRecord(mem, 'Observation', {
+    id: 'OBS-LATE-REPORT',
+    subjectId: 'ENT-CHIP-FAB',
+    variableName: 'verified_loss_pct',
+    value: 48,
+    sourceId: 'SRC-AUDITOR',
+    validFromIso: '2026-05-10T08:00:00.000Z',
+    recordedAtIso: '2026-05-12T10:00:00.000Z'
+  });
+
+  const snapAtMay10 = suite.reconstructWorldStateAt(mem, {
+    asOfValidTimeIso: '2026-05-10T12:00:00.000Z',
+    asOfLearnedTimeIso: '2026-05-10T12:00:00.000Z'
+  });
+  assert.equal(snapAtMay10.activeByConcept.Observation.length, 0, 'Observation learned on May 12 must NOT leak into May 10 reconstruction');
+  assert.equal(snapAtMay10.excludedFutureLearnedCount, 1);
+
+  // Retract CLM-A on May 11 and verify history preservation
+  const retRes = suite.retractOrSupersedeMemoryRecord(mem, 'Claim', 'CLM-A', {
+    retractedAtIso: '2026-05-11T09:00:00.000Z',
+    replacementPayload: {
+      id: 'CLM-A-REV2',
+      subjectId: 'ENT-CHIP-FAB',
+      variableName: 'capacity_loss_pct',
+      value: 45,
+      sourceId: 'SRC-REUTERS-WIRE',
+      validFromIso: '2026-05-10T08:00:00.000Z'
+    }
+  });
+  assert.equal(retRes.retractedRecord.epistemicCategoryCode, 'CORRECTED_OR_EXPIRED_RECORD');
+  assert.equal(retRes.retractedRecord.supersededById, 'CLM-A-REV2');
+
+  const snapAtMay11 = suite.reconstructWorldStateAt(mem, {
+    asOfValidTimeIso: '2026-05-11T12:00:00.000Z',
+    asOfLearnedTimeIso: '2026-05-11T12:00:00.000Z'
+  });
+  assert.equal(snapAtMay11.excludedRetractedCount, 1);
+  assert.ok(snapAtMay11.activeByConcept.Claim.some(c => c.id === 'CLM-A-REV2'));
+
+  // 2/12: Temporal Graph Learning
+  const temporalInteractions = [
+    { fromId: 'N_ENERGY', toId: 'N_FAB', fromDomain: 'ENERGY', toDomain: 'TECH', validTimeIso: '2026-05-01T00:00:00.000Z', learnedTimeIso: '2026-05-01T01:00:00.000Z' },
+    { fromId: 'N_FAB', toId: 'N_AUTO', fromDomain: 'TECH', toDomain: 'MANUFACTURING', validTimeIso: '2026-05-02T00:00:00.000Z', learnedTimeIso: '2026-05-02T01:00:00.000Z' },
+    { fromId: 'N_ENERGY', toId: 'N_FAB', fromDomain: 'ENERGY', toDomain: 'TECH', validTimeIso: '2026-05-05T00:00:00.000Z', learnedTimeIso: '2026-05-05T01:00:00.000Z' },
+    // Future-learned interaction before split (must be blocked from train)
+    { fromId: 'N_AUTO', toId: 'N_FIN', fromDomain: 'MANUFACTURING', toDomain: 'FINANCE', validTimeIso: '2026-05-08T00:00:00.000Z', learnedTimeIso: '2026-05-15T00:00:00.000Z' },
+    // Evaluation post-split interactions
+    { fromId: 'N_ENERGY', toId: 'N_AUTO', fromDomain: 'ENERGY', toDomain: 'MANUFACTURING', validTimeIso: '2026-05-12T00:00:00.000Z', learnedTimeIso: '2026-05-12T01:00:00.000Z' },
+    { fromId: 'N_ENERGY', toId: 'N_FAB', fromDomain: 'ENERGY', toDomain: 'TECH', validTimeIso: '2026-05-13T00:00:00.000Z', learnedTimeIso: '2026-05-13T01:00:00.000Z' }
+  ];
+
+  const tgl = suite.evaluateTemporalGraphLinkPrediction(temporalInteractions, {
+    splitTimeIso: '2026-05-10T00:00:00.000Z',
+    topK: 3
+  });
+  assert.equal(tgl.zeroTemporalLeakageVerified, true);
+  assert.equal(tgl.blockedFutureLearnedLeakageCount, 1);
+  assert.ok(tgl.candidateLinks.length >= 2);
+  assert.ok(tgl.novelUnobservedCandidates.some(c => c.fromId === 'N_ENERGY' && c.toId === 'N_AUTO'), 'Must predict 2-hop transitive novel candidate link N_ENERGY -> N_AUTO');
+  for (const c of tgl.candidateLinks) {
+    assert.equal(c.epistemicCategoryCode, 'MODEL_HYPOTHESIS');
+    assert.equal(c.isCandidateLinkOnly, true);
+    assert.equal(c.empiricalCausalityProven, false);
+  }
+  assert.ok(Number.isFinite(tgl.benchmarkComparison.hitsAtKTemporalGraphModel));
+  assert.ok(Number.isFinite(tgl.benchmarkComparison.hitsAtKSimpleGraphSearchBaseline));
+  assert.ok(Number.isFinite(tgl.benchmarkComparison.hitsAtKCooccurrenceFrequencyBaseline));
+});
+
+test('Test 53: Capabilities 3/12 (Causal Discovery & Sensitivity), 4/12 (Multi-Step Rollout & OOD) & 5/12 (JEPA Latent Prototype)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+
+  // 3/12 A: Insufficient data -> must return BELİRLENEMİYOR
+  const insufficientCausal = suite.runCausalDiscoveryAndImpactAnalysis({
+    treatmentVar: 'energy_price',
+    outcomeVar: 'factory_delay',
+    seriesByVar: {
+      energy_price: [10, 12, 14, 15],
+      factory_delay: [2, 3, 4, 5]
+    },
+    minSampleSize: 12
+  });
+  assert.equal(insufficientCausal.status, 'BELİRLENEMİYOR');
+  assert.equal(insufficientCausal.epistemicCategoryCode, 'UNKNOWN_OR_INSUFFICIENT_DATA');
+
+  // 3/12 B: Spurious correlation driven by a common confounder Z -> backdoor adjustment detects spuriousness
+  const Z = Array.from({ length: 24 }, (_, i) => Math.sin(i * 0.4) * 10 + i * 0.5);
+  const X_spurious = Z.map((z, i) => 2.0 * z + ((i % 3) - 1) * 0.05);
+  const Y_spurious = Z.map((z, i) => 3.0 * z + (((i + 1) % 3) - 1) * 0.05);
+  const spuriousCheck = suite.runCausalDiscoveryAndImpactAnalysis({
+    treatmentVar: 'port_congestion',
+    outcomeVar: 'chip_shortage',
+    confounderVars: ['global_energy_shock'],
+    seriesByVar: {
+      global_energy_shock: Z,
+      port_congestion: X_spurious,
+      chip_shortage: Y_spurious
+    },
+    maxLagSteps: 1
+  });
+  assert.ok(Math.abs(spuriousCheck.unadjustedCorrelation) > 0.85, 'Raw correlation should be high');
+  assert.ok(Math.abs(spuriousCheck.backdoorAdjustedPartialCorrelation) < Math.abs(spuriousCheck.unadjustedCorrelation), 'Backdoor adjustment must reduce spurious confounder correlation');
+  assert.ok(spuriousCheck.alternativeExplanations.length >= 2);
+  assert.ok(Number.isFinite(spuriousCheck.sensitivityAnalysis.robustnessBoundIndex));
+
+  // 3/12 C: True lagged structural relation X(t) -> Y(t+1) controlling for Z
+  const X_true = Array.from({ length: 24 }, (_, i) => 20 + 8 * Math.cos(i * 0.5) + (i % 5));
+  const Y_true = Array.from({ length: 24 }, (_, i) => {
+    const prevX = i > 0 ? X_true[i - 1] : X_true[0];
+    return 5 + 1.4 * prevX + 0.5 * Z[i];
+  });
+  const causalLag1 = suite.runCausalDiscoveryAndImpactAnalysis({
+    treatmentVar: 'grid_outage_severity',
+    outcomeVar: 'fab_wafer_loss',
+    confounderVars: ['global_energy_shock'],
+    seriesByVar: {
+      global_energy_shock: Z,
+      grid_outage_severity: X_true,
+      fab_wafer_loss: Y_true
+    },
+    maxLagSteps: 2
+  });
+  assert.equal(causalLag1.bestLagStep, 1, 'Must identify lag=1 as the strongest conditional lag');
+  assert.equal(causalLag1.empiricalCausalityProven, false);
+  assert.ok(causalLag1.counterfactualQuery.contract.includes('do('));
+
+  // 4/12: Learned World Model Multi-Step Rollout Error Accumulation & Out-of-Scope (OOD) Detection
+  const wm = compiler.CaelusLearnedWorldModel;
+  const catalog = wm.getWorldModelBenchmarkDatasets();
+  const ds = wm.buildWorldModelTimeSeriesDataset({
+    records: catalog.SAMPLE_SYNTHETIC_PORT_OPERATIONS_36H.records,
+    expectedStepMinutes: 60
+  });
+  const rolloutOod = suite.evaluateWorldModelMultiStepRolloutAndOod(ds, {
+    targetVariable: 'port_berth_load_pct',
+    inputVariables: ['wind_speed_10m'],
+    lagOrder: 2,
+    maxRolloutHorizon: 4,
+    oodSigmaThreshold: 3.0
+  });
+  assert.equal(rolloutOod.chronologicalSplitVerified, true);
+  assert.equal(rolloutOod.multiStepHorizonErrors.length, 4);
+  assert.equal(rolloutOod.inDistributionSampleCheck.isOutOfScope, false);
+  assert.equal(rolloutOod.outOfDistributionStressCheck.isOutOfScope, true);
+  assert.equal(rolloutOod.outOfDistributionStressCheck.epistemicCategoryCode, 'UNKNOWN_OR_INSUFFICIENT_DATA');
+
+  // 5/12: JEPA Latent State Representation Prototype
+  const jepaSeq = Array.from({ length: 24 }, (_, t) => ({
+    step: t,
+    actionShock: t === 10 || t === 18 ? 1.5 : 0.1,
+    features: {
+      energy_grid_stress: 30 + 15 * Math.sin(t * 0.3),
+      semiconductor_lead_time: 40 + 12 * Math.cos(t * 0.25),
+      credit_spread_bps: 120 + 25 * Math.sin(t * 0.2 + 0.4),
+      freight_index: 50 + 10 * Math.cos(t * 0.35)
+    }
+  }));
+  const jepaRes = suite.runJepaLatentStatePrototype(jepaSeq, { latentDim: 3 });
+  assert.equal(jepaRes.maturityStatus, 'ARAŞTIRMA PROTOTİPİ (RESEARCH_PROTOTYPE)');
+  assert.equal(jepaRes.trainedOnLargeScaleCorpus, false);
+  assert.equal(jepaRes.nonCollapseVerified, true, 'Latent dimensions must have non-zero variance (no representation collapse)');
+  assert.ok(jepaRes.mandatoryDisclaimerTr.includes('Fiziksel video modelleri'));
+  assert.ok(Number.isFinite(jepaRes.evaluationMetrics.jepaPredictorLatentMse));
+  assert.ok(Number.isFinite(jepaRes.evaluationMetrics.persistenceBaselineLatentMse));
+});
+
+test('Test 54: Capabilities 6/12 (Multi-Actor Domain Simulation), 7/12 (Bayesian Ensemble) & 8/12 (Bayesian Optimization)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+
+  // 6/12: Multi-Actor Domain Simulation across distinct behavioral assumptions
+  const actors = [
+    { actorId: 'ACT_CBANK', name: 'Merkez Bankası Likidite Masası', actorType: 'CENTRAL_BANK', domain: 'FINANCE', initialStress: 0.65, informationAccuracy: 0.82 },
+    { actorId: 'ACT_ENERGY_CORP', name: 'Bölgesel Enerji İletim A.Ş.', actorType: 'COMPANY', domain: 'ENERGY', initialStress: 0.58, informationAccuracy: 0.78 },
+    { actorId: 'ACT_CITY_GRID', name: 'Metropol Su ve Şehir Altyapısı', actorType: 'MUNICIPALITY', domain: 'CITIES_SOCIETY', initialStress: 0.52, informationAccuracy: 0.85 }
+  ];
+  const links = [
+    { fromActorId: 'ACT_CBANK', toActorId: 'ACT_ENERGY_CORP', couplingStrength: 0.55, lagTicks: 1 },
+    { fromActorId: 'ACT_ENERGY_CORP', toActorId: 'ACT_CITY_GRID', couplingStrength: 0.60, lagTicks: 2 }
+  ];
+
+  const simEscalatory = suite.runMultiActorDomainSimulation({
+    actors,
+    relations: links,
+    horizonTicks: 12,
+    seed: 20260410,
+    policyOverrideByActor: {
+      ACT_CBANK: 'ESCALATORY_RETALIATION',
+      ACT_ENERGY_CORP: 'OPPORTUNISTIC_HOARDING'
+    }
+  });
+  const simCooperative = suite.runMultiActorDomainSimulation({
+    actors,
+    relations: links,
+    horizonTicks: 12,
+    seed: 20260410,
+    policyOverrideByActor: {
+      ACT_CBANK: 'COOPERATIVE_SHARING',
+      ACT_ENERGY_CORP: 'COOPERATIVE_SHARING'
+    }
+  });
+
+  assert.ok(simEscalatory.actors.every(a => a.isSimulatedActor === true && a.realHistoricalStatementClaimed === false));
+  assert.ok(
+    simCooperative.deterministicEngineResult.branchB.throughputPct > simEscalatory.deterministicEngineResult.branchA.throughputPct,
+    'Cooperative multi-actor policy must yield higher system throughput than escalatory/hoarding policy'
+  );
+
+  // 7/12: Bayesian Ensemble — model disagreement, shared data bias warning & calibration check
+  const ensUncalibratedShared = suite.evaluateBayesianModelEnsemble({
+    seed: 20260410,
+    models: [
+      { modelId: 'M1', modelNameTr: 'Model 1', dataSourceId: 'SAME_SOURCE_01', predictedMean: 35, withinModelStd: 4 },
+      { modelId: 'M2', modelNameTr: 'Model 2', dataSourceId: 'SAME_SOURCE_01', predictedMean: 78, withinModelStd: 5 }
+    ]
+  });
+  assert.equal(ensUncalibratedShared.calibrationStatus, 'KALİBRASYON YAPILMADI');
+  assert.equal(ensUncalibratedShared.isCalibratedProbability, false);
+  assert.equal(ensUncalibratedShared.sharedDataBiasWarning.sharedDataBiasDetected, true);
+  assert.ok(ensUncalibratedShared.status.includes('BELİRSİZ'), 'High inter-model disagreement (35 vs 78) must flag BELİRSİZ');
+
+  // 8/12: Bayesian Optimization vs Random Sampling Baseline
+  const boRes = suite.runBayesianPolicyOptimization({
+    maxBudgetEvaluations: 16,
+    initialDesignCount: 4,
+    maxAllowedCostUsd: 95000,
+    seed: 20260410
+  });
+  assert.equal(boRes.experimentHistory.length, 16);
+  assert.equal(boRes.randomBaselineHistory.length, 16);
+  assert.equal(boRes.bestBayesianSolution.result.constraintViolated, false);
+  assert.ok(
+    boRes.bestBayesianSolution.result.objectiveValue >= boRes.bestRandomBaselineSolution.result.objectiveValue,
+    'GP-UCB Bayesian optimizer must match or outperform random baseline within the same evaluation budget'
+  );
+  assert.ok(boRes.mandatoryValidityWarningTr.includes('gerçek dünyada'));
+});
+
+test('Test 55: Capabilities 9/12 (Formal Verification), 10/12 (Accelerated Research Layer), 11/12 (Versioned Multimodal Store) & 12/12 (Symbolic Verifier Gate)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+
+  // 9/12: Formal Verification Catalog & Runtime Check
+  const fv = suite.evaluateFormalVerificationSuite();
+  assert.equal(fv.totalProofFiles, 4);
+  assert.equal(fv.totalVerifiedObligations, 20);
+  assert.equal(fv.lean4Evaluation.evaluated, true);
+
+  // 10/12: Accelerated Research Layer Manifest
+  const resManifest = suite.createAcceleratedResearchJobManifest({
+    seed: 20260410,
+    dataset: [{ t: 1, y: 10 }, { t: 2, y: 12 }]
+  });
+  assert.equal(resManifest.isolatedFromDeterministicCore, true);
+  assert.equal(resManifest.coreRequiresExternalPythonOrGpu, false);
+  assert.equal(resManifest.sameEnvironmentReproducibility.isBitIdenticalOnSameHost, true);
+  assert.ok(resManifest.crossHardwareFloatingPointDisclaimerTr.includes('farklı CPU/GPU mimarileri'));
+
+  // 11/12: Versioned Multimodal Store — commit, secret redaction, bundle verify, tamper detection, rollback
+  const store = suite.createVersionedMultimodalStore({ storeId: 'MM-TEST-STORE' });
+  const c1 = suite.commitMultimodalBatch(store, [
+    {
+      itemId: 'ITEM-TAB-1',
+      modality: 'TABULAR_TIME_SERIES',
+      sourceId: 'SRC-SENSOR',
+      content: { value: 42.5, api_key: 'sk-SUPERSECRET123456789' }
+    },
+    {
+      itemId: 'ITEM-IMG-1',
+      modality: 'IMAGE_OR_SATELLITE_METADATA',
+      sourceId: 'SRC-SENTINEL2',
+      content: { tileId: 'T35SNC', cloudCoverPct: 12.4 }
+    }
+  ], { message: 'Initial commit with Authorization: Bearer secretToken999888777' });
+
+  assert.equal(c1.versionNumber, 1);
+  assert.ok(!JSON.stringify(c1).includes('SUPERSECRET123456789'), 'Secrets must be redacted before storage');
+  assert.ok(!JSON.stringify(c1).includes('secretToken999888777'), 'Bearer tokens in commit messages must be redacted');
+
+  const c2 = suite.commitMultimodalBatch(store, [
+    {
+      itemId: 'ITEM-DOC-2',
+      modality: 'DOCUMENT_EXCERPT',
+      sourceId: 'SRC-PORT-BULLETIN',
+      content: { excerpt: 'Trafo bakımı uzatıldı.' }
+    }
+  ], { message: 'Second commit v2' });
+  assert.equal(c2.versionNumber, 2);
+  assert.equal(Object.keys(store.activeItemsById).length, 3);
+
+  const bundleV2 = suite.exportOfflineTransferBundle(store, 2);
+  const verifyOk = suite.verifyAndImportOfflineTransferBundle(bundleV2);
+  assert.equal(verifyOk.valid, true);
+
+  // Tamper with bundle item and verify fail-closed rejection
+  const tamperedBundle = JSON.parse(JSON.stringify(bundleV2));
+  tamperedBundle.items[0].content = { hacked: true };
+  const verifyTampered = suite.verifyAndImportOfflineTransferBundle(tamperedBundle);
+  assert.equal(verifyTampered.valid, false);
+
+  // Rollback from v2 to v1
+  const rb = suite.rollbackMultimodalStoreToVersion(store, 1);
+  assert.equal(rb.rolledBackToVersion, 1);
+  assert.equal(rb.activeItemCount, 2);
+
+  // 12/12: 6-Step Neuro-Symbolic Verification Pipeline
+  const symRes = suite.runNeuroSymbolicVerificationPipeline([
+    // Valid verified observation
+    {
+      proposalId: 'P-VALID-OBS',
+      fromId: 'ENT_A',
+      toId: 'ENT_B',
+      isHypothesis: false,
+      fallback: false,
+      sourceId: 'SRC-VERIFIED',
+      validTimeIso: '2026-10-15T08:00:00.000Z',
+      learnedTimeIso: '2026-10-15T08:10:00.000Z',
+      lagHours: 2
+    },
+    // Neural hypothesis -> must be quarantined as hypothesis, NOT promoted to verified fact
+    {
+      proposalId: 'P-NEURAL-HYP',
+      fromId: 'ENT_B',
+      toId: 'ENT_C',
+      isHypothesis: true,
+      fallback: false,
+      sourceId: 'SRC-TGN-MODEL',
+      validTimeIso: '2026-10-15T09:00:00.000Z',
+      learnedTimeIso: '2026-10-15T09:05:00.000Z',
+      lagHours: 4
+    },
+    // Self-loop & missing provenance -> rejected by symbolic constraints
+    {
+      proposalId: 'P-INVALID-LOOP',
+      fromId: 'ENT_A',
+      toId: 'ENT_A',
+      isHypothesis: false,
+      sourceId: '',
+      validTimeIso: '2026-10-15T09:00:00.000Z',
+      learnedTimeIso: '2026-10-15T09:05:00.000Z',
+      lagHours: -1
+    }
+  ], {
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+    knownEntityIds: ['ENT_A', 'ENT_B', 'ENT_C']
+  });
+
+  assert.equal(symRes.promotedToVerifiedFactCount, 1);
+  assert.equal(symRes.quarantinedAsHypothesisCount, 1);
+  assert.equal(symRes.rejectedBySymbolicConstraintsCount, 1);
+});
+
+test('Test 56: AŞAMA 5 & AŞAMA 6 — End-to-End Multi-Domain World Analysis Demo (10 Steps, Progressive Disclosure & Deterministic Replay)', () => {
+  const suite = compiler.CaelusTwelveCapabilitiesSuite;
+  const demo = suite.runEndToEndWorldAnalysisDemo({
+    seed: 20260410,
+    decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z'
+  });
+
+  assert.equal(demo.deterministicReplayVerified, true, 'End-to-end world analysis demo must be 100% bit-identical across repeated runs');
+  assert.equal(demo.run1Sha256, demo.run2Sha256);
+
+  const pres = demo.progressiveDisclosurePresentation;
+  assert.ok(pres.step1_QuestionAndEvent.questionTr.includes('Avrupa yüksek gerilim trafo'));
+  assert.equal(pres.step2_SourcesAndTemporalGate.acceptedRecordsCount, 3);
+  assert.equal(pres.step2_SourcesAndTemporalGate.blockedLookAheadCount, 1);
+  assert.equal(pres.step2_SourcesAndTemporalGate.missingDataGapsCount, 1);
+  assert.equal(pres.step2_SourcesAndTemporalGate.preservedConflictingClaimsCount, 1);
+
+  assert.equal(pres.step3_RelationsAndHypotheses.domainsTraversed.length, 4);
+  assert.ok(pres.step3_RelationsAndHypotheses.alternativeExplanations.length >= 2);
+  assert.ok(
+    pres.step4_Scenarios.scenario2_CooperativeWithCoord.throughputPct > pres.step4_Scenarios.scenario1_HoardingNoCoord.throughputPct,
+    'Scenario 2 (Cooperative) must produce higher throughput than Scenario 1 (Hoarding)'
+  );
+  assert.ok(pres.step5_ConclusionGroundsAndUncertainty.auditChainHeadHash.startsWith('AUD-'));
+  assert.ok(pres.step5_ConclusionGroundsAndUncertainty.dataVersionCommitHash.startsWith('COMMIT-V1-'));
+});
+
 
 
 
