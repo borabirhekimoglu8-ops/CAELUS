@@ -109,6 +109,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
+ "libc",
  "proptest",
  "rand 0.8.6",
  "rand_core 0.6.4",

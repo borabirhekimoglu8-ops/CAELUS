@@ -4,19 +4,41 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXE="$ROOT/dist/caelus_os"
 TEST_EXE="$ROOT/build_tests/caelus_cpp_tests"
+NEURAL_CPP_EXE="$ROOT/build_tests/neural_cpp_reference"
+NEURAL_RUST_EXE="$ROOT/tests/neural_reference/target/release/caelus_neural_reference"
+MODEL_SIGNER="$ROOT/target/release/caelus_sign_model"
 PYTHON="${PYTHON:-python3}"
 
 log() { printf '[CI] %s\n' "$*"; }
 die() { printf '[CI FAIL] %s\n' "$*" >&2; exit 1; }
 
 cd "$ROOT"
+for tool in cargo g++ rg strings wc cmp mktemp; do
+    command -v "$tool" >/dev/null 2>&1 || die "missing required tool: $tool"
+done
+command -v "$PYTHON" >/dev/null 2>&1 || die "missing Python interpreter: $PYTHON"
+"$PYTHON" - <<'PY' || die "Python Ed25519 verifier missing (install cryptography or PyNaCl)"
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    import nacl  # noqa: F401
+PY
+
 mkdir -p "$ROOT/build_tests"
+rm -f "$ROOT/caelus_audit_0000000000000000.log"
+
+log "Python neural, audit, UI, and training-tool tests"
+"$PYTHON" -m unittest -v \
+    tests.test_caelus_blake3 \
+    tests.test_verify_audit_neural \
+    tests.test_neural_war_room_contract \
+    caelus_ml.test_pipeline
 
 log "Rust network tests"
-cargo test
+cargo test --locked
 
 log "Rust core tests"
-cargo test --manifest-path "$ROOT/caelus_core/Cargo.toml" --features std
+cargo test --locked --manifest-path "$ROOT/caelus_core/Cargo.toml" --features std
 
 log "C++ unit tests"
 g++ -std=c++17 -O2 -DCAELUS_CPP_UNIT_TEST=1 \
@@ -24,6 +46,10 @@ g++ -std=c++17 -O2 -DCAELUS_CPP_UNIT_TEST=1 \
     "$ROOT/tests/test_causal_engine.cpp" -o "$TEST_EXE"
 "$TEST_EXE"
 
+log "Offline dataset, export, signing, and model-verification smoke"
+cargo build --release --locked --bin caelus_sign_model
+"$PYTHON" "$ROOT/tests/run_neural_toolchain_smoke.py" \
+    --signer-binary "$MODEL_SIGNER"
 if [[ "${CAELUS_SKIP_CONNECTOR_SMOKE:-0}" != "1" ]]; then
     log "Connector smoke (intel data-plane auth + signature gate)"
     "$PYTHON" "$ROOT/tests/connector_smoke.py"
@@ -38,6 +64,28 @@ CAELUS_PRODUCTION=1 "$ROOT/build.sh"
 [[ -x "$EXE" ]] || die "missing binary: $EXE"
 size_bytes="$(wc -c < "$EXE")"
 (( size_bytes < 50 * 1024 * 1024 )) || die "binary exceeds 50 MB: $size_bytes bytes"
+
+log "Neural reference builds"
+cargo build --release --locked \
+    --manifest-path "$ROOT/tests/neural_reference/Cargo.toml"
+g++ -std=c++17 -O2 \
+    -I"$ROOT" -I"$ROOT/include" -I"$ROOT/src" \
+    "$ROOT/tests/neural_cpp_reference.cpp" \
+    -o "$NEURAL_CPP_EXE" \
+    "$ROOT/target/release/libcaelus_network.a" \
+    -ldl -lpthread -lm
+
+log "Neural C++/Rust exact differential and reviewed golden"
+"$PYTHON" "$ROOT/tests/run_neural_differential.py" \
+    --cpp-binary "$NEURAL_CPP_EXE" \
+    --rust-binary "$NEURAL_RUST_EXE" \
+    --model-dir "$ROOT/models/assurance_v1" \
+    --golden "$ROOT/tests/golden/neural_v1_differential.json"
+
+log "BS-01 live neural assurance and fail-closed model negatives"
+"$PYTHON" "$ROOT/tests/run_bs01_neural_demo.py" \
+    --binary "$EXE" \
+    --model-dir "$ROOT/models/assurance_v1"
 
 log "Production bypass string scan"
 if strings "$EXE" | rg 'CAELUS_ALLOW_DEV_SCENARIOS|CAELUS_TRUST_ANY_PUBKEY|CAELUS_PLUGIN_ALLOW_UNVERIFIED'; then
@@ -58,16 +106,53 @@ rg '^CDET:' "$out1" > "$blk1"
 rg '^CDET:' "$out2" > "$blk2"
 cmp -s "$blk1" "$blk2" || die "CDET blocks differ"
 
-log "Audit chain and SEAL verification"
-"$PYTHON" "$ROOT/tools/verify_audit_log.py" "$ROOT/caelus_audit_0000000000000000.log"
+log "Audit chain and SEAL verification (pinned to det-mode signer)"
+# Det-mode uses a fixed identity seed, so the SEAL pubkey is deterministic and
+# can be pinned. Pinning makes the verifier check WHO sealed the log, not just
+# that the chain is self-consistent (closes the 'attacker re-seals' gap).
+DET_SEAL_PUBKEY="acdcc8494d458f44a7aaac1d6a84ec624daee88436db2ae26e67ba645a106228"
+"$PYTHON" "$ROOT/tools/verify_audit_log.py" \
+    "$ROOT/caelus_audit_0000000000000000.log" \
+    --trusted-pubkey-hex "$DET_SEAL_PUBKEY"
+
+log "Negative security suite (tamper / dev-signed / audit forgery must fail closed)"
+"$PYTHON" "$ROOT/tests/run_security_negative.py" --binary "$EXE"
 
 log "Golden runner against C++ binary"
 "$PYTHON" "$ROOT/tests/run_bs_exec_golden.py" --binary "$EXE"
 
 log "Rust core REPL live differential against C++"
-cargo build --release --manifest-path "$ROOT/caelus_core/Cargo.toml" --features std --bin caelus_core_repl
+cargo build --release --locked --manifest-path "$ROOT/caelus_core/Cargo.toml" --features std --bin caelus_core_repl
 "$PYTHON" "$ROOT/tests/run_bs_exec_golden.py" \
     --binary "$ROOT/caelus_core/target/release/caelus_core_repl" \
     --reference-binary "$EXE"
+
+log "Mobile C ABI bridge: host build + C++ bridge test suite"
+"$ROOT/tools/build_host_bridge.sh" --with-tests
+
+if command -v swift >/dev/null 2>&1; then
+    log "Mobile Swift package: build + XCTest against the real native core"
+    (cd "$ROOT/platforms/ios/CAELUSMobile" && swift build && swift test)
+
+    log "Mobile BS-01 end-to-end demo (Swift → C ABI → shared core)"
+    mobile_export="$(mktemp -d)"
+    trap 'rm -f "$out1" "$out2" "$blk1" "$blk2"; rm -rf "$mobile_export"' EXIT
+    (cd "$ROOT/platforms/ios/CAELUSMobile" \
+        && CAELUS_DEMO_EXPORT_DIR="$mobile_export" swift run caelus-mobile-demo)
+    [[ -s "$mobile_export/audit_export.ndjson" ]] \
+        || die "mobile demo produced no audit export"
+
+    log "Mobile demo audit chain + SEAL + neural identity verification"
+    NEURAL_PUBKEY="c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f"
+    "$PYTHON" "$ROOT/tools/verify_audit_log.py" \
+        "$mobile_export/audit_export.ndjson" \
+        --neural-model-dir "$ROOT/models/assurance_v1" \
+        --trusted-neural-pubkey-hex "$NEURAL_PUBKEY"
+else
+    # Loud, explicit skip: the C ABI + bridge tests above still ran; only
+    # the Swift-layer tests need a Swift toolchain (Linux swift.org build
+    # or macOS Xcode).  Never reported as passed.
+    log "SKIP (no swift toolchain): mobile Swift package tests + BS-01 mobile demo"
+fi
 
 log "All checks passed"

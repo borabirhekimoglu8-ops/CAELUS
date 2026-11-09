@@ -484,6 +484,13 @@ public:
     std::string sector;
     std::string min_caelus_engine;
     std::string signature;
+    // Gerçek doğrulama sonucu (load() sırasında verify_signature_gate doldurur).
+    // Asla sabit "VERIFIED" değildir — imza yolunu olduğu gibi yansıtır:
+    //   VERIFIED          → ed25519 geçti VE pinli güven çapasıyla eşleşti
+    //   DEV_TRUST_BYPASS  → ed25519 geçti ama pin kontrolü dev bypass ile atlandı
+    //   SELF_SIGNED_DEV   → SELF_SIGNED_DEV imza dev flag ile kabul edildi
+    std::string sig_status;
+    std::string sig_scheme;
     std::string title;
     std::string region;
     int         tick_minutes   = 15;
@@ -560,13 +567,37 @@ public:
 
     bool loaded = false;
 
+    /**
+     * Exact canonical payload that passed the scenario signature gate.
+     *
+     * Neural/audit commitments must hash this retained value instead of
+     * reopening the source path after verification (which would create a
+     * file-replacement TOCTOU window).
+     */
+    const std::string& verified_canonical_payload() const noexcept {
+        return verified_canonical_payload_;
+    }
+
+    /**
+     * Compiled-in scenario trust anchor (PUBLIC key, 32 bytes).  Read-only
+     * accessor for host layers (mobile trust screen) that must display the
+     * exact pinned value the binary enforces.
+     */
+    static const uint8_t* trusted_scenario_pubkey() noexcept {
+        return CAELUS_TRUSTED_PUBKEY;
+    }
+    static constexpr size_t trusted_scenario_pubkey_len() noexcept {
+        return 32u;
+    }
+
     // ── Yükleme ─────────────────────────────────────────────────────────────
 
     bool load(const std::string& path) {
+        // Dosya oku
         std::ifstream f(path, std::ios::binary);
         if (!f) {
+            reset_fields();
             std::cout << "[SCENARIO] Paket bulunamadı: " << path << "\n";
-            loaded = false;
             return false;
         }
         std::ostringstream buf;
@@ -574,42 +605,14 @@ public:
         return load_from_string(buf.str(), path, false);
     }
 
+    bool load_from_memory(const std::string& content, const std::string& source_label) {
+        return load_from_string(content, source_label);
+    }
+
     bool load_from_string(const std::string& content,
                           const std::string& source_label = "<memory>",
                           bool allow_interactive_unsigned = false) {
-        loaded = false;
-        schema_version.clear();
-        id.clear();
-        blackswan_class.clear();
-        sector.clear();
-        min_caelus_engine.clear();
-        signature.clear();
-        title.clear();
-        region.clear();
-        tick_minutes = 15;
-        horizon_hours = 240;
-        enterprise_code.clear();
-        sector_label.clear();
-        synopsis.clear();
-        compliance.clear();
-        data_provenance.clear();
-        data_source_note.clear();
-        assumptions.clear();
-        data_gaps.clear();
-        financials = FinancialMeta{};
-        node_meta.clear();
-        lever_meta.clear();
-        signature_scheme.clear();
-        meta_signed = false;
-        pubkey_pinned = false;
-        nodes.clear();
-        edges.clear();
-        loops.clear();
-        levers.clear();
-        hysteresis.clear();
-        intel_bindings.clear();
-        risk_profile = caelus::intel::OperationalRiskProfile{};
-        intel_sequence.clear();
+        reset_fields();
 
         // Ayrıştır
         JsonParser parser(content.data(), content.size());
@@ -632,6 +635,14 @@ public:
             return false;
         }
         meta_signed = (signature_scheme == "V2" || signature_scheme == "V3");
+        describe_signature(signature, signature_scheme, pubkey_pinned, sig_status, sig_scheme);
+        if (signature_scheme == "V3") {
+            verified_canonical_payload_ = canonical_signed_payload_v3(root);
+        } else if (signature_scheme == "V2") {
+            verified_canonical_payload_ = canonical_signed_payload_v2(root);
+        } else if (signature_scheme == "V1") {
+            verified_canonical_payload_ = canonical_signed_payload(root);
+        }
 
         if (root.has("meta")) {
             const auto& meta = root["meta"];
@@ -912,7 +923,67 @@ public:
         return canonical_signed_payload_from_json(buf.str(), out, error, payload_version);
     }
 
+#ifdef CAELUS_CPP_UNIT_TEST
+    // Test-only erişim kancası: imza gate'inin tüm dallarını (boş imza,
+    // SELF_SIGNED_DEV, ed25519 başarısız/tamper, pin reddi, dev bypass)
+    // birim testten doğrulanabilir kılar. Üretim derlemesine girmez.
+    static bool test_verify_signature_gate(const JsonVal& root, const std::string& sig,
+                                           std::string& out_status, std::string& out_scheme) {
+        std::string version;
+        bool pinned = false;
+        if (!verify_signature_gate(root, sig, version, pinned)) {
+            out_status = "REJECTED";
+            out_scheme = "none";
+            return false;
+        }
+        describe_signature(sig, version, pinned, out_status, out_scheme);
+        return true;
+    }
+#endif
+
 private:
+    std::string verified_canonical_payload_;
+
+    /** load() / load_from_memory() ortak ön-temizliği. */
+    void reset_fields() {
+        loaded = false;
+        schema_version.clear();
+        id.clear();
+        blackswan_class.clear();
+        sector.clear();
+        min_caelus_engine.clear();
+        signature.clear();
+        title.clear();
+        region.clear();
+        tick_minutes = 15;
+        horizon_hours = 240;
+        enterprise_code.clear();
+        sector_label.clear();
+        synopsis.clear();
+        compliance.clear();
+        data_provenance.clear();
+        data_source_note.clear();
+        assumptions.clear();
+        data_gaps.clear();
+        financials = FinancialMeta{};
+        node_meta.clear();
+        lever_meta.clear();
+        signature_scheme.clear();
+        meta_signed = false;
+        pubkey_pinned = false;
+        nodes.clear();
+        edges.clear();
+        loops.clear();
+        levers.clear();
+        hysteresis.clear();
+        intel_bindings.clear();
+        risk_profile = caelus::intel::OperationalRiskProfile{};
+        intel_sequence.clear();
+        sig_status.clear();
+        sig_scheme.clear();
+        verified_canonical_payload_.clear();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // CAELUS_TRUSTED_PUBKEY — Pinlenmiş üretim imzalama pubkey'i (32 bayt).
     // Derleme zamanında sabittir; tüm üretim senaryo paketleri yalnızca bu
@@ -1172,6 +1243,18 @@ private:
         if (!is_hex_string(pubkey_hex, 64) || !is_hex_string(sig_hex, 128)) return false;
         return hex_to_bytes(pubkey_hex, pubkey, 32) &&
                hex_to_bytes(sig_hex, signature, 64);
+    }
+
+    static void describe_signature(const std::string& signature,
+                                   const std::string& version, bool pinned,
+                                   std::string& status, std::string& scheme) {
+        if (version == "DEV_UNSIGNED") {
+            status = signature == "SELF_SIGNED_DEV" ? "SELF_SIGNED_DEV" : "DEV_UNSIGNED";
+            scheme = signature == "SELF_SIGNED_DEV" ? "self-signed-dev" : "none";
+        } else {
+            status = pinned ? "VERIFIED" : "DEV_TRUST_BYPASS";
+            scheme = pinned ? "ed25519+pinned" : "ed25519+unpinned";
+        }
     }
 
     static bool verify_signature_gate(const JsonVal& root, const std::string& sig,

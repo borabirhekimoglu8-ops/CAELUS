@@ -121,6 +121,7 @@ pub struct DeviceIdentity {
 }
 
 const KEY_FILE_MAGIC: &[u8] = b"CAELUSKEY1\0";
+#[cfg(windows)]
 const KEY_FILE_SCHEME_WIN_DPAPI: &[u8] = b"WIN-DPAPI\0";
 /// Container scheme tag for a seed wrapped by a registered KEYMGMT plugin.
 const KEY_FILE_SCHEME_KEYMGMT_PLUGIN: &[u8] = b"KEYMGMT-PLUGIN\0";

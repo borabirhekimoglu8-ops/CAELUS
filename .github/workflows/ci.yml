@@ -101,19 +101,15 @@ jobs:
           cl.exe 2>&1 | findstr /I version
           py -3 --version
 
-      - name: Build fresh production binary (build.bat)
-        # ci.bat does not build; without this it exercises the stale committed
-        # dist\caelus_os.exe instead of the code under test.
-        shell: cmd
-        env:
-          CAELUS_CXX: MSVC
-        run: build.bat
+      - name: Fetch dependencies for the offline dataset test
+        run: cargo fetch --locked --manifest-path caelus_core/Cargo.toml
 
       - name: Run full CI pipeline
         shell: cmd
         env:
           CAELUS_CXX: MSVC
           PYTHONUTF8: "1"
+        # ci.bat checks dataset provenance before building the production binary.
         run: ci.bat
 
       - name: Validate universal browser scenario compiler & NCM-2 against native Windows binary

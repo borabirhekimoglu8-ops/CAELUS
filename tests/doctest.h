@@ -79,6 +79,17 @@ inline int run_all_tests() {
     return failed_cases == 0 && failure_count() == 0 ? 0 : 1;
 }
 
+/**
+ * SubcaseScope — labels the currently running subcase so failures are
+ * attributable, and evaluates truthy inside `if` so SUBCASE reads naturally.
+ */
+struct SubcaseScope {
+    explicit SubcaseScope(const char* name) {
+        std::cout << "[doctest]   subcase: " << name << "\n";
+    }
+    explicit operator bool() const { return true; }
+};
+
 } // namespace detail
 } // namespace doctest
 
@@ -99,6 +110,21 @@ inline int run_all_tests() {
 #define REQUIRE(expr)                                                          \
     ::doctest::detail::check(static_cast<bool>(expr), #expr, __FILE__,         \
                              __LINE__, true)
+
+#define REQUIRE_MESSAGE(expr, msg)                                             \
+    ::doctest::detail::check(static_cast<bool>(expr), (msg), __FILE__,         \
+                             __LINE__, true)
+
+// SUBCASE — sequential-execution semantics.
+//
+// Upstream doctest re-enters the enclosing TEST_CASE once per subcase.  This
+// harness instead executes every subcase block in a single pass, in order.
+// That is only equivalent when subcase blocks are self-contained (create
+// their own fixtures and do not rely on re-initialised enclosing state) —
+// the convention all CAELUS tests using SUBCASE must follow.
+#define SUBCASE(name)                                                          \
+    if (::doctest::detail::SubcaseScope DOCTEST_DETAIL_CAT(                    \
+            doctest_subcase_, __LINE__){name})
 
 #ifdef DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 int main() {

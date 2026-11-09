@@ -37,8 +37,16 @@ set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 set "EXE=%ROOT%\dist\caelus_os.exe"
 set "TEST_EXE=%ROOT%\build_tests\caelus_cpp_tests.exe"
+set "NEURAL_CPP_EXE=%ROOT%\build_tests\neural_cpp_reference.exe"
+set "NEURAL_RUST_EXE=%ROOT%\tests\neural_reference\target\release\caelus_neural_reference.exe"
+set "MODEL_SIGNER=%ROOT%\target\release\caelus_sign_model.exe"
 set "CXX_TOOL="
 set "PYTHON_CMD="
+set "GCC_AVAILABLE=0"
+set "MSVC_AVAILABLE=0"
+set "GNU_LINKER_AVAILABLE=0"
+set "GNU_RUST_TARGET_AVAILABLE=1"
+set "CI_RUST_TARGET="
 
 set "SKIP_BUILD=0"
 set "ONLY_DET=0"
@@ -79,19 +87,73 @@ if errorlevel 1 (
 )
 echo %G%[CI OK] cargo: mevcut%N%
 
+py -3 --version > nul 2>&1
+if not errorlevel 1 set "PYTHON_CMD=py -3"
+if not defined PYTHON_CMD (
+    python --version > nul 2>&1
+    if not errorlevel 1 set "PYTHON_CMD=python"
+)
+if not defined PYTHON_CMD (
+    echo %R%[CI HATA] Python bulunamadı ^(py -3 veya python gerekli^).%N%
+    exit /b 1
+)
+echo %G%[CI OK] Python: !PYTHON_CMD!%N%
+!PYTHON_CMD! -c "import importlib.util,sys; sys.exit(0 if (importlib.util.find_spec('cryptography') or importlib.util.find_spec('nacl')) else 1)"
+if errorlevel 1 (
+    echo %R%[CI HATA] Python Ed25519 dogrulayicisi eksik ^(cryptography veya PyNaCl gerekli^).%N%
+    exit /b 1
+)
+
+powershell -NoProfile -Command "$PSVersionTable.PSVersion.ToString()" > nul 2>&1
+if errorlevel 1 (
+    echo %R%[CI HATA] PowerShell bulunamadi ^(UI gomme ve bypass taramasi icin gerekli^).%N%
+    exit /b 1
+)
+
 if "%ONLY_DET%"=="0" (
     g++ --version > nul 2>&1
     if not errorlevel 1 (
+        set "GCC_AVAILABLE=1"
         set "CXX_TOOL=GCC"
-    ) else (
-        cl.exe /? > nul 2>&1
-        if not errorlevel 1 (
+    )
+    cl.exe /? > nul 2>&1
+    if not errorlevel 1 set "MSVC_AVAILABLE=1"
+    if "!GCC_AVAILABLE!"=="1" (
+        where x86_64-w64-mingw32-gcc > nul 2>&1
+        if not errorlevel 1 set "GNU_LINKER_AVAILABLE=1"
+        if "!GNU_LINKER_AVAILABLE!"=="0" (
+            for /f "delims=" %%m in ('gcc -dumpmachine 2^>nul') do (
+                if /I "%%m"=="x86_64-w64-mingw32" set "GNU_LINKER_AVAILABLE=1"
+            )
+        )
+        rustc --print target-libdir --target x86_64-pc-windows-gnu > nul 2>&1
+        if errorlevel 1 set "GNU_RUST_TARGET_AVAILABLE=0"
+        if "!GNU_LINKER_AVAILABLE!"=="0" set "CXX_TOOL="
+        if "!GNU_RUST_TARGET_AVAILABLE!"=="0" set "CXX_TOOL="
+        if not defined CXX_TOOL if "!MSVC_AVAILABLE!"=="1" (
+            echo %Y%[CI UYARI] GNU ABI preflight eksik; MSVC ABI seçiliyor.%N%
+            set "CXX_TOOL=MSVC"
+        )
+    )
+    if not defined CXX_TOOL (
+        if "!MSVC_AVAILABLE!"=="1" (
             set "CXX_TOOL=MSVC"
         ) else (
             echo %R%[CI HATA] C++ derleyici bulunamadi ^(g++ veya cl.exe gerekli^).%N%
             exit /b 1
         )
     )
+    if "!CXX_TOOL!"=="GCC" (
+        set "CI_RUST_TARGET=x86_64-pc-windows-gnu"
+    ) else (
+        set "CI_RUST_TARGET=x86_64-pc-windows-msvc"
+    )
+    echo %G%[CI OK] C++ derleyici: !CXX_TOOL! ^| Rust target: !CI_RUST_TARGET!%N%
+    if "!SKIP_CONNECTOR_SMOKE!"=="1" (
+        echo %Y%[CI UYARI] Connector smoke atlanacak: CAELUS_SKIP_CONNECTOR_SMOKE=1%N%
+    )
+)
+
     echo %G%[CI OK] C++ derleyici: !CXX_TOOL!%N%
     if not "!SKIP_CONNECTOR_SMOKE!"=="1" (
         py -3 --version > nul 2>&1
@@ -106,10 +168,7 @@ if "%ONLY_DET%"=="0" (
             exit /b 1
         )
         echo %G%[CI OK] Python: !PYTHON_CMD!%N%
-    ) else (
-        echo %Y%[CI UYARI] Connector smoke atlanacak: CAELUS_SKIP_CONNECTOR_SMOKE=1%N%
     )
-)
 
 certutil -? > nul 2>&1
 if errorlevel 1 (
@@ -128,7 +187,7 @@ if "%ONLY_DET%"=="0" (
     echo %C%------------------------------------------------------------%N%
     echo.
     pushd "%ROOT%"
-    cargo test 2>&1
+    cargo test --locked 2>&1
     set "RUST_EC=!errorlevel!"
     popd
     if "!RUST_EC!" NEQ "0" (
@@ -141,6 +200,39 @@ if "%ONLY_DET%"=="0" (
         echo %G%[CI OK] Rust birim testleri gec-ti%N%
     )
     echo.
+
+    echo %C%[CI] Python neural/audit/UI/training-tool testleri...%N%
+    !PYTHON_CMD! -m unittest -v tests.test_caelus_blake3 tests.test_verify_audit_neural tests.test_neural_war_room_contract caelus_ml.test_pipeline
+    set "PY_TEST_EC=!errorlevel!"
+    if "!PY_TEST_EC!" NEQ "0" (
+        echo %R%[CI FAIL] Python neural/tooling testleri başarısız.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! PYTHON_NEURAL_TESTS"
+    ) else (
+        echo %G%[CI OK] Python neural/tooling testleri geçti%N%
+    )
+    echo.
+)
+
+:: Dataset provenance requires a clean checkout. Run before C++ build outputs.
+if "%ONLY_DET%"=="0" (
+    echo %C%[CI] Offline dataset/export/sign/verify smoke...%N%
+    cargo build --release --locked --bin caelus_sign_model
+    if errorlevel 1 (
+        echo %R%[CI FAIL] Neural model signer derlenemedi.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_SIGNER_BUILD"
+    ) else (
+        !PYTHON_CMD! "%ROOT%\tests\run_neural_toolchain_smoke.py" --signer-binary "%MODEL_SIGNER%"
+        if errorlevel 1 (
+            echo %R%[CI FAIL] Offline dataset/export/sign/verify smoke başarısız.%N%
+            set "CI_PASS=1"
+            set "STEP_FAIL=!STEP_FAIL! NEURAL_TOOLCHAIN"
+        ) else (
+            echo %G%[CI OK] Offline dataset/export/sign/verify smoke geçti%N%
+        )
+    )
+    echo.
 )
 
 :: ----------------------------------------------------------------------------
@@ -151,9 +243,9 @@ if "%ONLY_DET%"=="0" (
     echo.
     if not exist %ROOT%\build_tests mkdir %ROOT%\build_tests
     if "!CXX_TOOL!"=="GCC" (
-        g++ -std=c++17 -O2 -DCAELUS_CPP_UNIT_TEST=1 -I%ROOT% -I%ROOT%\include -I%ROOT%\src -I%ROOT%\tests %ROOT%\tests\test_causal_engine.cpp -o %TEST_EXE%
+        g++ -std=c++17 -O2 -DCAELUS_CPP_UNIT_TEST=1 -I"%ROOT%" -I"%ROOT%\include" -I"%ROOT%\src" -I"%ROOT%\tests" "%ROOT%\tests\test_causal_engine.cpp" -o "%TEST_EXE%"
     ) else (
-        cl.exe /nologo /std:c++17 /O2 /EHsc /DCAELUS_CPP_UNIT_TEST=1 /I%ROOT% /I%ROOT%\include /I%ROOT%\src /I%ROOT%\tests %ROOT%\tests\test_causal_engine.cpp /Fe:%TEST_EXE% /link /INCREMENTAL:NO
+        cl.exe /nologo /std:c++17 /O2 /EHsc /DCAELUS_CPP_UNIT_TEST=1 /I"%ROOT%" /I"%ROOT%\include" /I"%ROOT%\src" /I"%ROOT%\tests" "%ROOT%\tests\test_causal_engine.cpp" /Fe:"%TEST_EXE%" /link /INCREMENTAL:NO
     )
     set "CPP_BUILD_EC=!errorlevel!"
     if "!CPP_BUILD_EC!" NEQ "0" (
@@ -209,31 +301,38 @@ if "%ONLY_DET%"=="0" (
     echo.
 )
 
-:: ----------------------------------------------------------------------------
-:: ADIM 4: Binary boyut kontrolu- (< 50 MB)
-:: ----------------------------------------------------------------------------
+:: ════════════════════════════════════════════════════════════════════════════
+:: ADIM 4: Binary boyut kontrolü (< 50 MB)
+:: ════════════════════════════════════════════════════════════════════════════
 if "%ONLY_DET%"=="0" (
     echo %C%------------------------------------------------------------%N%
     echo %C%[CI] ADIM 4/7 - Binary Boyut Kontrolu-%N%
     echo %C%------------------------------------------------------------%N%
     echo.
-    if not exist "%EXE%" (
-        echo %Y%[CI UYARI] %EXE% bulunamadi.%N%
-        if "%SKIP_BUILD%"=="0" (
-            echo %C%[CI] build.bat ile derleniyor...%N%
-            call "%ROOT%\build.bat"
-            if errorlevel 1 (
-                echo %R%[CI FAIL] Derleme bas-arisiz.%N%
-                set "CI_PASS=1"
-                set "STEP_FAIL=!STEP_FAIL! BUILD"
-                goto :step4
-            )
-        ) else (
-            echo %R%[CI FAIL] --skip-build ayarli ama binary yok. O-nce build.bat c-alis-tirin.%N%
+    if "%SKIP_BUILD%"=="0" (
+        echo %C%[CI] CAELUS_PRODUCTION=1 ile build.bat derleniyor...%N%
+        set "OLD_CAELUS_PRODUCTION=!CAELUS_PRODUCTION!"
+        set "OLD_CAELUS_CXX=!CAELUS_CXX!"
+        set "OLD_CAELUS_RUST_TARGET=!CAELUS_RUST_TARGET!"
+        set "CAELUS_PRODUCTION=1"
+        set "CAELUS_CXX=!CXX_TOOL!"
+        set "CAELUS_RUST_TARGET=!CI_RUST_TARGET!"
+        call "%ROOT%\build.bat"
+        set "BUILD_EC=!errorlevel!"
+        set "CAELUS_PRODUCTION=!OLD_CAELUS_PRODUCTION!"
+        set "CAELUS_CXX=!OLD_CAELUS_CXX!"
+        set "CAELUS_RUST_TARGET=!OLD_CAELUS_RUST_TARGET!"
+        if "!BUILD_EC!" NEQ "0" (
+            echo %R%[CI FAIL] Üretim derlemesi başarısız.%N%
             set "CI_PASS=1"
             set "STEP_FAIL=!STEP_FAIL! BUILD"
             goto :step4
         )
+    ) else if not exist "%EXE%" (
+        echo %R%[CI FAIL] --skip-build ayarlı ama binary yok. Önce build.bat çalıştırın.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! BUILD"
+        goto :step4
     )
     for %%F in ("%EXE%") do (
         set /a "EXE_BYTES=%%~zF"
@@ -241,12 +340,84 @@ if "%ONLY_DET%"=="0" (
         set /a "EXE_MB=%%~zF/1048576"
     )
     echo [CI] Binary boyutu: !EXE_KB! KB  ^(~!EXE_MB! MB^)
-    if !EXE_MB! LSS 50 (
-        echo %G%[CI OK] Boyut hedefi kars-ilandi ^(^< 50 MB^)%N%
+    if !EXE_BYTES! LSS 52428800 (
+        echo %G%[CI OK] Boyut hedefi karşılandı ^(^< 50 MB^)%N%
     ) else (
         echo %R%[CI FAIL] Binary boyutu hedefi as-ti ^(!EXE_MB! MB ^>= 50 MB^)%N%
         set "CI_PASS=1"
         set "STEP_FAIL=!STEP_FAIL! BINARY_SIZE"
+    )
+    echo.
+)
+
+if "%ONLY_DET%"=="0" (
+    echo %C%[CI] Neural V1 referans derlemeleri ve diferansiyel golden...%N%
+    if not exist "%ROOT%\build_tests" mkdir "%ROOT%\build_tests"
+    set "NEURAL_RUST_LIB="
+
+    if "!CXX_TOOL!"=="GCC" (
+        set "NEURAL_RUST_LIB=%ROOT%\target\!CI_RUST_TARGET!\release\libcaelus_network.a"
+    ) else (
+        set "NEURAL_RUST_LIB=%ROOT%\target\!CI_RUST_TARGET!\release\caelus_network.lib"
+    )
+    if not exist "!NEURAL_RUST_LIB!" (
+        echo %R%[CI FAIL] Neural C++ referansı için ABI-uyumlu Rust staticlib bulunamadı: !NEURAL_RUST_LIB!%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_RUST_LIB"
+        goto :step4
+    )
+
+    if "!CXX_TOOL!"=="GCC" (
+        g++ -std=c++17 -O2 -I"%ROOT%" -I"%ROOT%\include" -I"%ROOT%\src" "%ROOT%\tests\neural_cpp_reference.cpp" -o "%NEURAL_CPP_EXE%" "!NEURAL_RUST_LIB!" -static -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll -lcrypt32
+    ) else (
+        cl.exe /nologo /std:c++17 /O2 /EHsc /I"%ROOT%" /I"%ROOT%\include" /I"%ROOT%\src" "%ROOT%\tests\neural_cpp_reference.cpp" /Fe:"%NEURAL_CPP_EXE%" /link /INCREMENTAL:NO "!NEURAL_RUST_LIB!" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
+    )
+    if errorlevel 1 (
+        echo %R%[CI FAIL] Neural C++ referans binary derlenemedi.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_CPP_REFERENCE"
+        goto :step4
+    )
+
+    cargo build --release --locked --manifest-path "%ROOT%\tests\neural_reference\Cargo.toml"
+    if errorlevel 1 (
+        echo %R%[CI FAIL] Neural Rust referans binary derlenemedi.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_RUST_REFERENCE"
+        goto :step4
+    )
+
+    !PYTHON_CMD! "%ROOT%\tests\run_neural_differential.py" --cpp-binary "%NEURAL_CPP_EXE%" --rust-binary "%NEURAL_RUST_EXE%" --model-dir "%ROOT%\models\assurance_v1" --golden "%ROOT%\tests\golden\neural_v1_differential.json"
+    if errorlevel 1 (
+        echo %R%[CI FAIL] Neural C++/Rust exact diferansiyel başarısız.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_DIFFERENTIAL"
+    ) else (
+        echo %G%[CI OK] Neural C++/Rust exact diferansiyel geçti%N%
+    )
+
+    !PYTHON_CMD! "%ROOT%\tests\run_bs01_neural_demo.py" --binary "%EXE%" --model-dir "%ROOT%\models\assurance_v1"
+    if errorlevel 1 (
+        echo %R%[CI FAIL] BS-01 neural assurance/negative güvenlik demosu başarısız.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! BS01_NEURAL_DEMO"
+    ) else (
+        echo %G%[CI OK] BS-01 neural assurance ve fail-closed negatifleri geçti%N%
+    )
+
+    echo %C%[CI] Production bypass dize taraması...%N%
+    set "CAELUS_SCAN_EXE=%EXE%"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($env:CAELUS_SCAN_EXE));" ^
+        "$bad = @('CAELUS_ALLOW_DEV_SCENARIOS','CAELUS_TRUST_ANY_PUBKEY','CAELUS_PLUGIN_ALLOW_UNVERIFIED');" ^
+        "foreach ($item in $bad) { if ($text.Contains($item)) { Write-Error ('bypass string found: ' + $item); exit 1 } }"
+    set "CAELUS_SCAN_EXE="
+    if errorlevel 1 (
+        echo %R%[CI FAIL] Production binary geliştirme bypass dizesi içeriyor.%N%
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! PRODUCTION_BYPASS_SCAN"
+    ) else (
+        echo %G%[CI OK] Production bypass dize taraması geçti%N%
     )
     echo.
 )
@@ -284,8 +455,8 @@ set "HSH1=%TEMP%\caelus_ci_h1.txt"
 set "HSH2=%TEMP%\caelus_ci_h2.txt"
 del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 
-:: -- Kos-um 1 -----------------------------------------------------------------
-echo %C%[CI] Kos-um 1/2 bas-liyor...%N%
+:: ── Koşum 1 ─────────────────────────────────────────────────────────────────
+echo %C%[CI] Koşum 1/2 başlıyor...%N%
 del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT1%" 2>&1
 set "EC1=!errorlevel!"
@@ -300,8 +471,8 @@ if "!EC1!" NEQ "0" (
 )
 echo %G%[CI OK] Kos-um 1 tamamlandi%N%
 
-:: -- Kos-um 2 -----------------------------------------------------------------
-echo %C%[CI] Kos-um 2/2 bas-liyor...%N%
+:: ── Koşum 2 ─────────────────────────────────────────────────────────────────
+echo %C%[CI] Koşum 2/2 başlıyor...%N%
 del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
 "%EXE%" --scenario UNIVERSAL_BASELINE --det-mode > "%OUT2%" 2>&1
 set "EC2=!errorlevel!"
@@ -375,6 +546,41 @@ if "!HASH1!"=="!HASH2!" (
 del /q "%OUT1%" "%OUT2%" "%BLK1%" "%BLK2%" "%HSH1%" "%HSH2%" > nul 2>&1
 
 echo.
+echo %C%[CI] Audit zincir + SEAL doğrulaması ^(det-mode imzalayıcıya pinli^)...%N%
+if not defined PYTHON_CMD (
+    py -3 --version > nul 2>&1
+    if not errorlevel 1 (set "PYTHON_CMD=py -3") else (set "PYTHON_CMD=python")
+)
+:: Det-mode sabit kimlik seed kullanir; SEAL pubkey deterministiktir ve pinlenir.
+:: Pin, "kim muhurledi?" sorusunu da denetler (saldirganin yeniden muhurlemesini engeller).
+set "DET_SEAL_PUBKEY=acdcc8494d458f44a7aaac1d6a84ec624daee88436db2ae26e67ba645a106228"
+!PYTHON_CMD! "%ROOT%\tools\verify_audit_log.py" "%ROOT%\caelus_audit_0000000000000000.log" --trusted-pubkey-hex "!DET_SEAL_PUBKEY!"
+if errorlevel 1 (
+    echo %R%[CI FAIL] Audit doğrulaması başarısız.%N%
+    set "CI_PASS=1"
+    set "STEP_FAIL=!STEP_FAIL! AUDIT_VERIFY"
+) else (
+    echo %G%[CI OK] Audit zinciri ve SEAL doğrulandı ^(pinli pubkey^)%N%
+)
+
+echo %C%[CI] Negatif güvenlik süiti ^(tamper / dev-signed / audit forgery fail-closed^)...%N%
+!PYTHON_CMD! "%ROOT%\tests\run_security_negative.py" --binary "%EXE%"
+if errorlevel 1 (
+    echo %R%[CI FAIL] Negatif güvenlik süiti başarısız.%N%
+    set "CI_PASS=1"
+    set "STEP_FAIL=!STEP_FAIL! NEGATIVE_SECURITY"
+) else (
+    echo %G%[CI OK] Negatif güvenlik süiti geçti%N%
+)
+
+:step5
+:: ════════════════════════════════════════════════════════════════════════════
+:: ADIM 6: Negatif imza doğrulama (SIG-CI / SIGNED-CI)
+::   İmzası kasıtlı bozulmuş senaryo kopyası dev kapısı kapalıyken reddedilmeli
+::   (gerçek ed25519 doğrulama hatası). Motor crash etmeden UNIVERSAL_BASELINE
+::   blank slate + AWAITING_SCENARIO_INJECTION durumuna düşmeli.
+:: ════════════════════════════════════════════════════════════════════════════
+echo.
 echo %C%[CI] Audit zincir + SEAL dog-rulamasi...%N%
 if not defined PYTHON_CMD (
     py -3 --version > nul 2>&1
@@ -420,7 +626,9 @@ mkdir "%SIG_DIR%\scenarios" > nul 2>&1
 !PYTHON_CMD! "%ROOT%\tests\make_negative_scenario.py" "%ROOT%\scenarios\BS-01_SAHTE_UFUK.json" "%SIG_DIR%\scenarios\BS-01_SAHTE_UFUK.json"
 if errorlevel 1 (
     echo %R%[CI FAIL] SIG-CI negatif fixture uretilemedi ^(asagidaki kosum bos dizine karsi yapilacak ve adim FAIL edecek^).%N%
+    set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_FIXTURE"
+    goto :report
 )
 
 echo %C%[CI] Bozuk-imzali senaryo kopyasi dev kapisi kapaliyken calistiriliyor...%N%
@@ -515,7 +723,7 @@ if not defined PYTHON_CMD (
 )
 
 echo %C%[CI] caelus_core birim testleri...%N%
-cargo test --manifest-path "%ROOT%\caelus_core\Cargo.toml" --features std --quiet
+cargo test --locked --manifest-path "%ROOT%\caelus_core\Cargo.toml" --features std --quiet
 if errorlevel 1 (
     echo %R%[CI FAIL] caelus_core birim testleri basarisiz.%N%
     set "CI_PASS=1"
@@ -525,7 +733,7 @@ if errorlevel 1 (
 echo %G%[CI OK] caelus_core birim testleri gecti%N%
 
 echo %C%[CI] caelus_core_repl release derlemesi...%N%
-cargo build --release --manifest-path "%ROOT%\caelus_core\Cargo.toml" --features std --bin caelus_core_repl --quiet
+cargo build --release --locked --manifest-path "%ROOT%\caelus_core\Cargo.toml" --features std --bin caelus_core_repl --quiet
 if errorlevel 1 (
     echo %R%[CI FAIL] caelus_core_repl derlenemedi.%N%
     set "CI_PASS=1"
@@ -533,8 +741,17 @@ if errorlevel 1 (
     goto :report
 )
 
-echo %C%[CI] Diferansiyel golden: Rust cekirdek, C++ golden hash'lerine karsi...%N%
-!PYTHON_CMD! "%ROOT%\tests\run_bs_exec_golden.py" --binary "%ROOT%\caelus_core\target\release\caelus_core_repl.exe"
+echo %C%[CI] C++ senaryo golden doğrulaması...%N%
+!PYTHON_CMD! "%ROOT%\tests\run_bs_exec_golden.py" --binary "%EXE%"
+if errorlevel 1 (
+    echo %R%[CI FAIL] C++ senaryo golden başarısız.%N%
+    set "CI_PASS=1"
+    set "STEP_FAIL=!STEP_FAIL! CPP_SCENARIO_GOLDEN"
+    goto :report
+)
+
+echo %C%[CI] Diferansiyel golden: Rust cekirdek, canlı C++ referansına karşı...%N%
+!PYTHON_CMD! "%ROOT%\tests\run_bs_exec_golden.py" --binary "%ROOT%\caelus_core\target\release\caelus_core_repl.exe" --reference-binary "%EXE%"
 if errorlevel 1 (
     echo %R%[CI FAIL] Diferansiyel golden FAIL - Rust cekirdegi C++ motorundan sapti.%N%
     set "CI_PASS=1"

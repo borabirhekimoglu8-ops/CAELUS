@@ -1,5 +1,15 @@
 target/
 caelus_core/target/
+*.py[cod]
+
+# Private signing material must be generated/stored outside the repository.
+tools/caelus_neural_signing.key
+
+# Full synthetic datasets and unsigned training outputs stay external.
+caelus_ml/generated/
+
+# SwiftPM build artifacts and host-built native archives.
+platforms/ios/CAELUSMobile/.build/
 *.log
 *.tmp
 *.sig.tmp
