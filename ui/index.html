@@ -6885,15 +6885,16 @@ body.theme-light .linear-setting-row {
                 <div class="field-group" style="grid-column:span 2; min-width:260px;">
                   <label class="field-label" for="wie-problem-select" style="font-size:0.76rem;">İncelenecek Çok Alanlı Problem veya Olay:</label>
                   <select id="wie-problem-select" class="select-enterprise" style="padding:6px 10px; font-size:0.81rem; border-radius:9px;">
-                    <option value="PROB_ENERGY_TECH_FIN_TRADE">1. Enerji Altyapısı Kesintisi → Teknoloji Üretimi → Şirket Finansmanı → Uluslararası Ticaret (4 Alan)</option>
-                    <option value="PROB_AEGEAN_SEISMIC_PORT_COLDCHAIN">2. Ege Sismik &amp; Deniz Gözlemi → Liman Trafo → Soğuk Zincir İlaç/Gıda → Bölgesel Ticaret</option>
-                    <option value="PROB_INSUFFICIENT_DATA_HONEST_STOP">3. Yetersiz / Geçersiz Veri Sınaması ("Bilmiyorum / Belirlenemiyor" Dürüst Durdurma)</option>
+                    <option value="REAL_CASE_2021_ERCOT_AUSTIN_SEMICONDUCTOR_AUTO" selected>1. [GERÇEK TARİHSEL VAKA — Şubat 2021] Teksas ERCOT Enerji Çöküşü → Austin Yarı İletken Fabrikaları (Samsung/NXP/Infineon) → Küresel Otomotiv &amp; Finansman</option>
+                    <option value="PROB_ENERGY_TECH_FIN_TRADE">2. [ÖRNEK VİTRİN PAKETİ] Enerji Altyapısı Kesintisi → Teknoloji Üretimi → Şirket Finansmanı → Uluslararası Ticaret (4 Alan)</option>
+                    <option value="PROB_AEGEAN_SEISMIC_PORT_COLDCHAIN">3. [TARİHSEL GÖZLEM FİXTURE] Ege Sismik &amp; Deniz Gözlemi → Liman Trafo → Soğuk Zincir İlaç/Gıda → Bölgesel Ticaret</option>
+                    <option value="PROB_INSUFFICIENT_DATA_HONEST_STOP">4. [SINIR TESTİ] Yetersiz / Geçersiz Veri Sınaması ("Bilmiyorum / Belirlenemiyor" Dürüst Durdurma)</option>
                   </select>
                 </div>
 
                 <div class="field-group">
                   <label class="field-label" for="wie-cutoff-input" style="font-size:0.76rem;">Analiz Karar Zamanı (UTC):</label>
-                  <input type="text" id="wie-cutoff-input" value="2026-10-15T12:00:00.000Z" class="dt-editor-input mono" style="padding:6px 9px; font-size:0.77rem; border-radius:9px;" title="Bu zamandan sonra öğrenilen veya yayımlanan veriler geçmiş analizine sızmaz">
+                  <input type="text" id="wie-cutoff-input" value="2021-02-17T18:00:00.000Z" class="dt-editor-input mono" style="padding:6px 9px; font-size:0.77rem; border-radius:9px;" title="Bu zamandan sonra öğrenilen veya yayımlanan veriler geçmiş analizine sızmaz">
                 </div>
 
                 <div class="field-group">
@@ -7012,6 +7013,16 @@ body.theme-light .linear-setting-row {
                   </div>
                   <div id="wie-card-conclusion-audit" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
                     Sonuç ve belirsizlik özeti hazırlanıyor...
+                  </div>
+                </div>
+
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#fde68a;">6. KESİM SONRASI GERÇEKLEŞEN SONUÇLARLA KARŞILAŞTIRMA</strong>
+                    <span class="kpi-badge ok" id="wie-badge-card6" style="font-size:0.65rem;">KAYNAKLI BİLGİ</span>
+                  </div>
+                  <div id="wie-card-reality-comparison" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Kesim zamanı sonrası gerçek dünya karşılaştırması hazırlanıyor...
                   </div>
                 </div>
               </div>
