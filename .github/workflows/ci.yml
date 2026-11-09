@@ -101,6 +101,9 @@ jobs:
           cl.exe 2>&1 | findstr /I version
           py -3 --version
 
+      - name: Fetch dependencies for the offline dataset test
+        run: cargo fetch --locked --manifest-path caelus_core/Cargo.toml
+
       - name: Run full CI pipeline
         shell: cmd
         env:
