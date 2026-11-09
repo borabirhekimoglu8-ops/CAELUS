@@ -35,12 +35,16 @@ export function CounterfactualPanel({ branches, selected, onSelect }: Counterfac
             onClick={() => onSelect(branch.id)}
           >
             <b>{branch.label}</b>
-            <small>{percent(branch.risk)} risk</small>
+            <small>{branch.calibrated ? `${percent(branch.risk)} risk` : "KOŞULLU"}</small>
           </button>
         ))}
       </div>
       <article className={`branch-card branch-card--${active.id}`} id={`branch-panel-${active.id}`} role="tabpanel" aria-labelledby={`branch-tab-${active.id}`}>
-        <div><span>RİSK {percent(active.risk)}</span><span>AKIŞ {percent(active.throughput)}</span><span>ΔR {signed(active.deltaRisk)}</span></div>
+        <div>
+          {active.calibrated
+            ? <><span>RİSK {percent(active.risk)}</span><span>AKIŞ {percent(active.throughput)}</span><span>ΔR {signed(active.deltaRisk)}</span></>
+            : <span>YÜZDE ÜRETİLMEDİ · KOŞULSAL DAL</span>}
+        </div>
         <h4>{active.premise}</h4>
         <p>{active.outcome}</p>
       </article>

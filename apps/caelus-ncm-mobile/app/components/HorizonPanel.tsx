@@ -31,18 +31,20 @@ export function HorizonPanel({ horizons, selected, onSelect }: HorizonPanelProps
             onClick={() => onSelect(horizon.key)}
           >
             <b>{horizon.range.replace(" saat", "s")}</b>
-            <small>{percent(horizon.expected.risk)} risk</small>
+            <small>{horizon.calibrated ? `${percent(horizon.expected.risk)} risk` : "YÖNSEL"}</small>
           </button>
         ))}
       </div>
       <article className="forecast-card" id={panelId} role="tabpanel" aria-labelledby={`horizon-tab-${active.key}`}>
         <div className="forecast-card__top">
           <div><span>{active.label}</span><strong>{active.range}</strong></div>
-          <div className="forecast-kpis"><b>{percent(active.expected.risk)} risk</b><b>{percent(active.expected.throughput)} akış</b></div>
+          <div className="forecast-kpis">
+            {active.calibrated ? <><b>{percent(active.expected.risk)} risk</b><b>{percent(active.expected.throughput)} akış</b></> : <b>Kalibre yüzde yok</b>}
+          </div>
         </div>
         <p>{active.summary}</p>
         <ul>{active.risks.map((risk) => <li key={risk}>{risk}</li>)}</ul>
-        <small>Observer güveni {percent(active.confidence)} · sonuç tavsiye niteliğinde</small>
+        <small>{active.calibrated ? `Kalibre güven ${percent(active.confidence)}` : "Yönsel çıkarım · gerçek olasılık değildir"}</small>
       </article>
     </section>
   );

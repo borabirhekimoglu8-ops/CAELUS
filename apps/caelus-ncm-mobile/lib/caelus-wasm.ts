@@ -96,7 +96,7 @@ export class CaelusWasmEngine {
   load(pack: unknown): EngineSnapshot {
     if (!this.exports) throw new Error("CAELUS çekirdeği hazır değil.");
     const result = this.exports.cae_load(this.write(JSON.stringify(pack)));
-    if (result !== 0) throw new Error("Nöro-nedensel paket çekirdek doğrulamasından geçemedi.");
+    if (result !== 0) throw new Error("Kanıt paketi yerel çekirdek doğrulamasından geçemedi.");
     return this.snapshot();
   }
 
