@@ -51,9 +51,12 @@ jobs:
         run: |
           node --check ui/scenario_compiler.js
           node --check ui/living_world_model.js
+          node --check ui/discovery_value_engine.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
+          node --test tests/discovery_value_engine.test.mjs
+          node --test tests/spatial_interface.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
       - name: Assemble offline-first iPhone package
@@ -68,9 +71,14 @@ jobs:
           grep -q 'CAELUS_WASM_B64' dist/index.html
           grep -q 'CaelusScenarioCompiler' dist/index.html
           grep -q 'CaelusLivingWorldModel' dist/index.html
+          grep -q 'CaelusDiscoveryValueEngine' dist/index.html
           grep -q 'CaelusTwelveCapabilitiesSuite' dist/index.html
+          grep -q 'caelus-spatial-compass' dist/index.html
+          grep -q 'caelus-time-lens-popover' dist/index.html
+          grep -q 'caelus-provenance-drawer' dist/index.html
           grep -q 'caelus-world-impact-engine-workspace' dist/index.html
           grep -q 'caelus-living-world-model-workspace' dist/index.html
+          grep -q 'caelus-discovery-value-engine-workspace' dist/index.html
           grep -q 'BS-01_SAHTE_UFUK' dist/index.html
           grep -q 'BS-02_GOLGE_ARSIV' dist/index.html
           grep -q 'BS-03_KUM_SAATI' dist/index.html

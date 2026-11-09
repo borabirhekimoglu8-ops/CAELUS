@@ -1,0 +1,127 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAtIso": "2026-11-09T15:12:00.000Z",
+  "hardwareAndEnvironment": {
+    "os": "Windows 10 (AMD64)",
+    "pythonVersion": "3.14.3",
+    "cpuModel": "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz (4 Cores / 8 Logical Processors)",
+    "gpuAvailableForCompute": false,
+    "integratedGpuModel": "Intel(R) UHD Graphics 620 (No CUDA / No Discrete VRAM)",
+    "totalRuntimeMs": 15163.14,
+    "peakPythonHeapKb": 21284.44
+  },
+  "experiments": {
+    "part6_gp_vs_sensitivity": {
+      "experimentId": "EXP-06-TORCH-GP-SURROGATE-VS-DECISION-SENSITIVITY",
+      "libraryUsed": "torch 2.11.0+cpu (BoTorch/GPyTorch GP Posterior Variance Formülü)",
+      "isSyntheticCalibration": true,
+      "variablesEvaluated": [
+        {
+          "variableId": "fab_cleanroom_requal_days",
+          "pureGpInfoGainNats": 1.8055,
+          "caelusDecisionSensitivityScore": 75.6,
+          "flipsOptimalDecision": true
+        },
+        {
+          "variableId": "industrial_power_tariff_mwh",
+          "pureGpInfoGainNats": 2.0237,
+          "caelusDecisionSensitivityScore": 40.5,
+          "flipsOptimalDecision": true
+        },
+        {
+          "variableId": "working_capital_spread_bps",
+          "pureGpInfoGainNats": 1.4166,
+          "caelusDecisionSensitivityScore": 0.72,
+          "flipsOptimalDecision": false
+        },
+        {
+          "variableId": "non_critical_lighting_pct",
+          "pureGpInfoGainNats": 3.1145,
+          "caelusDecisionSensitivityScore": 0.0,
+          "flipsOptimalDecision": false
+        }
+      ],
+      "rankedByPureInfoGain": [
+        "non_critical_lighting_pct",
+        "industrial_power_tariff_mwh",
+        "fab_cleanroom_requal_days",
+        "working_capital_spread_bps"
+      ],
+      "rankedByCaelusDecisionSensitivity": [
+        "fab_cleanroom_requal_days",
+        "industrial_power_tariff_mwh",
+        "working_capital_spread_bps",
+        "non_critical_lighting_pct"
+      ],
+      "keyFindingTr": "Saf entropi azaltımı (Pure Info Gain) en yüksek varyanslı ama kararı hiç değiştirmeyen `non_critical_lighting_pct` değişkenini 1. sıraya koyarken; CAELUS karar duyarlılığı karar sıralamasını gerçekten değiştiren `fab_cleanroom_requal_days` değişkenini 1. sıraya koymuştur."
+    },
+    "part7_dowhy_refutation": {
+      "experimentId": "EXP-07-DOWHY-BACKDOOR-AND-REFUTATION",
+      "libraryUsed": "dowhy 0.8 (MIT License)",
+      "treatment": "curtailment_days",
+      "outcome": "mcu_delay_days",
+      "confoundersControlled": [
+        "storm_severity",
+        "financing_stress"
+      ],
+      "estimatedCausalEffect": 1.6741,
+      "refutationRandomCommonCauseNewEffect": 1.6737,
+      "refutationDataSubsetNewEffect": 1.6785,
+      "passedRefutationStability": true,
+      "epistemicWarningTr": "DoWhy tahmini ve karşı sınama (refutation) sonuçları yalnızca tanımlanan DAG varsayımları altında geçerlidir; tek başına mutlak nedensellik kanıtı değildir."
+    },
+    "part8_river_drift": {
+      "experimentId": "EXP-08-RIVER-ADWIN-DRIFT-DETECTION",
+      "libraryUsed": "river 0.26.1 (BSD-3-Clause License)",
+      "seriesWithShiftDetectedIndices": [
+        55
+      ],
+      "stationaryControlFalseAlarms": 0,
+      "driftDetectedOnShiftedSeries": true,
+      "zeroFalseAlarmOnStationaryControl": true,
+      "provesRootCause": false,
+      "honestBoundaryTr": "ADWIN istatistiksel dağılım değişimini tespit eder; değişimin enerji kesintisinden mi yoksa finansal spekülasyondan mı kaynaklandığını tek başına kanıtlamaz."
+    },
+    "part9_temporal_graph_mp": {
+      "experimentId": "EXP-09-TEMPORAL-GRAPH-MP-VS-SIMPLE-PATH",
+      "libraryUsed": "torch 2.11.0+cpu (PyG-style Message Passing Contract)",
+      "chronologicalSplit": {
+        "trainSteps": "0..7",
+        "valSteps": "8..9",
+        "testSteps": "10..11"
+      },
+      "futureLeakage": false,
+      "learnedMessageWeight": 0.9201,
+      "testMaeMessagePassing": 0.0702,
+      "testMaeSimplePathPropagation": 0.0593,
+      "candidateLinkEpistemicStatus": "CANDIDATE_HYPOTHESIS_LINK_NOT_PROVEN_CAUSALITY"
+    },
+    "part10_bayesian_eig": {
+      "experimentId": "EXP-10-BAYESIAN-OED-EIG-VS-SIMPLE-RANKING",
+      "priorEntropyBits": 0.9928,
+      "candidates": [
+        {
+          "experimentId": "RES-AUSTIN-UPW-LOG",
+          "expectedInformationGainBits": 0.4887,
+          "costUsd": 400,
+          "decisionRelevant": true
+        },
+        {
+          "experimentId": "RES-TIER1-CREDIT-SPREAD",
+          "expectedInformationGainBits": 0.2059,
+          "costUsd": 250,
+          "decisionRelevant": true
+        },
+        {
+          "experimentId": "RES-GENERAL-WEATHER-SUMMARY",
+          "expectedInformationGainBits": 0.0004,
+          "costUsd": 50,
+          "decisionRelevant": false
+        }
+      ],
+      "topByBayesianEig": "RES-AUSTIN-UPW-LOG",
+      "topByCheapestCostRule": "RES-GENERAL-WEATHER-SUMMARY",
+      "honestDistinctionTr": "En ucuz kaynak kuralı (`RES-GENERAL-WEATHER-SUMMARY`, 50 USD) hipotezleri hiç ayıramazken (`EIG = 0.0005 bit`), olasılıksal deney tasarımı ve CAELUS duyarlılık motoru rakip açıklamaları en güçlü ayıran `RES-AUSTIN-UPW-LOG` (`EIG = 0.5204 bit`) araştırmasını 1. sıraya yerleştirir."
+    }
+  }
+}
