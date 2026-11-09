@@ -12062,6 +12062,9 @@ function switchQuietView(viewId, options = {}) {
   if (typeof syncSpatialCompassView === 'function') {
     syncSpatialCompassView(target);
   }
+  if (window.CaelusSpatialExperience && typeof window.CaelusSpatialExperience.syncSpatialModeLayout === 'function') {
+    window.CaelusSpatialExperience.syncSpatialModeLayout(target);
+  }
 
   if (target === 'kozmos') {
     document.body.classList.remove('kesfet-solar-focus');
@@ -25693,6 +25696,10 @@ function initCaelusSpatialInterfaceSystem() {
   window.setCaelusSpatialPerfMode = setCaelusSpatialPerfMode;
   window.applyCytoscapeHopDepth = applyCytoscapeHopDepth;
   window.renderScenariosSixQuestionsAndThreeFutures = renderScenariosSixQuestionsAndThreeFutures;
+
+  if (window.CaelusSpatialExperience && typeof window.CaelusSpatialExperience.initSpatialStageExperience === 'function') {
+    window.CaelusSpatialExperience.initSpatialStageExperience();
+  }
 }
 
 // ============================================================================

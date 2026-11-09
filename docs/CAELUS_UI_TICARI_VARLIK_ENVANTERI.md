@@ -8,7 +8,7 @@ Bu envanter, **CAELUS Görsel Evrim ve Mekânsal Arayüz Programı** kapsamında
 
 | # | Varlık / Kütüphane / Kaynak | Sürüm / Konum | Lisans | Ticari Kullanım | Kapalı Kaynak Uyumu | Müşteri Tesisi / Çevrim Dışı | Gerekli Atıf / Bildirim | Durum Sınıfı |
 |---|---|---|---|---|---|---|---|---|
-| 1 | **CAELUS Açık Sarmal Marka Sembolü & Mekânsal Pusula UI** | `1.0.0` (`ui/index.html`, `apps/caelus-ncm-mobile`) | CAELUS Özgün Mülkiyeti | Evet | Evet | %100 Yerel SVG / CSS | CAELUS telif bildirimi | **ÜRETİMDE SERBEST** |
+| 1 | **CAELUS Açık Sarmal Marka Sembolü, Mekânsal Pusula & Veri Portresi (`ui/spatial_experience.js`)** | `2.0.0` (`ui/index.html`, `ui/spatial_experience.js`, `apps/caelus-ncm-mobile`) | CAELUS Özgün Mülkiyeti | Evet | Evet | %100 Yerel SVG / Canvas / CSS | CAELUS telif bildirimi | **ÜRETİMDE SERBEST** |
 | 2 | **CesiumJS 3B Küre Motoru** | `1.114` (`ui/vendor/cesium/`) | Apache-2.0 | Evet | Evet | Evet (Yerel `vendor/` paketiyle çevrim dışı çalışır; Cesium Ion zorunlu değildir) | `Apache-2.0` bildirim dosyası | **ÜRETİMDE SERBEST** |
 | 3 | **Natural Earth II Çevrim Dışı Yerküre Dokusu** | `1.0` (`ui/vendor/cesium/Assets/Textures/NaturalEarthII/`) | Public Domain (CC0) | Evet | Evet | %100 Çevrim Dışı | Atıf zorunlu değildir (`Natural Earth` kaynak notu korunur) | **ÜRETİMDE SERBEST** |
 | 4 | **Three.js 3B Sahne Çekirdeği** | `0.160.0` (`ui/vendor/three/`) | MIT | Evet | Evet | %100 Çevrim Dışı | `MIT` telif satırı | **ÜRETİMDE SERBEST** |
@@ -39,4 +39,4 @@ Bu envanter, **CAELUS Görsel Evrim ve Mekânsal Arayüz Programı** kapsamında
 
 ## 3. Referans Sistemlerle Telif ve Marka Ayrımı Doğrulaması
 
-Bölüm 2’de incelenen 8 referans sistemin (`SpaceEngine`, `OpenSpace`, `Earth / Nullschool`, `Cosmoscope`, `Under the Surface`, `Bloomberg`, `NASA Eyes`, `Apple VisionOS`) hiçbirinden logo, marka adı, telifli görsel, kaplama veya özel kaynak kodu kopyalanmamıştır. Tüm arayüz bileşenleri, açık sarmal sembolü, CSS katmanları ve etkileşim mantığı CAELUS’a özgü olarak geliştirilmiştir.
+Bölüm 2’de incelenen 8 zorunlu referans sistemin (`FIELD.IO — Seeing in Gamma`, `FIELD.IO — IBM watsonx`, `FIELD.IO — Under the Surface`, `FIELD.IO — Networks in Focus`, `Territory Studio — Foundation`, `Territory Studio — Ex Machina`, `Refik Anadol — MRI of the Earth`, `Pentagram — Deloitte Insights`) hiçbirinden logo, marka adı, telifli görsel, kaplama, yazı tipi veya özel kaynak kodu kopyalanmamıştır. Tüm arayüz bileşenleri, açık sarmal sembolü, Veri Portresi tuvali (`#caelus-data-portrait-canvas`), CSS katmanları ve etkileşim mantığı CAELUS’a özgü olarak geliştirilmiştir.

@@ -5953,6 +5953,159 @@ body.theme-light .linear-setting-row {
       z-index: 16 !important;
     }
 
+    /* ── Başlıksız ve Dock'suz Mekânsal Sahne Disiplini (Prompt 4: Bölüm 1, 2, 6, 7, 8, 9, 10) ── */
+    .caelus-spatial-focus-pill {
+      position: fixed;
+      bottom: max(16px, env(safe-area-inset-bottom, 16px));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1375;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      background: rgba(6, 13, 28, 0.86);
+      border: 1px solid rgba(136, 212, 255, 0.34);
+      color: var(--caelus-text-primary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.62);
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .caelus-spatial-focus-pill:hover,
+    .caelus-spatial-focus-pill[aria-expanded="true"] {
+      border-color: var(--caelus-accent-gold);
+      box-shadow: 0 0 24px rgba(230, 195, 135, 0.28);
+    }
+
+    body:not([data-quiet-view="dunyam"]) .caelus-spatial-focus-pill {
+      display: none !important;
+    }
+
+    /* İlk açılışta üst-orta ölçek şeridi ve alt 3'lü dock kalabalığı kapalıdır; tekil kapsülle açılır */
+    body.caelus-spatial-clean-stage:not(.caelus-scene-tray-open) .dunyam-cosmoscope-strip,
+    body.caelus-spatial-clean-stage:not(.caelus-scene-tray-open) .dunyam-stage-quick-layers,
+    body.caelus-spatial-clean-stage:not(.caelus-scene-tray-open) .dunyam-stage-bottom-bar,
+    body.caelus-spatial-clean-stage:not(.caelus-scene-tray-open) .dunyam-ondemand-bar,
+    body.caelus-spatial-clean-stage:not(.caelus-scene-tray-open) .caelus-perf-mode-group {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      visibility: hidden !important;
+    }
+
+    body.caelus-spatial-clean-stage.caelus-scene-tray-open .dunyam-stage-quick-layers {
+      bottom: 112px !important;
+    }
+
+    body.caelus-spatial-clean-stage.caelus-scene-tray-open .dunyam-stage-bottom-bar {
+      bottom: 64px !important;
+    }
+
+    /* Sol üst dünya kartı daraltıldığında yalnızca zarif bir fısıltı satırı kalır */
+    .dunyam-hero-top.is-whisper-collapsed .dunyam-hero-identity {
+      padding: 6px 12px !important;
+      border-radius: 999px !important;
+      background: rgba(6, 13, 28, 0.78) !important;
+      border: 1px solid rgba(136, 212, 255, 0.24) !important;
+      width: fit-content !important;
+      max-width: 280px !important;
+    }
+
+    .dunyam-hero-top.is-whisper-collapsed .dunyam-world-title {
+      font-size: 0.78rem !important;
+      font-weight: 600 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+    /* Seçim yapılmadan önce "Seçili Varlık Merceğini Aç" hapı sahneyi kalabalıklaştırmaz */
+    body.caelus-spatial-clean-stage:not(.caelus-scene-tray-open) .dunyam-callout-reopen-pill {
+      display: none !important;
+    }
+
+    /* Refik Anadol — MRI of the Earth Veri Portresi Tuvali ve Epistemik Dürüstlük Rozeti */
+    .caelus-data-portrait-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 12;
+      pointer-events: none;
+    }
+
+    .caelus-data-portrait-badge {
+      position: absolute;
+      top: 68px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: rgba(8, 16, 34, 0.90);
+      border: 1px solid rgba(230, 195, 135, 0.55);
+      color: #E6C387;
+      font-size: 0.73rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    }
+
+    /* 3B Dünya Sahnesi 2. İlişkiler, 3. Zaman, 4. Senaryolar ve 5. Kaynaklar modlarında da yaşayan arka plan olarak kalır */
+    body.caelus-spatial-clean-stage[data-quiet-view="kesfet"] #dunyam-overview-hub,
+    body.caelus-spatial-clean-stage[data-quiet-view="senaryolar"] #dunyam-overview-hub,
+    body.caelus-spatial-clean-stage[data-quiet-view="hafiza"] #dunyam-overview-hub,
+    body.caelus-spatial-clean-stage[data-quiet-view="baglantilar"] #dunyam-overview-hub {
+      display: block !important;
+      position: fixed !important;
+      inset: 0 !important;
+      z-index: 1 !important;
+      pointer-events: none !important;
+      opacity: 0.42 !important;
+      filter: saturate(0.85) brightness(0.72);
+    }
+
+    body.caelus-spatial-clean-stage[data-quiet-view="kesfet"] #dunyam-hero-whisper-box,
+    body.caelus-spatial-clean-stage[data-quiet-view="senaryolar"] #dunyam-hero-whisper-box,
+    body.caelus-spatial-clean-stage[data-quiet-view="hafiza"] #dunyam-hero-whisper-box,
+    body.caelus-spatial-clean-stage[data-quiet-view="baglantilar"] #dunyam-hero-whisper-box,
+    body.caelus-spatial-clean-stage[data-quiet-view="kesfet"] #dunyam-stage-callout-card,
+    body.caelus-spatial-clean-stage[data-quiet-view="senaryolar"] #dunyam-stage-callout-card,
+    body.caelus-spatial-clean-stage[data-quiet-view="hafiza"] #dunyam-stage-callout-card,
+    body.caelus-spatial-clean-stage[data-quiet-view="baglantilar"] #dunyam-stage-callout-card {
+      display: none !important;
+    }
+
+    body.caelus-spatial-clean-stage #kesfet-clean-workspace,
+    body.caelus-spatial-clean-stage #senaryolar-guided-workspace,
+    body.caelus-spatial-clean-stage #hafiza-clean-workspace,
+    body.caelus-spatial-clean-stage #baglantilar-clean-workspace {
+      position: relative !important;
+      z-index: 30 !important;
+      max-width: 1220px !important;
+      margin: 66px auto 28px !important;
+      padding: 0 16px !important;
+    }
+
+    /* İkincil çalışma alanlarında ikinci bir üst bar / sekme şeridi gibi görünen başlıkları varsayılan olarak gizle */
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #kesfet-clean-workspace .caelus-view-hero-top,
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #kesfet-clean-workspace .kesfet-view-mode-bar,
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #senaryolar-guided-workspace .caelus-view-hero-top,
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #senaryolar-guided-workspace .caelus-scenario-stepper,
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #senaryolar-guided-workspace .scen-active-selections-bar,
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #engine-offline-banner,
+    body.caelus-spatial-clean-stage:not(.caelus-advanced-panels-expanded) #global-engine-disconnect-banner {
+      display: none !important;
+    }
+
     @media (max-width: 1480px) {
       .dunyam-cosmoscope-strip {
         display: none !important;
@@ -5964,7 +6117,11 @@ body.theme-light .linear-setting-row {
       .caelus-compass-kbd,
       .caelus-perf-mode-group,
       .caelus-spatial-onboarding-hint,
-      #btn-stage-time-lens > span:nth-child(2) {
+      #btn-stage-time-lens > span:nth-child(2),
+      #btn-stage-scene-controls,
+      #btn-stage-first-task,
+      .dunyam-hero-top.is-whisper-collapsed,
+      body:has(#dunyam-stage-callout-card:not(.is-collapsed)) .caelus-spatial-focus-pill {
         display: none !important;
       }
 
@@ -5977,9 +6134,9 @@ body.theme-light .linear-setting-row {
       }
 
       .caelus-spatial-lens-pill {
-        min-height: 34px;
-        padding: 3px 7px;
-        font-size: 0.65rem;
+        min-height: 36px;
+        padding: 4px 9px;
+        font-size: 0.72rem;
       }
 
       .dunyam-hero-top {
@@ -6386,7 +6543,22 @@ body.theme-light .linear-setting-row {
         <span style="color:#38BDF8;" aria-hidden="true">📂</span>
         <span>Kendi Verim &amp; Görev</span>
       </button>
+
+      <button type="button" class="caelus-spatial-lens-pill" id="btn-stage-scene-controls"
+        aria-expanded="false"
+        title="Sahne Ölçeği, Katmanlar, Veri Portresi ve Performans Modlarını aç veya gizle">
+        <span style="color:#C084FC;" aria-hidden="true">🎛</span>
+        <span>Sahne &amp; Ölçek</span>
+      </button>
     </div>
+
+    <!-- Alt Merkez Tekil Bağlamsal Tetikleyici (Alt kenarı 18 düğmeyle boğmadan konumları, katmanları ve ölçeği açar) -->
+    <button type="button" class="caelus-spatial-focus-pill" id="caelus-spatial-focus-pill"
+      aria-expanded="false"
+      title="Olay odak noktalarını, veri katmanlarını (Uydu, Rüzgâr, Deprem, Veri Portresi) ve ölçek gezginini aç veya gizle">
+      <span style="color:#E6C387;" aria-hidden="true">✦</span>
+      <span class="spatial-focus-pill-label">Olaylar, Katmanlar &amp; Ölçek</span>
+    </button>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
        İSTEĞE BAĞLI YÜZEN ZAMAN MERCEĞİ (#caelus-time-lens-popover — BÖLÜM 9)
@@ -6607,7 +6779,7 @@ body.theme-light .linear-setting-row {
       <section class="dunyam-hub" id="dunyam-overview-hub" aria-labelledby="dunyam-world-title">
 
         <!-- Sol Üst Kimlik: Dünya Başlığı, Tek Durum Cümlesi ve 3 Temel Eylem (Daraltılabilir Bağlamsal Fısıltı) -->
-        <div class="dunyam-hero-top" id="dunyam-hero-whisper-box">
+        <div class="dunyam-hero-top is-whisper-collapsed" id="dunyam-hero-whisper-box">
           <div class="dunyam-hero-identity">
             <div class="dunyam-title-stack">
               <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
@@ -6855,6 +7027,12 @@ body.theme-light .linear-setting-row {
             <!-- Katman 1B: Earth / Nullschool Yöntemiyle Hesaplanan Bölgesel Rüzgâr Akış Katmanı (Open-Meteo 6×6 Izgara) -->
             <canvas id="dunyam-wind-canvas" class="dunyam-wind-canvas hidden" width="960" height="540" aria-hidden="true"></canvas>
 
+            <!-- Katman 1B-Portre: Refik Anadol "MRI of the Earth" Esinli İsteğe Bağlı Veri Portresi (Sanatsal Temsil != Ölçüm Grafiği) -->
+            <canvas id="caelus-data-portrait-canvas" class="caelus-data-portrait-canvas hidden" width="960" height="540" aria-hidden="true"></canvas>
+            <div id="caelus-data-portrait-badge" class="caelus-data-portrait-badge hidden" role="status">
+              🎨 SANATSAL VERİ TEMSİLİ · ÖLÇÜM GRAFİĞİ DEĞİLDİR (Aktif Dünya Sayısal Vektörlerinden Türetilmiş Veri Portresi)
+            </div>
+
             <!-- Sahne Üzeri Hızlı Keşif, Uydu, Rüzgâr, Theatre.js Kamera Sekansı ve Gerçek Olay Kontrolleri -->
             <div class="dunyam-stage-quick-layers" id="dunyam-stage-quick-layers" role="toolbar" aria-label="3B Dünya Hızlı Yakınlaşma ve Veri Katmanları">
               <button type="button" class="dunyam-quick-layer-pill" id="btn-cesium-fly-aegean" title="3B Dünya kamerasını Ege Denizi ve İzmir Körfezi (38.44°K, 27.15°D) bölgesine yaklaştır">📍 Ege / İzmir</button>
@@ -6864,6 +7042,7 @@ body.theme-light .linear-setting-row {
               <button type="button" class="dunyam-quick-layer-pill" id="btn-stage-toggle-wind" aria-pressed="false" title="Open-Meteo 6×6 bölgesel rüzgâr vektör ve akış katmanını aç veya kapat">💨 Rüzgâr</button>
               <button type="button" class="dunyam-quick-layer-pill active" id="btn-stage-toggle-events" aria-pressed="true" title="Deprem kayıtlarını ve örnek senaryo konumlarını küre üzerinde göster">🌋 Deprem ve Konumlar</button>
               <button type="button" class="dunyam-quick-layer-pill active" id="btn-stage-toggle-eonet" aria-pressed="true" title="Doğal olayları (yangın, fırtına, volkan) küre üzerinde göster">🔥 Doğal Olaylar</button>
+              <button type="button" class="dunyam-quick-layer-pill" id="btn-stage-toggle-portrait" aria-pressed="false" title="Refik Anadol — MRI of the Earth ilkesiyle aktif dünyanın sayısal verilerinden türetilen sanatsal Veri Portresini aç veya kapat (Ölçüm grafiği değildir)">🎨 Veri Portresi</button>
             </div>
 
             <!-- Cosmoscope Çok Ölçekli Evren → İnsan Sistemi Gezinti Şeridi (Doğrudan Sahne Üzerinde Görünür) -->
@@ -12503,6 +12682,8 @@ body.theme-light .linear-setting-row {
   <script src="discovery_value_engine.js"></script>
   <!-- CAELUS İLK GERÇEK GÖREV MOTORU (DOSYA OKUMA, SÜTUN EŞLEME, SÖZLEŞME DOĞRULAMA, TEKİLLEŞTİRME, SENARYO VE 7 SAYFALI XLSX/PDF RAPOR) -->
   <script src="first_real_task_engine.js"></script>
+  <!-- CAELUS GÖRSEL EVRİM VE MEKÂNSAL ARAYÜZ MOTORU (BAŞLIKSIZ SAHNE, 8 TASARIM REFERANSI MATRİSİ VE VERİ PORTRESİ) -->
+  <script src="spatial_experience.js"></script>
   <!-- ANA UYGULAMA VE CANLI C++/RUST KÖPRÜSÜ -->
   <script src="app.js"></script>
 </body>

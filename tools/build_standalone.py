@@ -52,6 +52,8 @@ def main() -> int:
     dvejs = dvejs_path.read_text(encoding="utf-8") if dvejs_path.exists() else ""
     frtjs_path = ROOT / "ui/first_real_task_engine.js"
     frtjs = frtjs_path.read_text(encoding="utf-8") if frtjs_path.exists() else ""
+    spjs_path = ROOT / "ui/spatial_experience.js"
+    spjs = spjs_path.read_text(encoding="utf-8") if spjs_path.exists() else ""
     appjs = (ROOT / "ui/app.js").read_text(encoding="utf-8")
     wasm_b64 = base64.b64encode(WASM.read_bytes()).decode("ascii")
     trusted_pubkey = (ROOT / "tools/caelus_trusted_pubkey.txt").read_text(encoding="ascii").strip().lower()
@@ -100,6 +102,7 @@ def main() -> int:
             + ("<script>\n" + lwmjs + "\n</script>\n" if lwmjs else "")
             + ("<script>\n" + dvejs + "\n</script>\n" if dvejs else "")
             + ("<script>\n" + frtjs + "\n</script>\n" if frtjs else "")
+            + ("<script>\n" + spjs + "\n</script>\n" if spjs else "")
             + "<script>\n" + appjs + "\n</script>"
         ),
         idx,

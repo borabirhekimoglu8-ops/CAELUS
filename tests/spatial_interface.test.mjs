@@ -21,6 +21,7 @@ const ROOT = path.resolve(__dirname, '..');
 const uiHtmlPath = path.join(ROOT, 'ui', 'index.html');
 const distHtmlPath = path.join(ROOT, 'dist', 'index.html');
 const uiAppJsPath = path.join(ROOT, 'ui', 'app.js');
+const spatialExpJsPath = path.join(ROOT, 'ui', 'spatial_experience.js');
 const mobilePagePath = path.join(ROOT, 'apps', 'caelus-ncm-mobile', 'app', 'page.tsx');
 const mobileNavPath = path.join(ROOT, 'apps', 'caelus-ncm-mobile', 'app', 'components', 'BottomNav.tsx');
 const mobileCssPath = path.join(ROOT, 'apps', 'caelus-ncm-mobile', 'app', 'globals.css');
@@ -29,9 +30,11 @@ const worldStorePath = path.join(ROOT, 'caelus_world_store.json');
 const uiHtml = fs.readFileSync(uiHtmlPath, 'utf8');
 const distHtml = fs.existsSync(distHtmlPath) ? fs.readFileSync(distHtmlPath, 'utf8') : uiHtml;
 const uiAppJs = fs.readFileSync(uiAppJsPath, 'utf8');
+const spatialExpJs = fs.readFileSync(spatialExpJsPath, 'utf8');
 const mobilePage = fs.readFileSync(mobilePagePath, 'utf8');
 const mobileNav = fs.readFileSync(mobileNavPath, 'utf8');
 const mobileCss = fs.readFileSync(mobileCssPath, 'utf8');
+const CaelusSpatialExperience = (await import('../ui/spatial_experience.js')).default || (await import('../ui/spatial_experience.js'));
 
 test('Akış 1: Uygulama ilk açılışta sabit üst bar ve sabit alt bar olmadan başlıksız tam ekran sahne olarak açılır', () => {
   // .top-header HTML'den kaldırılmış ve CSS'te display:none !important olarak mühürlenmiş olmalı
@@ -135,12 +138,60 @@ test('Akış 15, 16 ve 17: 3 kademeli performans modu seçicisi, mobil mikro eti
   assert.match(uiHtml, /data-perf-mode="LITE_2D"/, 'Hafif / 2B modu mevcut olmalıdır');
   assert.match(uiAppJs, /function setCaelusSpatialPerfMode\(/, 'setCaelusSpatialPerfMode fonksiyonu tanımlı olmalıdır');
 
-  // Mobil CSS'te 6px, 7px, 8px okunaksız mikro etiketler kalmamış olmalı
-  assert.doesNotMatch(mobileCss, /font(?:-size)?:\s*(?:[0-9]+\s+)?[678]px\b/, 'Mobil CSS içinde 6px–8px okunaksız mikro etiket kullanılmamalıdır');
+  // Mobil CSS'te 6px, 7px, 8px, 9px, 10px okunaksız mikro etiketler kalmamış olmalı (>=11px)
+  assert.doesNotMatch(mobileCss, /font(?:-size)?:\s*(?:[0-9]+\s+)?(?:[6789]|10)px\b/, 'Mobil CSS içinde 6px–10px okunaksız mikro etiket kullanılmamalıdır (en az 11px)');
   assert.match(mobileNav, /id="caelus-mobile-spatial-compass"/, 'Mobil uygulama CAELUS Mekânsal Pusulası ile birleştirilmiş olmalıdır');
 
   // dist/index.html içinde de mekânsal arayüz bileşenleri yer almalı
   assert.match(distHtml, /id="caelus-spatial-compass"/, 'dist/index.html mekânsal pusulayı içermelidir');
   assert.match(distHtml, /id="caelus-time-lens-popover"/, 'dist/index.html Zaman Merceği bileşenini içermelidir');
   assert.match(distHtml, /id="caelus-provenance-drawer"/, 'dist/index.html Kaynak & Dayanak çekmecesini içermelidir');
+});
+
+test('Bölüm 2: 8 Zorunlu Tasarım Referansı (FIELD.IO, Territory Studio, Refik Anadol, Pentagram) ui/spatial_experience.js içinde eksiksiz tanımlı ve doğrulanabilir olmalıdır', () => {
+  assert.ok(CaelusSpatialExperience, 'CaelusSpatialExperience modülü yüklenebilmelidir');
+  const refs = CaelusSpatialExperience.DESIGN_REFERENCES_MATRIX;
+  assert.equal(Array.isArray(refs), true, 'DESIGN_REFERENCES_MATRIX bir dizi olmalıdır');
+  assert.equal(refs.length, 8, 'Tam 8 zorunlu tasarım referansı bulunmalıdır');
+
+  const expectedTitles = [
+    'FIELD.IO — Seeing in Gamma',
+    'FIELD.IO — IBM watsonx',
+    'FIELD.IO — Under the Surface',
+    'FIELD.IO — Networks in Focus',
+    'Territory Studio — Foundation',
+    'Territory Studio — Ex Machina',
+    'Refik Anadol — MRI of the Earth',
+    'Pentagram — Deloitte Insights'
+  ];
+  for (const title of expectedTitles) {
+    const found = refs.find((r) => r.title === title);
+    assert.ok(found, `${title} referansı DESIGN_REFERENCES_MATRIX içinde yer almalıdır`);
+    assert.ok(found.url && found.url.startsWith('https://'), `${title} geçerli bir URL içermelidir`);
+    assert.ok(found.caelus_adaptation && found.caelus_adaptation.length > 20, `${title} için CAELUS'un öğrendiği ilke açıklanmalıdır`);
+    assert.ok(found.avoided && found.avoided.length > 20, `${title} için bilinçli olarak kaçınılan yön açıklanmalıdır`);
+    assert.ok(Array.isArray(found.dom_targets) && found.dom_targets.length >= 2, `${title} için CAELUS'taki somut uygulama yeri belirtilmelidir`);
+  }
+});
+
+test('Bölüm 1.2, 2.7 ve 6: Temiz Sahne Disiplini (#caelus-spatial-focus-pill), Yaşayan Dünya Arka Planı ve Refik Anadol Veri Portresi (SANATSAL VERİ TEMSİLİ) çalışır', () => {
+  // Tekil alt-orta odak kapsülü ve çoklu alt şeritlerin varsayılan olarak gizlenmesi
+  assert.match(uiHtml, /id="caelus-spatial-focus-pill"/, 'Alt ortada tekil #caelus-spatial-focus-pill odak kapsülü bulunmalıdır');
+  assert.match(uiHtml, /body\.caelus-spatial-clean-stage:not\(\.caelus-scene-tray-open\)\s+\.dunyam-cosmoscope-strip/, 'Temiz sahne modunda üst ölçek şeridi ve çoklu alt şeritler varsayılan olarak gizlenmelidir');
+  assert.match(uiHtml, /id="btn-stage-scene-controls"/, 'Sağ üstte Sahne & Ölçek çekmece düğmesi bulunmalıdır');
+
+  // Yaşayan 3B Dünya sahnesinin (#dunyam-overview-hub) diğer modlarda da arka planda canlı kalması
+  assert.match(uiHtml, /body\.caelus-spatial-clean-stage\[data-quiet-view="kesfet"\]\s+#dunyam-overview-hub[\s\S]{0,400}display:\s*block\s*!important;/, 'Dünya sahnesi Keşfet, Senaryolar, Hafıza ve Bağlantılar modlarında arka planda canlı kalmalıdır');
+
+  // Refik Anadol — MRI of the Earth Veri Portresi ve epistemik ayrım rozeti
+  assert.match(uiHtml, /id="btn-stage-toggle-portrait"/, 'Sağ üstte Veri Portresi aç/kapa düğmesi bulunmalıdır');
+  assert.match(uiHtml, /id="caelus-data-portrait-canvas"/, 'Veri Portresi canvas bileşeni bulunmalıdır');
+  assert.match(uiHtml, /id="caelus-data-portrait-badge"/, 'Veri Portresi epistemik uyarı rozeti bulunmalıdır');
+  assert.match(uiHtml, /SANATSAL VERİ TEMSİLİ · ÖLÇÜM GRAFİĞİ DEĞİLDİR/, 'Veri Portresi üzerinde sanatsal veri temsili olduğu ve ölçüm grafiği olmadığı açıkça belirtilmelidir');
+
+  // Veri Portresi tohum metrikleri deterministik olarak hesaplanabilmeli
+  const metrics = CaelusSpatialExperience.computeWorldPortraitSeedMetrics();
+  assert.ok(metrics.nodeCount >= 3, 'Veri Portresi aktif dünya modelindeki düğüm sayısını okumalıdır');
+  assert.ok(metrics.edgeCount >= 3, 'Veri Portresi aktif dünya modelindeki ilişki sayısını okumalıdır');
+  assert.match(spatialExpJs, /function toggleDataPortraitMode\(/, 'toggleDataPortraitMode fonksiyonu tanımlı olmalıdır');
 });
