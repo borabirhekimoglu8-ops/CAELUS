@@ -7038,6 +7038,137 @@ body.theme-light .linear-setting-row {
               </details>
             </div>
           </details>
+
+          <!-- ═════════════════════════════════════════════════════════════════
+               CAELUS YAŞAYAN DÜNYA MODELİ (LIVING WORLD MODEL) — 9 ADIMLI DÜŞÜNCENİN DEĞİŞİMİ, HİPOTEZ DEFTERİ, RAKİP DÜNYA MODELLERİ VE TİCARİ BAĞIMSIZLIK ÇALIŞMA ALANI
+               ═════════════════════════════════════════════════════════════════ -->
+          <details class="expand-box" id="caelus-living-world-model-workspace" open style="margin-top:12px; border-radius:14px; background:rgba(6,16,32,0.90); border:1px solid rgba(94,198,157,0.38);">
+            <summary style="padding:12px 16px; font-size:0.87rem; font-weight:700; color:#5EC69D; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <span>🧭 CAELUS Yaşayan Dünya Modeli — Düşüncenin Değişimi (T1 vs T2), Hipotez &amp; Karşı Kanıt Defteri, Rakip Dünya Modelleri ve Kendi Dünyam</span>
+              <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <span class="kpi-badge ok" id="lwm-header-status-badge" style="font-size:0.68rem;">17 KAVRAMLI BITEMPORAL HAFIZA AKTİF</span>
+                <span class="kpi-badge accent" id="lwm-header-replay-badge" style="font-size:0.68rem;">Çevrim Dışı Deterministik Çekirdek</span>
+              </span>
+            </summary>
+
+            <div style="padding:12px 16px; display:flex; flex-direction:column; gap:12px;">
+              <!-- 7 Epistemik Ayrım Rozeti -->
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding-bottom:8px; border-bottom:1px solid rgba(94,198,157,0.18);">
+                <div style="font-size:0.79rem; color:var(--text-2); line-height:1.45;">
+                  <strong>9 Adımlı Açıklanabilir Akış:</strong> (1) Dünyamı Tanımla → (2) Olayı Seç → (3) İki Analiz Tarihini Belirle (T1 &amp; T2) → (4) Bilinen &amp; Bilinmeyenleri Gör → (5) Uzak Bağlantı Yollarını İncele → (6) Hipotez &amp; Karşı Kanıtları Karşılaştır → (7) Rakip Modelleri &amp; Gelecekleri Çalıştır → (8) Düşüncenin Değişimini Gör → (9) Teknik &amp; Ticari Dayanakları İncele.
+                </div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap; font-size:0.66rem;" aria-label="7 Epistemik Bilgi Rozeti">
+                  <span class="kpi-badge ok">Bilinen</span>
+                  <span class="kpi-badge accent">Kaynakta İddia Edilen</span>
+                  <span class="kpi-badge">Varsayılan</span>
+                  <span class="kpi-badge warn">Araştırılan</span>
+                  <span class="kpi-badge ok">Simüle Edilen</span>
+                  <span class="kpi-badge warn">Çelişkili</span>
+                  <span class="kpi-badge">Bilinmeyen</span>
+                </div>
+              </div>
+
+              <!-- Adım 1, 2, 3 Kontrol Çubuğu: İki Kesim Tarihi (T1 & T2), Kullanıcı Dünyası Öğesi Ekleme ve Karşı Kanıt Testi -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; align-items:end;">
+                <div class="field-group">
+                  <label class="field-label" for="lwm-date-t1-input" style="font-size:0.75rem;">Adım 3A — İlk Analiz Tarihi (T1 UTC):</label>
+                  <input type="text" id="lwm-date-t1-input" value="2021-02-17T18:00:00.000Z" class="dt-editor-input mono" style="padding:6px 9px; font-size:0.77rem; border-radius:9px;">
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="lwm-date-t2-input" style="font-size:0.75rem;">Adım 3B — İkinci Analiz Tarihi (T2 UTC):</label>
+                  <input type="text" id="lwm-date-t2-input" value="2021-03-18T18:00:00.000Z" class="dt-editor-input mono" style="padding:6px 9px; font-size:0.77rem; border-radius:9px;">
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="lwm-user-entity-input" style="font-size:0.75rem;">Adım 1 — Dünyama Yeni Kurum/Soru Ekle:</label>
+                  <input type="text" id="lwm-user-entity-input" placeholder="Örn: Avrupa Fren ECU Montaj Tesisi" class="dt-editor-input" style="padding:6px 9px; font-size:0.77rem; border-radius:9px;">
+                </div>
+                <div class="field-group" style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-lwm-run-comparison">🧭 İki Tarihli Analizi Çalıştır (T1 vs T2)</button>
+                  <button type="button" class="btn btn-sm btn-accent" id="btn-lwm-add-user-item">➕ Dünyama Ekle</button>
+                  <button type="button" class="btn btn-sm" id="btn-lwm-inject-counter-evidence">⚖️ Karşı Kanıt Ekle &amp; Hipotezi Güncelle</button>
+                </div>
+              </div>
+
+              <!-- 6 Ana Görünüm Kartı (Sade İlk Katman) -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px;">
+                <!-- Kart A: Adım 4 & 8 — Düşüncenin Değişimi (T1'de Ne Düşünüyorduk vs T2'de Ne Değişti?) -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#5EC69D;">ADIM 4 &amp; 8 — DÜŞÜNCENİN DEĞİŞİMİ (T1 vs T2)</strong>
+                    <span class="kpi-badge ok" style="font-size:0.65rem;">Bilinen &amp; Düzeltilen</span>
+                  </div>
+                  <div id="lwm-card-belief-revision" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    İki tarih arası değerlendirme farkı hazırlanıyor...
+                  </div>
+                </div>
+
+                <!-- Kart B: Adım 5 — Zamanlı İlişki Grafiği ve Uzak Bağlantı Keşfi -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#88D4FF;">ADIM 5 — UZAK BAĞLANTI KEŞFİ VE ETKİ YOLLARI</strong>
+                    <span class="kpi-badge warn" style="font-size:0.65rem;">Araştırılan</span>
+                  </div>
+                  <div id="lwm-card-distant-paths" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Alanlar arası çok adımlı aday yollar hesaplanıyor...
+                  </div>
+                </div>
+
+                <!-- Kart C: Adım 6 — Hipotez Defteri ve Karşı Kanıt Motoru -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#f0b45a;">ADIM 6 — HİPOTEZ DEFTERİ VE KARŞI KANITLAR</strong>
+                    <span class="kpi-badge warn" style="font-size:0.65rem;">Çelişkili / Araştırılan</span>
+                  </div>
+                  <div id="lwm-card-hypothesis-ledger" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Hipotez yaşam döngüsü yükleniyor...
+                  </div>
+                </div>
+
+                <!-- Kart D: Adım 7A — Rakip Dünya Modelleri (Model A, B, C, D) -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#a5f3fc;">ADIM 7A — RAKİP DÜNYA MODELLERİ (MODEL A/B/C/D)</strong>
+                    <span class="kpi-badge accent" style="font-size:0.65rem;">Kaynakta İddia Edilen &amp; Simüle Edilen</span>
+                  </div>
+                  <div id="lwm-card-competing-models" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Rakip dünya modelleri karşılaştırılıyor...
+                  </div>
+                </div>
+
+                <!-- Kart E: Adım 7B — Çok Aktörlü / Çok Ölçekli Gelecekler (3 Senaryo ve 3 Vade) -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#fde68a;">ADIM 7B — ÇOK ÖLÇEKLİ GELECEKLER (5 ÖLÇEK · 3 SENARYO)</strong>
+                    <span class="kpi-badge ok" style="font-size:0.65rem;">Simüle Edilen</span>
+                  </div>
+                  <div id="lwm-card-multiscale-futures" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Çok ölçekli gelecek senaryoları hesaplanıyor...
+                  </div>
+                </div>
+
+                <!-- Kart F: Adım 1 & 4 — Kullanıcının Kendi Dünyası ve Bilinmeyenler -->
+                <div class="caelus-clean-card" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <strong style="font-size:0.81rem; color:#c4b5fd;">ADIM 1 &amp; 4 — KULLANICININ KENDİ DÜNYASI VE BİLİNMEYENLER</strong>
+                    <span class="kpi-badge" style="font-size:0.65rem;">Varsayılan &amp; Bilinmeyen</span>
+                  </div>
+                  <div id="lwm-card-user-world" style="font-size:0.76rem; color:var(--text-2); line-height:1.48;">
+                    Kullanıcı dünyası etki analizi yükleniyor...
+                  </div>
+                </div>
+              </div>
+
+              <!-- Adım 9 — İkinci Katman Teknik ve Ticari Denetim Çekmecesi -->
+              <details class="expand-box" id="lwm-second-layer-audit-drawer" style="margin-top:2px;">
+                <summary style="padding:7px 12px; font-size:0.77rem; color:#5EC69D; cursor:pointer;">
+                  🛡️ Adım 9 (İkinci Katman): Sonuçların Dayanakları, Grafik Öğrenme Deneyi (GWM vs Baselines), Ticari Lisans Kapısı ve SHA-256 Denetim İzi
+                </summary>
+                <div id="lwm-second-layer-audit-body" class="expand-body mono" style="padding:10px 12px; font-size:0.73rem; color:var(--text-2); line-height:1.5;">
+                  İkinci katman teknik ve ticari dayanak verileri yükleniyor...
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -11181,6 +11312,8 @@ body.theme-light .linear-setting-row {
   <script src="/vendor/perspective/caelus-perspective.min.js"></script>
   <!-- DETERMINİSTİK EVRENSEL SENARYO DERLEYİCİSİ VE FİNANSAL / RİSK MOTORU -->
   <script src="scenario_compiler.js"></script>
+  <!-- CAELUS YAŞAYAN DÜNYA MODELİ (BITEMPORAL HAFIZA, DÜŞÜNCENİN DEĞİŞİMİ, HİPOTEZ DEFTERİ VE TİCARİ DENETİM) -->
+  <script src="living_world_model.js"></script>
   <!-- ANA UYGULAMA VE CANLI C++/RUST KÖPRÜSÜ -->
   <script src="app.js"></script>
 </body>

@@ -46,6 +46,8 @@ def main() -> int:
 
     idx = (ROOT / "ui/index.html").read_text(encoding="utf-8")
     compilerjs = (ROOT / "ui/scenario_compiler.js").read_text(encoding="utf-8")
+    lwmjs_path = ROOT / "ui/living_world_model.js"
+    lwmjs = lwmjs_path.read_text(encoding="utf-8") if lwmjs_path.exists() else ""
     appjs = (ROOT / "ui/app.js").read_text(encoding="utf-8")
     wasm_b64 = base64.b64encode(WASM.read_bytes()).decode("ascii")
     trusted_pubkey = (ROOT / "tools/caelus_trusted_pubkey.txt").read_text(encoding="ascii").strip().lower()
@@ -91,6 +93,7 @@ def main() -> int:
         lambda _: (
             inject
             + "<script>\n" + compilerjs + "\n</script>\n"
+            + ("<script>\n" + lwmjs + "\n</script>\n" if lwmjs else "")
             + "<script>\n" + appjs + "\n</script>"
         ),
         idx,

@@ -24668,6 +24668,188 @@ function initCaelusWorldImpactEngineUI() {
   runAndRenderWorldImpactEngine();
 }
 
+const lwmUserCustomWatchItems = [];
+let lwmActiveRuntimeBundle = null;
+
+function renderLivingWorldModelBundle(bundle) {
+  if (!bundle) return;
+  lwmActiveRuntimeBundle = bundle;
+
+  const setHtml = (id, html) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  };
+
+  const diff = bundle.beliefRevisionComparison;
+  if (diff && diff.valid) {
+    setHtml(
+      'lwm-card-belief-revision',
+      `<div><strong>T1 (${escapeHtml(diff.dateT1Iso.slice(0, 10))}):</strong> Erişilebilir Kayıt: <code>${diff.previousAssessment.accessibleRecordCount}</code> · Aktif İnanç: <code>${diff.previousAssessment.activeBeliefCount}</code> (SHA-256: <code>${diff.previousAssessment.snapshotHashSha256.slice(0, 10)}…</code>)</div>` +
+      `<div><strong>T2 (${escapeHtml(diff.dateT2Iso.slice(0, 10))}):</strong> Erişilebilir Kayıt: <code>${diff.currentAssessment.accessibleRecordCount}</code> · Yeni Gözlem: <code>+${diff.newlyArrivedObservations.length}</code> · Düzeltilen: <code>${diff.subsequentlyCorrectedRecords.length}</code> · Geri Çekilen: <code>${diff.subsequentlyRetractedRecords.length}</code></div>` +
+      `<div style="margin-top:4px; color:#5EC69D;"><strong>Güçlenen Hipotez:</strong> ${diff.strengthenedHypotheses.map(h => `${escapeHtml(h.hypothesisId)} (${escapeHtml(h.statusAtT1)} → ${escapeHtml(h.statusAtT2)})`).join(', ') || 'Yok'}</div>` +
+      `<div style="color:#f0b45a;"><strong>Zayıflayan / Geri Çekilen:</strong> ${diff.retractedHypotheses.concat(diff.weakenedHypotheses).map(h => `${escapeHtml(h.hypothesisId)} (${escapeHtml(h.statusAtT1)} → ${escapeHtml(h.statusAtT2)})`).join(', ') || 'Yok'}</div>` +
+      `<div style="margin-top:4px; font-size:0.72rem; color:var(--text-3);">${escapeHtml(diff.explicitRevisionRationaleTr)}</div>`
+    );
+  }
+
+  const dist = bundle.distantConnections;
+  if (dist) {
+    const pathsHtml = (dist.candidatePaths || []).slice(0, 3).map(p =>
+      `<div style="margin-bottom:5px; padding-bottom:4px; border-bottom:1px dashed rgba(136,212,255,0.16);">` +
+      `<strong>${escapeHtml(p.candidatePathId)}</strong> (${p.hopCount} adım · ${p.distinctDomainCount} alan · +${p.cumulativeLagHours} saat gecikme)<br>` +
+      `<span style="font-size:0.72rem;">Zincir: <code>${escapeHtml(p.nodeSequence.join(' → '))}</code></span><br>` +
+      `<span style="font-size:0.71rem; color:#f0b45a;">Zayıflatıcı Koşul: ${escapeHtml((p.whatDataWouldWeakenItTr || [])[0] || 'Belirtilmedi')}</span>` +
+      `</div>`
+    ).join('');
+    setHtml(
+      'lwm-card-distant-paths',
+      `<div>Durum: <code>${escapeHtml(dist.status)}</code> · Bütçe: <code>${dist.budgetUsage.nodesVisited}/${dist.budgetUsage.maxNodes}</code> düğüm · Döngü Engeli: <code>${dist.cyclesAvoidedCount}</code></div>` +
+      `<div style="margin-top:4px;">${pathsHtml || 'Aday yol bulunamadı.'}</div>` +
+      `<div style="font-size:0.70rem; color:var(--text-3);">${escapeHtml(dist.algorithmBoundaryNoticeTr)}</div>`
+    );
+  }
+
+  const ledger = bundle.hypothesisLedger;
+  if (ledger && ledger.hypothesesById) {
+    const hypsHtml = ledger.hypothesisOrder.map(hId => {
+      const h = ledger.hypothesesById.get(hId);
+      return `<div style="margin-bottom:6px; padding-bottom:5px; border-bottom:1px dashed rgba(240,180,90,0.2);">` +
+        `<strong>${escapeHtml(h.titleTr)}</strong> — <span class="kpi-badge warn" style="font-size:0.64rem;">${escapeHtml(h.status)}</span> (Sürüm: <code>v${h.versionNumber}</code>)<br>` +
+        `<span style="font-size:0.72rem;">Destekleyen Kanıt: <code>${h.supportingEvidence.length}</code> · Karşı Kanıt: <code>${h.counterEvidence.length}</code></span><br>` +
+        `<span style="font-size:0.71rem; color:var(--text-3);">Doğruysa Beklenen: ${escapeHtml((h.expectedObservationsIfTrue || [])[0] || '')}</span>` +
+        `</div>`;
+    }).join('');
+    setHtml('lwm-card-hypothesis-ledger', hypsHtml);
+  }
+
+  const comp = bundle.competingWorldModels && bundle.competingWorldModels.atT2;
+  if (comp) {
+    const modelsHtml = (comp.rankedByEvidenceAlignment || []).map(m =>
+      `<div style="margin-bottom:4px;">` +
+      `<strong>${escapeHtml(m.titleTr)}</strong> — Uyum Skoru: <code>${m.uncalibratedLogEvidenceScore}</code> ` +
+      `(Destek: <code>${m.supportingObservations.length}</code>, Zayıflatan: <code>${m.weakeningObservations.length}</code>)` +
+      `</div>`
+    ).join('');
+    setHtml(
+      'lwm-card-competing-models',
+      `<div>Karar Durumu: <code>${escapeHtml(comp.decisionStatus)}</code></div>` +
+      `<div style="margin-top:4px;">${modelsHtml}</div>` +
+      `<div style="font-size:0.71rem; color:var(--text-3); margin-top:3px;">Not: Uyum skoru kalibre edilmiş olasılık veya kanıtlanmış doğruluk değildir.</div>`
+    );
+  }
+
+  const fut = bundle.multiScaleFutures;
+  if (fut && fut.scenarios) {
+    const scenHtml = fut.scenarios.map(s =>
+      `<div style="margin-bottom:4px;">` +
+      `<strong>${escapeHtml(s.titleTr)}:</strong> Kapasite Akışı <code>%${s.throughputPct}</code> · Tepe Stres <code>%${s.peakStressPct}</code> · ` +
+      `Vade Belirsizlik Bantları: ${s.horizons.map(h => `${escapeHtml(h.labelTr.split(' ')[0])} ±%${h.uncertaintyBandPct}`).join(', ')}` +
+      `</div>`
+    ).join('');
+    setHtml(
+      'lwm-card-multiscale-futures',
+      `<div>Ölçekler: <code>${fut.scalesRepresented.map(sc => sc.scaleId).join(' → ')}</code></div>` +
+      `<div style="margin-top:4px;">${scenHtml}</div>` +
+      `<div style="font-size:0.71rem; color:#5EC69D;">Karşı-Olgusal Fark (S2 - S1): <strong>+${fut.counterfactualComparison.throughputDeltaPctPoints} puan</strong> (Aynı başlangıç durumu)</div>`
+    );
+  }
+
+  const uw = bundle.userWorldImpact;
+  if (uw) {
+    const qHtml = (uw.questionAnswers || []).map(q =>
+      `<div style="margin-bottom:4px;"><strong>Soru (${escapeHtml(q.questionId)}):</strong> ${escapeHtml(q.questionTr)}<br>` +
+      `<span style="color:${q.answerStatus.includes('YANITLANAMIYOR') ? '#f0b45a' : '#5EC69D'};">→ [${escapeHtml(q.answerStatus)}] ${escapeHtml(q.explanationTr)}</span></div>`
+    ).join('');
+    setHtml(
+      'lwm-card-user-world',
+      `<div>İzlenen Varlık: <code>${(bundle.userWorld && bundle.userWorld.entities.length) || 0}</code> · Doğrulanmış Bağ: <code>${uw.verifiedRelations.length}</code> · Aday Hipotez: <code>${uw.candidateHypothesesToInvestigate.length}</code> · Bağlantısız/Eksik: <code>${uw.missingLinksAndUnanswerableQuestions.length}</code></div>` +
+      `<div style="margin-top:4px;">${qHtml}</div>` +
+      `<div style="font-size:0.70rem; color:var(--text-3);">Veri Gizliliği: <code>${escapeHtml(uw.externalDataTransmission)}</code></div>`
+    );
+  }
+
+  const comm = bundle.commercialAudit;
+  const gexp = bundle.graphExperiment;
+  if (comm && gexp) {
+    setHtml(
+      'lwm-second-layer-audit-body',
+      `<div><strong>Motor Sürümü:</strong> ${escapeHtml(bundle.engineVersion)} | <strong>Tekrar Oynatım SHA-256:</strong> ${escapeHtml(bundle.deterministicReplaySha256)}</div>` +
+      `<div style="margin-top:4px;"><strong>Ticari Bağımsızlık ve Lisans Kapısı:</strong> Toplam İncelenen: ${comm.totalEvaluated} | Onaylı/Özgün: ${comm.approvedCount} | İncelemede: ${comm.underReviewCount} | Ticari Paket Dışı: ${comm.excludedCount} | Belirsiz Bileşenlerin Otomatik Onayı Engellendi: <code>${comm.allUncertainOrExcludedBlockedFromBundle}</code></div>` +
+      `<div style="margin-top:4px;"><strong>Grafik Öğrenme Deneyi (${escapeHtml(gexp.experimentId)}):</strong> Rejim 1 (Çok Adımlı Gecikmeli Yayılım) 2-Hop GWM MAE=${gexp.regime1_MultiHopDelayedCascade.maeExperimental2HopGwm} vs Eşik Kuralı MAE=${gexp.regime1_MultiHopDelayedCascade.maeSimpleThresholdRule} (Kazanan: ${escapeHtml(gexp.regime1_MultiHopDelayedCascade.winnerModel)}) | Rejim 2 (Kısa Durağan Seri — Basit Referansın Kazandığı Durum) Persistence MAE=${gexp.regime2_ShortStationaryRegimeWhereBaselineWins.maePersistence} vs 2-Hop GWM MAE=${gexp.regime2_ShortStationaryRegimeWhereBaselineWins.maeExperimental2HopGwm} (Kazanan: ${escapeHtml(gexp.regime2_ShortStationaryRegimeWhereBaselineWins.winnerModel)})</div>` +
+      `<div style="margin-top:4px;"><strong>Neyi Doğru Yakaladı:</strong> ${bundle.historicalOutcomeEvaluation.correctlyCaptured.map(c => escapeHtml(c.aspectTr)).join(' · ')}</div>` +
+      `<div><strong>Neyi Kaçırdı / Tahmin Etmedi:</strong> ${bundle.historicalOutcomeEvaluation.missedOrNotPredicted.map(c => escapeHtml(c.aspectTr)).join(' · ')}</div>`
+    );
+  }
+
+  const replayBadge = document.getElementById('lwm-header-replay-badge');
+  if (replayBadge && bundle.deterministicReplaySha256) {
+    replayBadge.textContent = `SHA-256: ${bundle.deterministicReplaySha256.slice(0, 12)}…`;
+  }
+}
+
+function runAndRenderLivingWorldModel(overrides = {}) {
+  const lwm = window.CaelusLivingWorldModel;
+  if (!lwm || typeof lwm.runTwoDateHistoricalRealityTest !== 'function') return null;
+
+  const t1El = document.getElementById('lwm-date-t1-input');
+  const t2El = document.getElementById('lwm-date-t2-input');
+  const dateT1Iso = overrides.dateT1Iso || (t1El && t1El.value ? t1El.value.trim() : '2021-02-17T18:00:00.000Z');
+  const dateT2Iso = overrides.dateT2Iso || (t2El && t2El.value ? t2El.value.trim() : '2021-03-18T18:00:00.000Z');
+
+  const bundle = lwm.runTwoDateHistoricalRealityTest({
+    dateT1Iso,
+    dateT2Iso,
+    extraUserWatchItems: lwmUserCustomWatchItems
+  });
+  renderLivingWorldModelBundle(bundle);
+  return bundle;
+}
+
+function initCaelusLivingWorldModelUI() {
+  const btnRun = document.getElementById('btn-lwm-run-comparison');
+  const btnAddUser = document.getElementById('btn-lwm-add-user-item');
+  const btnCounter = document.getElementById('btn-lwm-inject-counter-evidence');
+  const userInp = document.getElementById('lwm-user-entity-input');
+
+  if (btnRun) {
+    btnRun.addEventListener('click', () => runAndRenderLivingWorldModel());
+  }
+  if (btnAddUser) {
+    btnAddUser.addEventListener('click', () => {
+      const text = userInp && userInp.value ? userInp.value.trim() : 'Avrupa Fren ECU Montaj Tesisi';
+      lwmUserCustomWatchItems.push({
+        category: 'COMPANY',
+        entityId: `USER-CUSTOM-${lwmUserCustomWatchItems.length + 1}`,
+        nameTr: text,
+        domain: 'GLOBAL_AUTOMOTIVE_AND_FINANCE',
+        upstreamNodeIds: ['NODE_AUTO_TIER1_ECU']
+      });
+      if (userInp) userInp.value = '';
+      runAndRenderLivingWorldModel();
+    });
+  }
+  if (btnCounter) {
+    btnCounter.addEventListener('click', () => {
+      const lwm = window.CaelusLivingWorldModel;
+      if (!lwm) return;
+      const bundle = lwmActiveRuntimeBundle || runAndRenderLivingWorldModel();
+      if (!bundle || !bundle.hypothesisLedger) return;
+      lwm.submitHypothesisEvidence(bundle.hypothesisLedger, 'HYP-2-MULTI-WEEK-CLEANROOM-AND-OEM-CASCADE', {
+        evidenceId: `EV-USER-COUNTER-${Date.now()}`,
+        sourceId: 'USER-FIELD-INSPECTION',
+        polarity: 'COUNTER_EVIDENCE',
+        learnedAtTimeIso: '2021-03-18T17:00:00.000Z',
+        weight: 1.5,
+        summaryTr: 'Alternatif ikame mikrodenetleyici (MCU) stoklarının devreye girmesiyle bazı OEM hatlarında duruş süresi kısaldı.'
+      });
+      renderLivingWorldModelBundle(bundle);
+    });
+  }
+
+  window.runAndRenderLivingWorldModel = runAndRenderLivingWorldModel;
+  runAndRenderLivingWorldModel();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
   setInterval(updateClock, 1000);
@@ -24685,6 +24867,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initCaelusTenRepoIntegrations();
   initCaelusRealWorld13TechIntegrations();
   initCaelusWorldImpactEngineUI();
+  initCaelusLivingWorldModelUI();
 
   addAuditLog('info', 'CAELUS Karar Analitiği Arayüzü başlatıldı. Gerçek motor bağlantısı kontrol ediliyor...');
   addReplLine('Motor konsolu hazır. Komutlar: status, list levers, lever <id>, compare_lever <id> <ufuk> <tohum>, tick <n>, scenario <id>, load_json <json>, reset', 'info');
