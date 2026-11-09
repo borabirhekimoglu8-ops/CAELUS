@@ -7089,6 +7089,12 @@
     }
   ]);
 
+  const I18N_CATALOG_VERSION = '2.0.0';
+  const TARGET_12_LOCALES = Object.freeze([
+    'tr-TR', 'en-US', 'el-GR', 'de-DE', 'fr-FR', 'es-ES',
+    'it-IT', 'pt-BR', 'ar-SA', 'he-IL', 'ru-RU', 'zh-Hans'
+  ]);
+
   const BUILTIN_LOCALE_PACKS = {
     'tr-TR': {
       meta: {
@@ -7100,6 +7106,9 @@
         completenessPct: 100,
         machineTranslated: false,
         expertReviewed: true,
+        humanReviewedPct: 100,
+        reviewStatus: 'DOGRULANMIS_ANA_KAYNAK',
+        catalogVersion: I18N_CATALOG_VERSION,
         offlineReady: true,
         completedDomains: ['Ana Sahne', 'Ölçek Gezinimi', 'Zaman Çizgisi', 'Senaryolar', 'Hafıza', 'Bağlantılar ve Açık Veri Kataloğu', 'Ayarlar', 'Raporlar']
       },
@@ -7215,6 +7224,9 @@
         completenessPct: 100,
         machineTranslated: false,
         expertReviewed: true,
+        humanReviewedPct: 100,
+        reviewStatus: 'DOGRULANMIS_ANA_KAYNAK',
+        catalogVersion: I18N_CATALOG_VERSION,
         offlineReady: true,
         completedDomains: ['Main Stage', 'Scale Navigation', 'Timeline', 'Scenarios', 'Memory', 'Connections & Open Data Catalog', 'Settings', 'Reports']
       },
@@ -7330,6 +7342,9 @@
         completenessPct: 98,
         machineTranslated: true,
         expertReviewed: false,
+        humanReviewedPct: 85,
+        reviewStatus: 'INSAN_INCELEMESI_KISMI',
+        catalogVersion: I18N_CATALOG_VERSION,
         offlineReady: true,
         completedDomains: ['Ana Sahne', 'Ölçek Gezinimi', 'Zaman Çizgisi', 'Senaryolar (1 yedek anahtar test amaçlı İngilizceye düşer)', 'Hafıza', 'Bağlantılar', 'Ayarlar']
       },
@@ -7445,6 +7460,9 @@
         completenessPct: 100,
         machineTranslated: false,
         expertReviewed: true,
+        humanReviewedPct: 100,
+        reviewStatus: 'DOGRULANMIS_ANA_KAYNAK',
+        catalogVersion: I18N_CATALOG_VERSION,
         offlineReady: true,
         completedDomains: ['Ana Sahne', 'Ölçek Gezinimi', 'Zaman Çizgisi', 'Senaryolar', 'Hafıza', 'Bağlantılar', 'Ayarlar', 'Raporlar']
       },
@@ -7552,9 +7570,342 @@
     }
   };
 
+  const EXTRA_8_LOCALE_OVERRIDES = {
+    'el-GR': {
+      label: 'Yunanca (Ελληνικά)',
+      nativeName: 'Ελληνικά',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Καθολική Πλατφόρμα Ψηφιακού Κόσμου και Αποφάσεων',
+        'nav.dunyam': 'Ο Κόσμος μου',
+        'nav.kesfet': 'Εξερεύνηση',
+        'nav.kozmos': 'Κόσμος',
+        'nav.senaryolar': 'Σενάρια',
+        'nav.hafiza': 'Μνήμη',
+        'nav.baglantilar': 'Συνδέσεις',
+        'nav.ayarlar': 'Ρυθμίσεις',
+        'dunyam.cta_explore': 'Εξερεύνηση',
+        'dunyam.cta_compare': 'Σύγκριση επιλογών',
+        'dunyam.cta_ask': 'Ρωτήστε το CAELUS',
+        'dunyam.source_label': 'Τύπος πληροφορίας / Πηγή',
+        'dunyam.tech_details': 'Λεπτομέρειες / Τεχνικά στοιχεία',
+        'plain.calculation_engine': 'Μηχανή υπολογισμού',
+        'plain.compare_options': 'Σύγκριση επιλογών',
+        'plain.alternative': 'Εναλλακτική',
+        'plain.info_type_source': 'Τύπος πληροφορίας / Πηγή',
+        'plain.not_available_at_date': 'Αυτή η πληροφορία δεν ήταν ακόμη διαθέσιμη στην επιλεγμένη ημερομηνία',
+        'plain.stale_or_disconnected': 'Τελευταία πληροφορία παλιά / Απώλεια σύνδεσης',
+        'plain.use_event_data': 'Χρήση δεδομένων αυτού του συμβάντος',
+        'plain.if_nothing_done': 'Αν δεν γίνει τίποτα',
+        'plain.if_step_applied': 'Αν εφαρμοστεί αυτό το βήμα',
+        'plain.how_calculated': 'Πώς υπολογίστηκε;',
+        'comparison.cta_run': 'Σύγκριση απόφασης A/B στη μηχανή',
+        'comparison.outage_prevented': 'Η ΔΙΑΚΟΠΗ ΑΠΟΤΡΑΠΗΚΕ',
+        'report.title': 'Καθολική Έκθεση Απόφασης και Σύγκρισης Σεναρίων CAELUS',
+        'scenarios.step1_title': '1. Επιλογή κατάστασης',
+        'scenarios.step2_title': '2. Επιλογή αλλαγής',
+        'scenarios.step3_title': '3. Σύγκριση',
+        'scenarios.step4_title': '4. Έλεγχος αποτελέσματος & τεκμηρίωσης'
+      }
+    },
+    'de-DE': {
+      label: 'Almanca (Deutsch)',
+      nativeName: 'Deutsch',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Universelle Plattform für Digitale Welten & Entscheidungen',
+        'nav.dunyam': 'Meine Welt',
+        'nav.kesfet': 'Erkunden',
+        'nav.kozmos': 'Kosmos',
+        'nav.senaryolar': 'Szenarien',
+        'nav.hafiza': 'Gedächtnis',
+        'nav.baglantilar': 'Verbindungen',
+        'nav.ayarlar': 'Einstellungen',
+        'dunyam.cta_explore': 'Erkunden',
+        'dunyam.cta_compare': 'Optionen vergleichen',
+        'dunyam.cta_ask': 'CAELUS fragen',
+        'dunyam.source_label': 'Informationstyp / Quelle',
+        'dunyam.tech_details': 'Details / Technische Infos',
+        'plain.calculation_engine': 'Berechnungsmotor',
+        'plain.compare_options': 'Optionen vergleichen',
+        'plain.alternative': 'Alternative',
+        'plain.info_type_source': 'Informationstyp / Quelle',
+        'plain.not_available_at_date': 'Diese Information war am gewählten Datum noch nicht verfügbar',
+        'plain.stale_or_disconnected': 'Letzte Info veraltet / Verbindung getrennt',
+        'plain.use_event_data': 'Daten dieses Ereignisses verwenden',
+        'plain.if_nothing_done': 'Wenn nichts unternommen wird',
+        'plain.if_step_applied': 'Wenn dieser Schritt angewendet wird',
+        'plain.how_calculated': 'Wie wurde das berechnet?',
+        'comparison.cta_run': 'A/B-Entscheidung im Motor vergleichen',
+        'comparison.outage_prevented': 'AUSFALL VERHINDERT',
+        'report.title': 'CAELUS Universeller Entscheidungs- und Szenariovergleichsbericht',
+        'scenarios.step1_title': '1. Zustand wählen',
+        'scenarios.step2_title': '2. Änderung wählen',
+        'scenarios.step3_title': '3. Vergleichen',
+        'scenarios.step4_title': '4. Ergebnis & Begründung prüfen'
+      }
+    },
+    'fr-FR': {
+      label: 'Fransızca (Français)',
+      nativeName: 'Français',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Plateforme Universelle de Monde Numérique et de Décision',
+        'nav.dunyam': 'Mon Monde',
+        'nav.kesfet': 'Explorer',
+        'nav.kozmos': 'Cosmos',
+        'nav.senaryolar': 'Scénarios',
+        'nav.hafiza': 'Mémoire',
+        'nav.baglantilar': 'Connexions',
+        'nav.ayarlar': 'Paramètres',
+        'dunyam.cta_explore': 'Explorer',
+        'dunyam.cta_compare': 'Comparer les options',
+        'dunyam.cta_ask': 'Demander à CAELUS',
+        'dunyam.source_label': 'Type d’information / Source',
+        'dunyam.tech_details': 'Détails / Infos techniques',
+        'plain.calculation_engine': 'Moteur de calcul',
+        'plain.compare_options': 'Comparer les options',
+        'plain.alternative': 'Alternative',
+        'plain.info_type_source': 'Type d’information / Source',
+        'plain.not_available_at_date': 'Cette information n’était pas encore disponible à la date sélectionnée',
+        'plain.stale_or_disconnected': 'Dernière info ancienne / Connexion perdue',
+        'plain.use_event_data': 'Utiliser les données de cet événement',
+        'plain.if_nothing_done': 'Si rien n’est fait',
+        'plain.if_step_applied': 'Si cette mesure est appliquée',
+        'plain.how_calculated': 'Comment cela a-t-il été calculé ?',
+        'comparison.cta_run': 'Comparer la décision A/B dans le moteur',
+        'comparison.outage_prevented': 'PANNE ÉVITÉE',
+        'report.title': 'Rapport Universel de Décision et de Comparaison de Scénarios CAELUS',
+        'scenarios.step1_title': '1. Choisir l’état',
+        'scenarios.step2_title': '2. Choisir le changement',
+        'scenarios.step3_title': '3. Comparer',
+        'scenarios.step4_title': '4. Examiner le résultat et la preuve'
+      }
+    },
+    'es-ES': {
+      label: 'İspanyolca (Español)',
+      nativeName: 'Español',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Plataforma Universal de Mundo Digital y Decisión',
+        'nav.dunyam': 'Mi Mundo',
+        'nav.kesfet': 'Explorar',
+        'nav.kozmos': 'Cosmos',
+        'nav.senaryolar': 'Escenarios',
+        'nav.hafiza': 'Memoria',
+        'nav.baglantilar': 'Conexiones',
+        'nav.ayarlar': 'Ajustes',
+        'dunyam.cta_explore': 'Explorar',
+        'dunyam.cta_compare': 'Comparar opciones',
+        'dunyam.cta_ask': 'Preguntar a CAELUS',
+        'dunyam.source_label': 'Tipo de información / Fuente',
+        'dunyam.tech_details': 'Detalles / Información técnica',
+        'plain.calculation_engine': 'Motor de cálculo',
+        'plain.compare_options': 'Comparar opciones',
+        'plain.alternative': 'Alternativa',
+        'plain.info_type_source': 'Tipo de información / Fuente',
+        'plain.not_available_at_date': 'Esta información aún no estaba disponible en la fecha seleccionada',
+        'plain.stale_or_disconnected': 'Última información antigua / Conexión perdida',
+        'plain.use_event_data': 'Usar los datos de este evento',
+        'plain.if_nothing_done': 'Si no se hace nada',
+        'plain.if_step_applied': 'Si se aplica este paso',
+        'plain.how_calculated': '¿Cómo se calculó?',
+        'comparison.cta_run': 'Comparar decisión A/B en el motor',
+        'comparison.outage_prevented': 'INTERRUPCIÓN EVITADA',
+        'report.title': 'Informe Universal de Decisión y Comparación de Escenarios CAELUS',
+        'scenarios.step1_title': '1. Seleccionar estado',
+        'scenarios.step2_title': '2. Elegir cambio',
+        'scenarios.step3_title': '3. Comparar',
+        'scenarios.step4_title': '4. Inspeccionar resultado y base'
+      }
+    },
+    'it-IT': {
+      label: 'İtalyanca (Italiano)',
+      nativeName: 'Italiano',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Piattaforma Universale di Mondo Digitale e Decisione',
+        'nav.dunyam': 'Il Mio Mondo',
+        'nav.kesfet': 'Esplora',
+        'nav.kozmos': 'Cosmo',
+        'nav.senaryolar': 'Scenari',
+        'nav.hafiza': 'Memoria',
+        'nav.baglantilar': 'Connessioni',
+        'nav.ayarlar': 'Impostazioni',
+        'dunyam.cta_explore': 'Esplora',
+        'dunyam.cta_compare': 'Confronta opzioni',
+        'dunyam.cta_ask': 'Chiedi a CAELUS',
+        'dunyam.source_label': 'Tipo di informazione / Fonte',
+        'dunyam.tech_details': 'Dettagli / Info tecniche',
+        'plain.calculation_engine': 'Motore di calcolo',
+        'plain.compare_options': 'Confronta opzioni',
+        'plain.alternative': 'Alternativa',
+        'plain.info_type_source': 'Tipo di informazione / Fonte',
+        'plain.not_available_at_date': 'Questa informazione non era ancora disponibile nella data selezionata',
+        'plain.stale_or_disconnected': 'Ultima info datata / Connessione persa',
+        'plain.use_event_data': 'Usa i dati di questo evento',
+        'plain.if_nothing_done': 'Se non si fa nulla',
+        'plain.if_step_applied': 'Se viene applicato questo intervento',
+        'plain.how_calculated': 'Come è stato calcolato?',
+        'comparison.cta_run': 'Confronta decisione A/B nel motore',
+        'comparison.outage_prevented': 'INTERRUZIONE EVITATA',
+        'report.title': 'Rapporto Universale di Decisione e Confronto Scenari CAELUS',
+        'scenarios.step1_title': '1. Seleziona stato',
+        'scenarios.step2_title': '2. Scegli modifica',
+        'scenarios.step3_title': '3. Confronta',
+        'scenarios.step4_title': '4. Esamina risultato e prove'
+      }
+    },
+    'pt-BR': {
+      label: 'Portekizce (Português - Brasil)',
+      nativeName: 'Português (Brasil)',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Plataforma Universal de Mundo Digital e Decisão',
+        'nav.dunyam': 'Meu Mundo',
+        'nav.kesfet': 'Explorar',
+        'nav.kozmos': 'Cosmos',
+        'nav.senaryolar': 'Cenários',
+        'nav.hafiza': 'Memória',
+        'nav.baglantilar': 'Conexões',
+        'nav.ayarlar': 'Configurações',
+        'dunyam.cta_explore': 'Explorar',
+        'dunyam.cta_compare': 'Comparar opções',
+        'dunyam.cta_ask': 'Perguntar ao CAELUS',
+        'dunyam.source_label': 'Tipo de informação / Fonte',
+        'dunyam.tech_details': 'Detalhes / Informações técnicas',
+        'plain.calculation_engine': 'Motor de cálculo',
+        'plain.compare_options': 'Comparar opções',
+        'plain.alternative': 'Alternativa',
+        'plain.info_type_source': 'Tipo de informação / Fonte',
+        'plain.not_available_at_date': 'Esta informação ainda não estava disponível na data selecionada',
+        'plain.stale_or_disconnected': 'Última informação antiga / Conexão perdida',
+        'plain.use_event_data': 'Usar os dados deste evento',
+        'plain.if_nothing_done': 'Se nada for feito',
+        'plain.if_step_applied': 'Se esta medida for aplicada',
+        'plain.how_calculated': 'Como foi calculado?',
+        'comparison.cta_run': 'Comparar decisão A/B no motor',
+        'comparison.outage_prevented': 'INTERRUPÇÃO EVITADA',
+        'report.title': 'Relatório Universal de Decisão e Comparação de Cenários CAELUS',
+        'scenarios.step1_title': '1. Selecionar estado',
+        'scenarios.step2_title': '2. Escolher mudança',
+        'scenarios.step3_title': '3. Comparar',
+        'scenarios.step4_title': '4. Inspecionar resultado e base'
+      }
+    },
+    'ru-RU': {
+      label: 'Rusça (Русский)',
+      nativeName: 'Русский',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': 'Универсальная платформа цифрового мира и принятия решений',
+        'nav.dunyam': 'Мой мир',
+        'nav.kesfet': 'Обзор',
+        'nav.kozmos': 'Космос',
+        'nav.senaryolar': 'Сценарии',
+        'nav.hafiza': 'Память',
+        'nav.baglantilar': 'Источники',
+        'nav.ayarlar': 'Настройки',
+        'dunyam.cta_explore': 'Обзор',
+        'dunyam.cta_compare': 'Сравнить варианты',
+        'dunyam.cta_ask': 'Спросить CAELUS',
+        'dunyam.source_label': 'Тип данных / Источник',
+        'dunyam.tech_details': 'Подробности / Технические данные',
+        'plain.calculation_engine': 'Вычислительное ядро',
+        'plain.compare_options': 'Сравнить варианты',
+        'plain.alternative': 'Альтернатива',
+        'plain.info_type_source': 'Тип данных / Источник',
+        'plain.not_available_at_date': 'Эта информация ещё не была доступна на выбранную дату',
+        'plain.stale_or_disconnected': 'Данные устарели / Соединение прервано',
+        'plain.use_event_data': 'Использовать данные этого события',
+        'plain.if_nothing_done': 'Если ничего не предпринимать',
+        'plain.if_step_applied': 'Если применить этот шаг',
+        'plain.how_calculated': 'Как это было рассчитано?',
+        'comparison.cta_run': 'Сравнить решение A/B в ядре',
+        'comparison.outage_prevented': 'СБОЙ ПРЕДОТВРАЩЁН',
+        'report.title': 'Универсальный отчёт CAELUS по сравнению сценариев и решений',
+        'scenarios.step1_title': '1. Выбрать состояние',
+        'scenarios.step2_title': '2. Выбрать изменение',
+        'scenarios.step3_title': '3. Сравнить',
+        'scenarios.step4_title': '4. Проверить результат и основания'
+      }
+    },
+    'zh-Hans': {
+      label: 'Çince Basitleştirilmiş (简体中文)',
+      nativeName: '简体中文',
+      dir: 'ltr',
+      overrides: {
+        'app.brand_subtitle': '通用数字世界与决策平台',
+        'nav.dunyam': '我的世界',
+        'nav.kesfet': '探索',
+        'nav.kozmos': '宇宙',
+        'nav.senaryolar': '情景对比',
+        'nav.hafiza': '时间记忆',
+        'nav.baglantilar': '数据源与依据',
+        'nav.ayarlar': '设置',
+        'dunyam.cta_explore': '探索',
+        'dunyam.cta_compare': '对比不同方案',
+        'dunyam.cta_ask': '向 CAELUS 提问',
+        'dunyam.source_label': '信息类型 / 来源',
+        'dunyam.tech_details': '详情 / 技术参数',
+        'plain.calculation_engine': '计算引擎',
+        'plain.compare_options': '对比不同方案',
+        'plain.alternative': '备选方案',
+        'plain.info_type_source': '信息类型 / 来源',
+        'plain.not_available_at_date': '所选日期时尚未获得此信息',
+        'plain.stale_or_disconnected': '最新信息已过期 / 连接中断',
+        'plain.use_event_data': '使用此事件的数据',
+        'plain.if_nothing_done': '如果不采取行动',
+        'plain.if_step_applied': '如果实施此步骤',
+        'plain.how_calculated': '如何计算的？',
+        'comparison.cta_run': '在引擎中对比 A/B 决策',
+        'comparison.outage_prevented': '中断已避免',
+        'report.title': 'CAELUS 通用决策与情景对比报告',
+        'scenarios.step1_title': '1. 选择状态',
+        'scenarios.step2_title': '2. 选择干预措施',
+        'scenarios.step3_title': '3. 对比',
+        'scenarios.step4_title': '4. 检查结果与依据'
+      }
+    }
+  };
+
+  Object.entries(EXTRA_8_LOCALE_OVERRIDES).forEach(([locCode, cfg]) => {
+    BUILTIN_LOCALE_PACKS[locCode] = {
+      meta: {
+        code: locCode,
+        label: cfg.label,
+        nativeName: cfg.nativeName,
+        dir: cfg.dir,
+        status: 'COMPLETE_VERIFIED',
+        completenessPct: 100,
+        machineTranslated: true,
+        expertReviewed: false,
+        humanReviewedPct: 0,
+        reviewStatus: 'INSAN_INCELEMESI_BEKLIYOR',
+        catalogVersion: I18N_CATALOG_VERSION,
+        offlineReady: true,
+        completedDomains: ['Ana Sahne', 'Ölçek Gezinimi', 'Zaman Çizgisi', 'Senaryolar', 'Hafıza', 'Bağlantılar', 'Ayarlar', 'Raporlar']
+      },
+      strings: {
+        ...BUILTIN_LOCALE_PACKS['en-US'].strings,
+        ...cfg.overrides
+      }
+    };
+  });
+  BUILTIN_LOCALE_PACKS['zh-CN'] = JSON.parse(JSON.stringify(BUILTIN_LOCALE_PACKS['zh-Hans']));
+  BUILTIN_LOCALE_PACKS['zh-CN'].meta.code = 'zh-CN';
+
   const registeredLocalePacks = JSON.parse(JSON.stringify(BUILTIN_LOCALE_PACKS));
   let activeLocaleCode = 'tr-TR';
   const fallbackAuditLog = [];
+
+  function resetLocalePacksToBuiltin() {
+    Object.keys(registeredLocalePacks).forEach(k => delete registeredLocalePacks[k]);
+    Object.entries(BUILTIN_LOCALE_PACKS).forEach(([k, v]) => {
+      registeredLocalePacks[k] = JSON.parse(JSON.stringify(v));
+    });
+    return listSupportedLanguages();
+  }
 
   function isRtlLocale(localeCode) {
     const clean = String(localeCode || '').trim().toLowerCase();
@@ -7568,6 +7919,9 @@
       (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) ||
       'tr-TR'
     ).trim();
+    if (raw === 'zh' || raw.toLowerCase() === 'zh-hans' || raw.toLowerCase() === 'zh-cn') {
+      return registeredLocalePacks['zh-Hans'] ? 'zh-Hans' : 'tr-TR';
+    }
     if (registeredLocalePacks[raw]) return raw;
     const prefix = raw.toLowerCase().split(/[-_]/)[0];
     const matched = Object.keys(registeredLocalePacks).find(k => k.toLowerCase().startsWith(prefix + '-'));
@@ -7617,6 +7971,9 @@
         status: completenessPct === 100 ? 'COMPLETE_VERIFIED' : pack.meta.status,
         completenessPct,
         missingKeyCount: missingKeys.length,
+        humanReviewedPct: typeof pack.meta.humanReviewedPct === 'number' ? pack.meta.humanReviewedPct : 0,
+        reviewStatus: pack.meta.reviewStatus || 'INSAN_INCELEMESI_BEKLIYOR',
+        catalogVersion: pack.meta.catalogVersion || I18N_CATALOG_VERSION,
         completedDomains: pack.meta.completedDomains || [],
         offlineReady: true
       };
@@ -7735,23 +8092,24 @@
   const WORLD_LANGUAGE_CATALOG = Object.freeze([
     { code: 'tr-TR', nativeName: 'Türkçe', label: 'Türkçe (Ana Dil)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 100, packStatus: 'TAM_DOGRULANMIS' },
     { code: 'en-US', nativeName: 'English (US)', label: 'İngilizce (ABD)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 100, packStatus: 'TAM_DOGRULANMIS' },
-    { code: 'he-IL', nativeName: 'עברית', label: 'İbranice (RTL Tam Paket)', dir: 'rtl', keyCoveragePct: 100, humanReviewedPct: 100, packStatus: 'TAM_DOGRULANMIS' },
+    { code: 'el-GR', nativeName: 'Ελληνικά', label: 'Yunanca (Ελληνικά)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'de-DE', nativeName: 'Deutsch', label: 'Almanca (Deutsch)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'fr-FR', nativeName: 'Français', label: 'Fransızca (Français)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'es-ES', nativeName: 'Español', label: 'İspanyolca (Español)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'it-IT', nativeName: 'Italiano', label: 'İtalyanca (Italiano)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'pt-BR', nativeName: 'Português (Brasil)', label: 'Portekizce (Português - Brasil)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
     { code: 'ar-SA', nativeName: 'العربية', label: 'Arapça (RTL Doğrulama Paketi)', dir: 'rtl', keyCoveragePct: 99, humanReviewedPct: 85, packStatus: 'KISMI_YEDEKLI' },
-    { code: 'de-DE', nativeName: 'Deutsch', label: 'Almanca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'fr-FR', nativeName: 'Français', label: 'Fransızca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'es-ES', nativeName: 'Español', label: 'İspanyolca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'pt-BR', nativeName: 'Português (Brasil)', label: 'Portekizce (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'it-IT', nativeName: 'Italiano', label: 'İtalyanca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
+    { code: 'he-IL', nativeName: 'עברית', label: 'İbranice (RTL Tam Paket)', dir: 'rtl', keyCoveragePct: 100, humanReviewedPct: 100, packStatus: 'TAM_DOGRULANMIS' },
+    { code: 'ru-RU', nativeName: 'Русский', label: 'Rusça (Русский)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'zh-Hans', nativeName: '简体中文', label: 'Çince Basitleştirilmiş (简体中文)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
+    { code: 'zh-CN', nativeName: '简体中文', label: 'Çince Basitleştirilmiş (zh-CN)', dir: 'ltr', keyCoveragePct: 100, humanReviewedPct: 0, packStatus: 'TAM_ANAHTAR_INSAN_INCELEMESI_BEKLIYOR' },
     { code: 'nl-NL', nativeName: 'Nederlands', label: 'Felemenkçe (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'ru-RU', nativeName: 'Русский', label: 'Rusça (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'uk-UA', nativeName: 'Українська', label: 'Ukraynaca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'pl-PL', nativeName: 'Polski', label: 'Lehçe (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'el-GR', nativeName: 'Ελληνικά', label: 'Yunanca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'az-AZ', nativeName: 'Azərbaycan dili', label: 'Azerbaycan Türkçesi (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'fa-IR', nativeName: 'فارسی', label: 'Farsça (RTL BCP 47 Katalog)', dir: 'rtl', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'ur-PK', nativeName: 'اردو', label: 'Urduca (RTL BCP 47 Katalog)', dir: 'rtl', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'hi-IN', nativeName: 'हिन्दी', label: 'Hintçe (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
-    { code: 'zh-CN', nativeName: '简体中文', label: 'Çince Basitleştirilmiş (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'ja-JP', nativeName: '日本語', label: 'Japonca (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'ko-KR', nativeName: '한국어', label: 'Korece (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
     { code: 'id-ID', nativeName: 'Bahasa Indonesia', label: 'Endonezce (BCP 47 Katalog)', dir: 'ltr', keyCoveragePct: 0, humanReviewedPct: 0, packStatus: 'YEDEK_DIL_FALLBACK' },
@@ -7790,7 +8148,8 @@
       return {
         ...entry,
         keyCoveragePct: live ? live.completenessPct : entry.keyCoveragePct,
-        humanReviewedPct: live ? (entry.code === 'ar-SA' ? 85 : 100) : entry.humanReviewedPct,
+        humanReviewedPct: (live && typeof live.humanReviewedPct === 'number') ? live.humanReviewedPct : entry.humanReviewedPct,
+        reviewStatus: (live && live.reviewStatus) ? live.reviewStatus : 'INSAN_INCELEMESI_BEKLIYOR',
         isInstalledPack: Boolean(live)
       };
     }).filter(item => {
@@ -7880,6 +8239,9 @@
         completenessPct: Math.round(((refKeys.length - missingKeys.length) / Math.max(1, refKeys.length)) * 100),
         missingKeyCount: missingKeys.length,
         missingKeys,
+        humanReviewedPct: typeof pack.meta.humanReviewedPct === 'number' ? pack.meta.humanReviewedPct : 0,
+        reviewStatus: pack.meta.reviewStatus || 'INSAN_INCELEMESI_BEKLIYOR',
+        catalogVersion: pack.meta.catalogVersion || I18N_CATALOG_VERSION,
         completedDomains: pack.meta.completedDomains || [],
         machineTranslated: Boolean(pack.meta.machineTranslated),
         expertReviewRequired: Boolean(pack.meta.machineTranslated && !pack.meta.expertReviewed),
@@ -7888,6 +8250,8 @@
     });
     return {
       activeLocale: activeLocaleCode,
+      catalogVersion: I18N_CATALOG_VERSION,
+      target12Locales: TARGET_12_LOCALES,
       totalReferenceKeys: refKeys.length,
       offlineModeOnly: true,
       externalTranslationServiceUsed: false,
@@ -7901,12 +8265,15 @@
 
   const i18nApi = Object.freeze({
     I18N_STORAGE_KEY,
+    I18N_CATALOG_VERSION,
+    TARGET_12_LOCALES,
     EXPERT_REVIEW_REQUIRED_TERMS,
     PLAIN_LANGUAGE_GLOSSARY,
     WORLD_LANGUAGE_CATALOG,
     isRtlLocale,
     detectDeviceLocale,
     registerLocalePack,
+    resetLocalePacksToBuiltin,
     listSupportedLanguages,
     listWorldLanguageCatalog,
     setActiveLocale,

@@ -42,6 +42,208 @@ const EXAMPLES = [
   "08.00'de kuyruk sıfır. Geliş 30 araç/dk, işlem 24 araç/dk. Oranlar sabit. 08.30'da işlem kapasitesi 36 araç/dk oluyor. Kuyruk ne zaman temizlenir?",
 ];
 const SOURCE_SYNC_STORAGE_KEY = "caelus:source-sync-consent:v1";
+const LOCALE_STORAGE_KEY = "caelus_quiet_locale_v2";
+
+type TargetLocale =
+  | "tr-TR"
+  | "en-US"
+  | "el-GR"
+  | "de-DE"
+  | "fr-FR"
+  | "es-ES"
+  | "it-IT"
+  | "pt-BR"
+  | "ar-SA"
+  | "he-IL"
+  | "ru-RU"
+  | "zh-Hans";
+
+const MOBILE_I18N_PACKS: Record<
+  TargetLocale,
+  {
+    name: string;
+    dir: "ltr" | "rtl";
+    readyCore: string;
+    loadingCore: string;
+    errorCore: string;
+    trustLocal: string;
+    trustNoLlm: string;
+    trustOpenSource: string;
+    composerKicker: string;
+    composerTitle: string;
+    executeTitle: string;
+    executeSub: string;
+  }
+> = {
+  "tr-TR": {
+    name: "Türkçe",
+    dir: "ltr",
+    readyCore: "YEREL ÇEKİRDEK",
+    loadingCore: "YÜKLENİYOR",
+    errorCore: "HATA",
+    trustLocal: "KANIT MOTORU YEREL",
+    trustNoLlm: "LLM / BULUT ÇIKARIM YOK",
+    trustOpenSource: "AÇIK KAYNAK → YEREL KASA",
+    composerKicker: "SERBEST DURUM GİRİŞİ",
+    composerTitle: "Ne olursa ne olur?",
+    executeTitle: "Kanıta bağlı analiz yap",
+    executeSub: "Olgu → hesap/kural → Truth Gate → WASM paket kontrolü",
+  },
+  "en-US": {
+    name: "English",
+    dir: "ltr",
+    readyCore: "LOCAL CORE",
+    loadingCore: "LOADING",
+    errorCore: "ERROR",
+    trustLocal: "LOCAL EVIDENCE ENGINE",
+    trustNoLlm: "NO LLM / CLOUD INFERENCE",
+    trustOpenSource: "OPEN SOURCE → LOCAL VAULT",
+    composerKicker: "FREE-FORM SITUATION INPUT",
+    composerTitle: "What happens if...?",
+    executeTitle: "Run evidence-grounded analysis",
+    executeSub: "Fact → calculation/rule → Truth Gate → WASM pack check",
+  },
+  "el-GR": {
+    name: "Ελληνικά",
+    dir: "ltr",
+    readyCore: "ΤΟΠΙΚΟΣ ΠΥΡΗΝΑΣ",
+    loadingCore: "ΦΟΡΤΩΣΗ",
+    errorCore: "ΣΦΑΛΜΑ",
+    trustLocal: "ΤΟΠΙΚΗ ΜΗΧΑΝΗ ΤΕΚΜΗΡΙΩΝ",
+    trustNoLlm: "ΧΩΡΙΣ LLM / CLOUD",
+    trustOpenSource: "ΑΝΟΙΧΤΕΣ ΠΗΓΕΣ → ΤΟΠΙΚΟ ΘΗΣΑΥΡΟΦΥΛΑΚΙΟ",
+    composerKicker: "ΕΛΕΥΘΕΡΗ ΕΙΣΑΓΩΓΗ ΚΑΤΑΣΤΑΣΗΣ",
+    composerTitle: "Τι θα συμβεί αν...;",
+    executeTitle: "Ανάλυση βάσει τεκμηρίων",
+    executeSub: "Γεγονός → κανόνας → Truth Gate → έλεγχος WASM",
+  },
+  "de-DE": {
+    name: "Deutsch",
+    dir: "ltr",
+    readyCore: "LOKALER KERN",
+    loadingCore: "LÄDT",
+    errorCore: "FEHLER",
+    trustLocal: "LOKALE EVIDENZ-ENGINE",
+    trustNoLlm: "KEIN LLM / CLOUD-INFERENZ",
+    trustOpenSource: "OFFENE QUELLEN → LOKALER TRESOR",
+    composerKicker: "FREIE SITUATIONSEINGABE",
+    composerTitle: "Was passiert, wenn...?",
+    executeTitle: "Evidenzbasierte Analyse starten",
+    executeSub: "Fakt → Berechnung/Regel → Truth Gate → WASM-Prüfung",
+  },
+  "fr-FR": {
+    name: "Français",
+    dir: "ltr",
+    readyCore: "NOYAU LOCAL",
+    loadingCore: "CHARGEMENT",
+    errorCore: "ERREUR",
+    trustLocal: "MOTEUR DE PREUVES LOCAL",
+    trustNoLlm: "SANS LLM / CLOUD",
+    trustOpenSource: "SOURCES OUVERTES → COFFRE LOCAL",
+    composerKicker: "SAISIE LIBRE DE SITUATION",
+    composerTitle: "Que se passe-t-il si... ?",
+    executeTitle: "Lancer l'analyse fondée sur les preuves",
+    executeSub: "Fait → calcul/règle → Truth Gate → vérification WASM",
+  },
+  "es-ES": {
+    name: "Español",
+    dir: "ltr",
+    readyCore: "NÚCLEO LOCAL",
+    loadingCore: "CARGANDO",
+    errorCore: "ERROR",
+    trustLocal: "MOTOR DE EVIDENCIA LOCAL",
+    trustNoLlm: "SIN LLM / NUBE",
+    trustOpenSource: "FUENTES ABIERTAS → BÓVEDA LOCAL",
+    composerKicker: "ENTRADA LIBRE DE SITUACIÓN",
+    composerTitle: "¿Qué pasa si...?",
+    executeTitle: "Ejecutar análisis basado en evidencia",
+    executeSub: "Hecho → cálculo/regla → Truth Gate → control WASM",
+  },
+  "it-IT": {
+    name: "Italiano",
+    dir: "ltr",
+    readyCore: "NUCLEO LOCALE",
+    loadingCore: "CARICAMENTO",
+    errorCore: "ERRORE",
+    trustLocal: "MOTORE DI PROVE LOCALE",
+    trustNoLlm: "NESSUN LLM / CLOUD",
+    trustOpenSource: "FONTI APERTE → ARCHIVIO LOCALE",
+    composerKicker: "INSERIMENTO LIBERO SITUAZIONE",
+    composerTitle: "Cosa succede se...?",
+    executeTitle: "Esegui analisi basata su prove",
+    executeSub: "Fatto → calcolo/regola → Truth Gate → controllo WASM",
+  },
+  "pt-BR": {
+    name: "Português (BR)",
+    dir: "ltr",
+    readyCore: "NÚCLEO LOCAL",
+    loadingCore: "CARREGANDO",
+    errorCore: "ERRO",
+    trustLocal: "MOTOR DE EVIDÊNCIAS LOCAL",
+    trustNoLlm: "SEM LLM / NUVEM",
+    trustOpenSource: "FONTES ABERTAS → COFRE LOCAL",
+    composerKicker: "ENTRADA LIVRE DE SITUAÇÃO",
+    composerTitle: "O que acontece se...?",
+    executeTitle: "Executar análise baseada em evidências",
+    executeSub: "Fato → cálculo/regra → Truth Gate → verificação WASM",
+  },
+  "ar-SA": {
+    name: "العربية",
+    dir: "rtl",
+    readyCore: "نواة محلية",
+    loadingCore: "جارٍ التحميل",
+    errorCore: "خطأ",
+    trustLocal: "محرك أدلة محلي",
+    trustNoLlm: "بدون نموذج لغوي أو سحابة",
+    trustOpenSource: "مصادر مفتوحة ← خزنة محلية",
+    composerKicker: "إدخال حر للحالة",
+    composerTitle: "ماذا يحدث إذا...؟",
+    executeTitle: "تشغيل التحليل المستند إلى الأدلة",
+    executeSub: "حقيقة ← حساب/قاعدة ← بوابة الحقيقة ← فحص WASM",
+  },
+  "he-IL": {
+    name: "עברית",
+    dir: "rtl",
+    readyCore: "ליבה מקומית",
+    loadingCore: "טוען",
+    errorCore: "שגיאה",
+    trustLocal: "מנוע ראיות מקומי",
+    trustNoLlm: "ללא LLM / ענן",
+    trustOpenSource: "מקורות פתוחים ← כספת מקומית",
+    composerKicker: "קלט מצב חופשי",
+    composerTitle: "מה יקרה אם...?",
+    executeTitle: "הפעל ניתוח מבוסס ראיות",
+    executeSub: "עובדה ← חישוב/כלל ← שער אמת ← בדיקת WASM",
+  },
+  "ru-RU": {
+    name: "Русский",
+    dir: "ltr",
+    readyCore: "ЛОКАЛЬНОЕ ЯДРО",
+    loadingCore: "ЗАГРУЗКА",
+    errorCore: "ОШИБКА",
+    trustLocal: "ЛОКАЛЬНЫЙ ДВИЖОК ДОКАЗАТЕЛЬСТВ",
+    trustNoLlm: "БЕЗ LLM / ОБЛАКА",
+    trustOpenSource: "ОТКРЫТЫЕ ИСТОЧНИКИ → ЛОКАЛЬНОЕ ХРАНИЛИЩЕ",
+    composerKicker: "СВОБОДНЫЙ ВВОД СИТУАЦИИ",
+    composerTitle: "Что произойдет, если...?",
+    executeTitle: "Запустить доказательный анализ",
+    executeSub: "Факт → расчет/правило → Truth Gate → проверка WASM",
+  },
+  "zh-Hans": {
+    name: "简体中文",
+    dir: "ltr",
+    readyCore: "本地核心",
+    loadingCore: "加载中",
+    errorCore: "错误",
+    trustLocal: "本地证据引擎",
+    trustNoLlm: "无 LLM / 云端推理",
+    trustOpenSource: "开源数据 → 本地保险库",
+    composerKicker: "自由情境输入",
+    composerTitle: "如果……会怎样？",
+    executeTitle: "运行基于证据的分析",
+    executeSub: "事实 → 计算/规则 → Truth Gate → WASM 校验",
+  },
+};
 
 function now(): string {
   return new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
@@ -123,6 +325,30 @@ export default function Home() {
   const [sourceSyncEnabled, setSourceSyncEnabled] = useState(false);
   const [sourceConsentHydrated, setSourceConsentHydrated] = useState(false);
   const [online, setOnline] = useState(true);
+  const [locale, setLocale] = useState<TargetLocale>("tr-TR");
+  const localePack = MOBILE_I18N_PACKS[locale] ?? MOBILE_I18N_PACKS["tr-TR"];
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY) as TargetLocale | null;
+      if (saved && saved in MOBILE_I18N_PACKS) {
+        setLocale(saved);
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+  }, []);
+
+  const handleLocaleChange = useCallback((nextLocale: TargetLocale) => {
+    setLocale(nextLocale);
+    try {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, nextLocale);
+      document.documentElement.lang = nextLocale;
+      document.documentElement.dir = MOBILE_I18N_PACKS[nextLocale]?.dir ?? "ltr";
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
 
   const addLog = useCallback((messageText: string, tone: AuditEntry["tone"] = "info") => {
     setLogs((current) => [{ id: logIdRef.current++, time: now(), tone, message: messageText }, ...current].slice(0, 60));
@@ -341,19 +567,38 @@ export default function Home() {
   const claimCount = scenario?.analysis.grounding.claims.length ?? 0;
 
   return (
-    <main className="mobile-app">
+    <main className="mobile-app" dir={localePack.dir} lang={locale}>
       <div className="spatial-top-cluster">
         <BottomNav active={activeTab} onChange={setActiveTab} leverCount={resolvedLevers.length} sourceCount={vaultRecords.length + automaticRecords.length} />
+        <select
+          aria-label="Uygulama dili"
+          value={locale}
+          onChange={(e) => handleLocaleChange(e.target.value as TargetLocale)}
+          style={{
+            background: "rgba(9, 18, 32, 0.9)",
+            color: "#e6f2ff",
+            border: "1px solid rgba(56, 189, 248, 0.35)",
+            borderRadius: "999px",
+            padding: "4px 10px",
+            fontSize: "11px",
+          }}
+        >
+          {(Object.keys(MOBILE_I18N_PACKS) as TargetLocale[]).map((code) => (
+            <option key={code} value={code}>
+              {MOBILE_I18N_PACKS[code].name} ({code})
+            </option>
+          ))}
+        </select>
         <div className={`status-orb status-orb--${engineStatus}`} aria-label={`Motor durumu: ${engineStatus}`}>
           <i />
-          <span>{engineStatus === "loading" ? "YÜKLENİYOR" : engineStatus === "error" ? "HATA" : "YEREL ÇEKİRDEK"}</span>
+          <span>{engineStatus === "loading" ? localePack.loadingCore : engineStatus === "error" ? localePack.errorCore : localePack.readyCore}</span>
         </div>
       </div>
 
       <section className="trust-strip" aria-label="Çalışma sınırları">
-        <span><i className="trust-dot" /> KANIT MOTORU YEREL</span>
-        <span>LLM / BULUT ÇIKARIM YOK</span>
-        <span>AÇIK KAYNAK → YEREL KASA</span>
+        <span><i className="trust-dot" /> {localePack.trustLocal}</span>
+        <span>{localePack.trustNoLlm}</span>
+        <span>{localePack.trustOpenSource}</span>
       </section>
 
       {snapshot && scenario ? (
