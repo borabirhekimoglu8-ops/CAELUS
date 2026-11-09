@@ -44,6 +44,10 @@ jobs:
       - name: Validate universal scenario compiler
         env:
           CAELUS_OFFLINE_ONLY: "1"
+          # pages.yml builds only caelus_wasm.wasm (no native C++17 dist/caelus_os binary).
+          # Native C++17 binary tests (e.g., Test 37 REPL filesystem save_world/load_world)
+          # are strictly enforced in ci.yml on both Linux and Windows via CAELUS_REQUIRE_NATIVE_BIN="1".
+          CAELUS_WASM_ONLY: "1"
         run: |
           node --check ui/scenario_compiler.js
           node --check ui/app.js
@@ -61,6 +65,8 @@ jobs:
           test -s dist/sw.js
           grep -q 'CAELUS_WASM_B64' dist/index.html
           grep -q 'CaelusScenarioCompiler' dist/index.html
+          grep -q 'CaelusTwelveCapabilitiesSuite' dist/index.html
+          grep -q 'caelus-world-impact-engine-workspace' dist/index.html
           grep -q 'BS-01_SAHTE_UFUK' dist/index.html
           grep -q 'BS-02_GOLGE_ARSIV' dist/index.html
           grep -q 'BS-03_KUM_SAATI' dist/index.html

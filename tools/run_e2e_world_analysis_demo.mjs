@@ -19,8 +19,8 @@ const demoResult = suite.runEndToEndWorldAnalysisDemo({
 });
 
 const wieResult = suite.runWorldImpactEngineWorkflow({
-  problemId: 'PROB_ENERGY_TECH_FIN_TRADE',
-  decisionCutoffTimeIso: '2026-10-15T12:00:00.000Z',
+  problemId: 'REAL_CASE_2021_ERCOT_AUSTIN_SEMICONDUCTOR_AUTO',
+  decisionCutoffTimeIso: '2021-02-17T18:00:00.000Z',
   eventDurationHours: 48,
   capacityOrResourceAmountPct: 68,
   actorBehaviorPolicy: 'COOPERATIVE_SHARING',
@@ -119,5 +119,14 @@ if (nativeEngineVerification.executed) {
   console.log(`  C++17 Yerel Motor Doğrulaması: [${nativeEngineVerification.status}] (${nativeEngineVerification.binaryPath}) Dal A=${nativeEngineVerification.branchAThroughputRatio}, Dal B=${nativeEngineVerification.branchBThroughputRatio}`);
 } else {
   console.log(`  C++17 Yerel Motor Doğrulaması: [${nativeEngineVerification.status}] (${nativeEngineVerification.binaryPath})`);
+}
+const st9 = wieResult.stage9_PostCutoffRealityComparison;
+if (st9) {
+  console.log(`\n[6. KESİM ZAMANI SONRASI GERÇEK DÜNYA SONUÇLARIYLA KARŞILAŞTIRMA]`);
+  console.log(`  Durum                        : ${st9.status}`);
+  console.log(`  Yakalanan Halkalar           : ${st9.caughtEffectsByCaelus.length} madde`);
+  console.log(`  Kaçırılan / Eksik Unsurlar   : ${st9.missedOrUnderestimatedEffects.length} madde`);
+  console.log(`  Karıştırıcı Etkenler         : ${st9.confoundedOrOverSimplifiedLinks.length} madde`);
+  console.log(`  Kesim Anında Bilinemeyenler  : ${st9.unsupportedQuantitativeClaimsAtCutoff.length} madde`);
 }
 console.log('======================================================================');
