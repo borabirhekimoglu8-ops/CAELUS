@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import cp from 'node:child_process';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createStandaloneCaelusMcpJsonRpcHandler } from '../tools/caelus_mcp_server.mjs';
@@ -383,3 +384,26 @@ test('Test 12: 8 Varlık Sınırı Olmadan Tüm Varlıkların Senaryo Motoruna A
   }
 });
 
+
+test('DOCX main part is verified and extracted identically by native and browser ZIP paths', () => {
+  // Deflated Word body with Turkish text, an empty paragraph and an unrelated archive member.
+  const bytes = Buffer.from('UEsDBBQAAAAIABJeal2aI0iyxwAAADoBAAARAAAAd29yZC9kb2N1bWVudC54bWxdkD0SwiAQha+SobB0o6MWGFN4BW0sN8lqHMPPAIp6Gc+QO8R7CfFvtPlg4e3jLZnnlSqPgqRLzqKRlvsFq53THMCWNQm0Q6VJhrutMgJdKM0OvDKVNqoka/dyJxoYp+kMBO4lyzPPC1Vd4qojTITLl3i/NV17yCBWkaZnr9HwJ49huNVY0oJpQ5bMiVi+QRlcBCYvkwAs4Ok/mgzTNBmg0PNkhYeuvf68FOak5uMf9ms6h6ZpaIqK98E3Vy9/5oP3RPD9rfwBUEsDBBQAAAAIABJeal3i1ogNCAAAAAYAAAAWAAAAd29yZC9tZWRpYS9pZ25vcmVkLnR4dMtMz8svSgUAUEsBAhQDFAAAAAgAEl5qXZojSLLHAAAAOgEAABEAAAAAAAAAAAAAAIABAAAAAHdvcmQvZG9jdW1lbnQueG1sUEsBAhQDFAAAAAgAEl5qXeLWiA0IAAAABgAAABYAAAAAAAAAAAAAAIAB9gAAAHdvcmQvbWVkaWEvaWdub3JlZC50eHRQSwUGAAAAAAIAAgCDAAAAMgEAAAAA', 'base64');
+  const main = eng.readOpenXmlDocxMainPart(bytes);
+  assert.match(main.xml, /Yanaşma/);
+  assert.equal(main.originalSha256, eng.computeSha256Hex(bytes));
+  const sandbox = { Uint8Array, TextDecoder, TextEncoder };
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'ui', 'first_real_task_engine.js'), 'utf8'), sandbox);
+  const browserReader = sandbox.CaelusFirstRealTaskEngine.readOpenXmlDocxMainPart;
+  assert.equal(browserReader(bytes).xml, main.xml);
+  assert.equal(browserReader(bytes).originalSha256, main.originalSha256);
+
+  // Forge the declared output length. Both paths must stop during inflation.
+  const understated = Buffer.from(bytes);
+  const directory = understated.readUInt32LE(understated.length - 6);
+  understated.writeUInt32LE(1, directory + 24);
+  assert.throws(() => eng.readOpenXmlDocxMainPart(understated), /output|length|buffer/i);
+  assert.throws(() => browserReader(understated), /DEFLATE_OUTPUT_LIMIT/);
+  const badChecksum = Buffer.from(bytes);
+  badChecksum.writeUInt32LE(0, directory + 16);
+  assert.throws(() => eng.readOpenXmlDocxMainPart(badChecksum), /bütünlüğü/);
+});

@@ -990,3 +990,37 @@ test('A notebook citation changes a decision only after explicit assessment and 
   assert.equal(restored.replay(start).status, 'WAITING_FOR_EVIDENCE');
   assert.deepEqual(restored.replay().recommended.evidence.researchClaim, draft.assumption);
 });
+
+test('Word paragraph provenance stays distinct from an identical text source and survives decision storage', (t) => {
+  const memory = new Map();
+  const storage = {
+    getItem: (key) => memory.get(key) ?? null,
+    setItem: (key, value) => memory.set(key, value),
+    removeItem: (key) => memory.delete(key)
+  };
+  const { createResearchNotebook, createDecisionWorkspace } = CaelusConversationalAdvisor;
+  const notebook = createResearchNotebook(storage);
+  const content = 'Başlık\n\nYanaşma 14.00 olarak bildirildi.';
+  const metadata = { locatorKind: 'DOCX_BODY_PARAGRAPH', originalSha256: 'a'.repeat(64) };
+  assert.equal(notebook.addSources([
+    { title: 'Duyuru.docx', content, ...metadata },
+    { title: 'Duyuru.txt', content }
+  ]), 2);
+  const [word, text] = notebook.search('yanaşma');
+  assert.equal(word.line, 3);
+  assert.equal(word.sha256, text.sha256);
+  assert.equal(word.locatorKind, 'DOCX_BODY_PARAGRAPH');
+  assert.equal(text.locatorKind, undefined);
+  const { assumption } = notebook.draft(word, 'Yanaşma saati', '14.00');
+  assert.equal(assumption.evidence.originalSha256, metadata.originalSha256);
+  assert.equal(notebook.draft(text, 'Yanaşma saati', '14.00').assumption.evidence.title, 'Duyuru.txt');
+
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-10T08:00:00.000Z') });
+  const task = createDecisionWorkspace(storage);
+  task.create({
+    goal: 'Ek sefer', minUnits: 100, maxCost: 100,
+    options: [{ name: 'Sefer', units: 100, cost: 100, deadline: '2026-11-10T15:00:00.000Z', condition: 'Yanaşma' }]
+  });
+  task.recordEvidence({ condition: 'Yanaşma', status: 'CONFIRMED', reference: 'Duyuru.docx ¶3', researchClaim: assumption });
+  assert.deepEqual(createDecisionWorkspace(storage).replay().recommended.evidence.researchClaim, assumption);
+});

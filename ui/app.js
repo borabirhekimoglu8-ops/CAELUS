@@ -28124,6 +28124,10 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     });
   }
 
+  function researchCitationLabel(evidence, title = evidence.title) {
+    return title + (evidence.locatorKind === 'DOCX_BODY_PARAGRAPH' ? ' ¶' : ':') + evidence.line;
+  }
+
   const decisionPanel = document.getElementById('laa-decision-workspace');
   let decisionWorkspace;
   let stageDecisionResearchClaim;
@@ -28177,7 +28181,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         if (research) {
           const details = document.createElement('details');
           const summary = document.createElement('summary');
-          summary.textContent = research.evidence.title + ':' + research.evidence.line + ' · ' +
+          summary.textContent = researchCitationLabel(research.evidence) + ' · ' +
             research.subject + ': ' + research.value;
           const quote = document.createElement('blockquote');
           quote.style.whiteSpace = 'pre-wrap';
@@ -28235,9 +28239,9 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         clearDecisionAttachment();
         evidenceForm.reset();
         pendingResearchClaim = claim;
-        const { title, line, quote } = claim.evidence;
-        evidenceForm.elements.reference.value = title.slice(0, 220) + ':' + line;
-        attachmentSummary.textContent = title + ':' + line + ' · ' + claim.subject + ': ' + claim.value;
+        const { title, quote } = claim.evidence;
+        evidenceForm.elements.reference.value = researchCitationLabel(claim.evidence, title.slice(0, 220));
+        attachmentSummary.textContent = researchCitationLabel(claim.evidence) + ' · ' + claim.subject + ': ' + claim.value;
         attachmentQuote.textContent = quote;
         attachment.hidden = false;
         decisionPanel.open = true;
@@ -28395,9 +28399,9 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     }
 
     function renderHits() {
-      results.replaceChildren(...hits.map((hit) => listItem(hit.title + ':' + hit.line + ' · ' + hit.quote)));
+      results.replaceChildren(...hits.map((hit) => listItem(researchCitationLabel(hit) + ' · ' + hit.quote)));
       for (const select of [claims.elements.first, claims.elements.second]) {
-        select.replaceChildren(...hits.map((hit, index) => new Option(hit.title + ':' + hit.line, String(index))));
+        select.replaceChildren(...hits.map((hit, index) => new Option(researchCitationLabel(hit), String(index))));
       }
       if (hits.length > 1) claims.elements.second.selectedIndex = 1;
       claims.hidden = hits.length === 0;
@@ -28417,12 +28421,22 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     upload.addEventListener('submit', (event) => runResearch(event, async () => {
       if (!notebook) throw new Error('Yerel araştırma defteri kullanılamıyor.');
       const files = Array.from(upload.elements.documents.files);
-      if (files.length > 20 || files.some((file) => !/\.(txt|md|csv|tsv)$/i.test(file.name) || file.size > 400000)) {
-        throw new Error('En fazla 20 küçük TXT, Markdown, CSV veya TSV dosyası seçin.');
+      if (files.length > 20 || files.some((file) => !/\.(txt|md|csv|tsv|docx)$/i.test(file.name) ||
+          file.size > (/\.docx$/i.test(file.name) ? 2000000 : 400000))) {
+        throw new Error('En fazla 20 TXT, Markdown, CSV, TSV veya DOCX belgesi seçin. Word dosyası başına sınır 2 MB.');
       }
       const pendingGeneration = generation;
       const documents = await Promise.all(files.map(async (file) => {
         const bytes = await file.arrayBuffer();
+        if (/\.docx$/i.test(file.name)) {
+          const readDocx = window.CaelusFirstRealTaskEngine?.readOpenXmlDocxText;
+          if (!readDocx) throw new Error('Word belge okuyucusu yüklenemedi.');
+          try {
+            return { title: file.name, ...readDocx(bytes) };
+          } catch (error) {
+            throw new Error(file.name + ': ' + error.message);
+          }
+        }
         return { title: file.name, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
       }));
       if (pendingGeneration !== generation) return;
@@ -28467,7 +28481,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         'Olası çelişki. Tarih, birim ve kapsamı kaynaktan doğrulayın.';
       const list = document.createElement('ul');
       list.append(...result.claims.map((claim) => listItem(claim.subject + ': ' + claim.value +
-        ' · ' + claim.evidence.title + ':' + claim.evidence.line)));
+        ' · ' + researchCitationLabel(claim.evidence))));
       output.replaceChildren(heading, list);
     }));
     function clearResearch() {
