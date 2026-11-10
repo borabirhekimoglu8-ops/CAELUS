@@ -28320,6 +28320,116 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     deleteUserDataBtn?.addEventListener('click', (event) => runExperiment(event, clearExperiment));
   }
 
+  const researchPanel = document.getElementById('laa-research-notebook');
+  if (researchPanel && advMod?.createResearchNotebook) {
+    const upload = researchPanel.querySelector('#laa-research-import');
+    const search = researchPanel.querySelector('#laa-research-search');
+    const claims = researchPanel.querySelector('#laa-research-claims');
+    const sourceList = researchPanel.querySelector('#laa-research-sources');
+    const results = researchPanel.querySelector('#laa-research-hits');
+    const status = researchPanel.querySelector('#laa-research-status');
+    const output = researchPanel.querySelector('#laa-research-output');
+    let notebook;
+    let hits = [];
+    let generation = 0;
+
+    function listItem(text) {
+      const item = document.createElement('li');
+      item.textContent = text;
+      return item;
+    }
+
+    function renderSources() {
+      sourceList.replaceChildren(...notebook.list().map((source) => listItem(source.title)));
+    }
+
+    function renderHits() {
+      results.replaceChildren(...hits.map((hit) => listItem(hit.title + ':' + hit.line + ' · ' + hit.quote)));
+      for (const select of [claims.elements.first, claims.elements.second]) {
+        select.replaceChildren(...hits.map((hit, index) => new Option(hit.title + ':' + hit.line, String(index))));
+      }
+      if (hits.length > 1) claims.elements.second.selectedIndex = 1;
+      claims.hidden = hits.length === 0;
+      claims.querySelector('[value=compare]').disabled = hits.length < 2;
+    }
+
+    async function runResearch(event, action) {
+      event?.preventDefault();
+      status.textContent = '';
+      try { await action(); } catch (error) { status.textContent = error.message; }
+    }
+
+    runResearch(null, () => {
+      notebook = advMod.createResearchNotebook(window.localStorage);
+      renderSources();
+    });
+    upload.addEventListener('submit', (event) => runResearch(event, async () => {
+      if (!notebook) throw new Error('Yerel araştırma defteri kullanılamıyor.');
+      const files = Array.from(upload.elements.documents.files);
+      if (files.length > 20 || files.some((file) => !/\.(txt|md|csv|tsv)$/i.test(file.name) || file.size > 400000)) {
+        throw new Error('En fazla 20 küçük TXT, Markdown, CSV veya TSV dosyası seçin.');
+      }
+      const pendingGeneration = generation;
+      const documents = await Promise.all(files.map(async (file) => {
+        const bytes = await file.arrayBuffer();
+        return { title: file.name, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
+      }));
+      if (pendingGeneration !== generation) return;
+      const added = notebook.addSources(documents);
+      renderSources();
+      upload.reset();
+      status.textContent = added + ' yeni belge eklendi.';
+    }));
+    search.addEventListener('submit', (event) => runResearch(event, () => {
+      output.replaceChildren();
+      claims.reset();
+      hits = notebook.search(search.elements.question.value);
+      renderHits();
+      status.textContent = hits.length ? hits.length + ' kaynak satırı bulundu.' : 'Eşleşen kaynak satırı yok.';
+    }));
+    claims.addEventListener('submit', (event) => runResearch(event, () => {
+      const form = claims.elements;
+      const first = hits[Number(form.first.value)];
+      if (event.submitter?.value === 'draft') {
+        const draft = notebook.draft(first, form.subject.value, form.firstValue.value);
+        const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'caelus-senaryo-taslagi.json';
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        status.textContent = 'İnceleme gerektiren senaryo taslağı indirildi.';
+        return;
+      }
+      const result = notebook.compare(first, hits[Number(form.second.value)], form.subject.value,
+        form.firstValue.value, form.secondValue.value);
+      const heading = document.createElement('p');
+      heading.textContent = result.status === 'SAME_VALUE' ? 'Seçilen değerler eşleşiyor.' :
+        'Olası çelişki. Tarih, birim ve kapsamı kaynaktan doğrulayın.';
+      const list = document.createElement('ul');
+      list.append(...result.claims.map((claim) => listItem(claim.subject + ': ' + claim.value +
+        ' · ' + claim.evidence.title + ':' + claim.evidence.line)));
+      output.replaceChildren(heading, list);
+    }));
+    function clearResearch() {
+      notebook?.clear();
+      generation += 1;
+      hits = [];
+      renderHits();
+      sourceList.replaceChildren();
+      output.replaceChildren();
+      claims.reset();
+      upload.reset();
+      search.reset();
+    }
+    researchPanel.querySelector('#laa-research-clear').addEventListener('click', (event) => runResearch(event, () => {
+      if (window.confirm('Bu tarayıcıdaki araştırma defteri silinsin mi?')) clearResearch();
+    }));
+    deleteUserDataBtn?.addEventListener('click', (event) => runResearch(event, clearResearch));
+  }
+
   const askInput = document.getElementById('inp-laa-advisor-question');
   const askBtn = document.getElementById('btn-laa-advisor-ask');
   const replayBtn = document.getElementById('btn-laa-advisor-replay');

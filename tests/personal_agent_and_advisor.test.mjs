@@ -920,3 +920,36 @@ test('Experiment keeps its prior prediction and reports compatibility without cl
   assert.equal(overlapping.predictionsOverlap, true);
   assert.equal((await resumed.observe({ value: 27, source: 'Kayıt D' })).outcome, 'INCONCLUSIVE');
 });
+
+test('Research notebook restores source lines, flags candidate conflicts and exports reviewable evidence', () => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const first = { title: 'Liman duyurusu.md', content: '# Duyuru\r\n\r\n  Yanaşma saati: 14.00. ' };
+  const second = { title: 'Acentenin notu.txt', content: 'Yanaşma saati: 15.00.' };
+  const notebook = CaelusConversationalAdvisor.createResearchNotebook(adapter);
+  assert.equal(notebook.addSources([first, second, { ...first, title: 'Aynı kaydın kopyası.txt' }]), 2);
+  const restored = CaelusConversationalAdvisor.createResearchNotebook(adapter);
+  assert.deepEqual(restored.search('Buzlanma bekleniyor mu?'), []);
+  const hits = restored.search('YANAŞMA saati ne?');
+  assert.equal(hits.length, 2);
+  assert.equal(hits[0].line, 3);
+  assert.equal(hits[0].quote, '  Yanaşma saati: 14.00. ');
+  const compared = restored.compare(hits[0], hits[1], 'Yanaşma saati', '14.00', '15.00');
+  assert.equal(compared.status, 'POTENTIAL_CONFLICT');
+  assert.equal(compared.claims[1].evidence.title, second.title);
+  assert.throws(() => restored.compare(hits[0], hits[0], 'Yanaşma saati', '14.00', '14.00'), /farklı satır/);
+  assert.throws(() => restored.draft(hits[0], 'Yanaşma saati', '16.00'), /alıntıdaki/);
+  const draft = restored.draft(hits[0], 'Yanaşma saati', '14.00');
+  assert.equal(draft.status, 'REQUIRES_REVIEW');
+  assert.equal(draft.assumption.evidence.line, 3);
+  assert.match(draft.assumption.evidence.sha256, /^[a-f0-9]{64}$/);
+  const [key, raw] = storage.entries().next().value;
+  storage.set(key, raw.replace('14.00', '16.00'));
+  assert.throws(() => restored.search('yanaşma'), /içeriği değişmiş/);
+  restored.clear();
+  assert.deepEqual(notebook.list(), []);
+});

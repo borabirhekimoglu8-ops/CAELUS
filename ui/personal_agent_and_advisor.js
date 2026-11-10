@@ -5045,6 +5045,141 @@
     };
   }
 
+  function createResearchNotebook(storageAdapter) {
+    var key = 'caelus_research_notebook_v1';
+    var sourceLimit = 20;
+    var documentLimit = 100000;
+    var totalLimit = 400000;
+    var engine = getFirstRealTaskEngine();
+    if (!engine || typeof engine.computeSha256Hex !== 'function') {
+      throw new Error('Araştırma defteri kaynak özeti hesaplayıcısı yüklenemedi.');
+    }
+
+    function required(value, field, limit) {
+      if (typeof value !== 'string' || !value.trim() || value.length > limit) {
+        throw new TypeError(field + ' boş veya izin verilen uzunluğu aşıyor.');
+      }
+      return value.trim();
+    }
+
+    function normalize(value) {
+      return value.toLocaleLowerCase('tr-TR').normalize('NFD').replace(/\p{M}/gu, '').replace(/ı/g, 'i');
+    }
+
+    var stopWords = new Set(['bu', 'bir', 'ile', 'icin', 'veya', 'mi', 'mu', 'ne', 'nedir',
+      'nasil', 'hangi', 'hakkinda', 'olarak', 'var', 'yok', 'the', 'and', 'what', 'which', 'about']);
+    function terms(value) {
+      return new Set((normalize(value).match(/[\p{L}\p{N}]+/gu) || []).filter(function (token) {
+        return token.length >= 2 && !stopWords.has(token);
+      }));
+    }
+
+    function load() {
+      var raw = storageAdapter.getItem(key);
+      if (!raw) return [];
+      var saved = JSON.parse(raw);
+      if (!saved || saved.schema !== 1 || !Array.isArray(saved.sources) ||
+          saved.sources.length > sourceLimit || saved.sources.some(function (source) {
+            return !source || typeof source.title !== 'string' || typeof source.content !== 'string' ||
+              source.content.length > documentLimit || !/^[a-f0-9]{64}$/.test(source.sha256);
+          })) throw new Error('Yerel araştırma defteri okunamadı.');
+      return saved.sources;
+    }
+
+    function citation(source, number) {
+      var lines = source.content.split('\n');
+      if (!Number.isSafeInteger(number) || number < 1 || number > lines.length || !lines[number - 1].trim()) {
+        throw new RangeError('Kaynak satırı bulunamadı.');
+      }
+      return { title: source.title, sha256: source.sha256, line: number, quote: lines[number - 1] };
+    }
+
+    function claim(reference, subject, value, sources) {
+      if (!reference) throw new TypeError('Önce bir alıntı seçin.');
+      var source = sources.find(function (entry) { return entry.sha256 === reference.sha256; });
+      if (!source || engine.computeSha256Hex(source.content) !== source.sha256) {
+        throw new Error('Kaynak kaldırılmış veya içeriği değişmiş.');
+      }
+      var evidence = citation(source, reference.line);
+      var field = required(subject, 'Konu veya ölçüt', 250);
+      var quotedValue = required(value, 'Kaynakta geçen değer', 250);
+      if (!evidence.quote.includes(quotedValue)) throw new Error('Değeri alıntıdaki biçimiyle girin.');
+      return { subject: field, value: quotedValue, evidence: evidence };
+    }
+
+    return {
+      addSources: function (documents) {
+        if (!Array.isArray(documents) || !documents.length || documents.length > sourceLimit) {
+          throw new TypeError('Bir ila yirmi belge seçin.');
+        }
+        var sources = load();
+        var seen = new Set(sources.map(function (source) { return source.sha256; }));
+        var added = 0;
+        documents.forEach(function (document) {
+          var title = required(document.title, 'Belge adı', 250);
+          // Preserve source line numbers and quoted whitespace.
+          required(document.content, 'Belge metni', documentLimit);
+          var content = document.content.replace(/\r\n?/g, '\n');
+          var hash = engine.computeSha256Hex(content);
+          if (!seen.has(hash)) {
+            sources.push({ title: title, content: content, sha256: hash });
+            seen.add(hash);
+            added += 1;
+          }
+        });
+        if (sources.length > sourceLimit || sources.reduce(function (size, source) {
+          return size + source.content.length;
+        }, 0) > totalLimit) throw new RangeError('Defter en fazla 20 belge ve toplam 400.000 karakter saklar.');
+        storageAdapter.setItem(key, JSON.stringify({ schema: 1, sources: sources }));
+        return added;
+      },
+      list: function () {
+        return load().map(function (source) {
+          return { title: source.title, sha256: source.sha256 };
+        });
+      },
+      search: function (question) {
+        var query = terms(required(question, 'Soru', 500));
+        var hits = [];
+        if (query.size === 0) return hits;
+        load().forEach(function (source) {
+          if (engine.computeSha256Hex(source.content) !== source.sha256) {
+            throw new Error('Bir kaynağın içeriği değişmiş. Defteri yeniden oluşturun.');
+          }
+          source.content.split('\n').forEach(function (quote, index) {
+            var tokens = terms(quote);
+            var score = 0;
+            query.forEach(function (term) { if (tokens.has(term)) score += 1; });
+            if (score > 0) {
+              hits.push({ title: source.title, sha256: source.sha256, line: index + 1, quote: quote, score: score });
+            }
+          });
+        });
+        return hits.sort(function (a, b) { return b.score - a.score; }).slice(0, 12);
+      },
+      compare: function (first, second, subject, firstValue, secondValue) {
+        var sources = load();
+        var a = claim(first, subject, firstValue, sources);
+        var b = claim(second, subject, secondValue, sources);
+        if (a.evidence.sha256 === b.evidence.sha256 && a.evidence.line === b.evidence.line) {
+          throw new Error('Karşılaştırmak için iki farklı satır seçin.');
+        }
+        return {
+          status: normalize(a.value) === normalize(b.value) ? 'SAME_VALUE' : 'POTENTIAL_CONFLICT',
+          claims: [a, b]
+        };
+      },
+      draft: function (reference, subject, value) {
+        return {
+          schema: 'CAELUS_RESEARCH_SCENARIO_DRAFT_V1',
+          status: 'REQUIRES_REVIEW',
+          assumption: claim(reference, subject, value, load())
+        };
+      },
+      clear: function () { storageAdapter.removeItem(key); }
+    };
+  }
+
   var CaelusWorldDataGate = {
     LOGICAL_DATA_ZONES_5: LOGICAL_DATA_ZONES_5,
     WORLD_GATE_MODES_3: WORLD_GATE_MODES_3,
@@ -5060,6 +5195,7 @@
   var CaelusConversationalAdvisor = {
     createDecisionWorkspace: createDecisionWorkspace,
     createExperimentWorkspace: createExperimentWorkspace,
+    createResearchNotebook: createResearchNotebook,
     ANSWER_PASSPORT_CLASSES_10: ANSWER_PASSPORT_CLASSES_10,
     EPISTEMIC_STATES_12: EPISTEMIC_STATES_12,
     EMPTY_WORLD_DATA_MESSAGE_TR: EMPTY_WORLD_DATA_MESSAGE_TR,

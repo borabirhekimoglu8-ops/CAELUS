@@ -6961,6 +6961,32 @@ body.theme-light .linear-setting-row {
           <p id="laa-experiment-status" role="status"></p>
           <div id="laa-experiment-output"></div>
         </details>
+        <details id="laa-research-notebook">
+          <summary>Araştırma Defteri</summary>
+          <p>Bu tarayıcıda saklanan metin belgelerinde kaynak satırlarını bulun. PDF veya Word kullanıyorsanız önce metne dönüştürün.</p>
+          <form id="laa-research-import">
+            <label>Belgeler <input name="documents" type="file" accept=".txt,.md,.csv,.tsv" multiple required></label>
+            <button type="submit" class="btn btn-sm">Deftere ekle</button>
+          </form>
+          <ul id="laa-research-sources"></ul>
+          <form id="laa-research-search">
+            <label>Soru veya anahtar kelimeler <input name="question" maxlength="500" required></label>
+            <button type="submit" class="btn btn-sm btn-primary">Kaynak satırlarını bul</button>
+          </form>
+          <ol id="laa-research-hits" style="overflow-wrap:anywhere;"></ol>
+          <form id="laa-research-claims" hidden>
+            <label>Konu veya ölçüt <input name="subject" maxlength="250" required></label>
+            <label>Birinci alıntı <select name="first"></select></label>
+            <label>Alıntıda geçen değer <input name="firstValue" maxlength="250" required></label>
+            <label>İkinci alıntı <select name="second"></select></label>
+            <label>İkinci alıntıda geçen değer <input name="secondValue" maxlength="250"></label>
+            <button type="submit" value="compare" class="btn btn-sm">Değerleri karşılaştır</button>
+            <button type="submit" value="draft" class="btn btn-sm">İlk alıntıdan senaryo taslağı indir</button>
+          </form>
+          <button type="button" id="laa-research-clear" class="btn btn-sm">Yerel defteri sil</button>
+          <p id="laa-research-status" role="status"></p>
+          <div id="laa-research-output"></div>
+        </details>
 
       </div>
 
