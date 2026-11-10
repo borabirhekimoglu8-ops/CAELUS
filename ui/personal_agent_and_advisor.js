@@ -4815,16 +4815,18 @@
       }
       var value = label(claim.value, 'Kaynakta geçen değer');
       if (!evidence.quote.includes(value)) throw new TypeError('Değer kaynak alıntısında bulunamadı.');
-      return {
-        subject: label(claim.subject, 'Konu veya ölçüt'),
-        value: value,
-        evidence: {
-          title: label(evidence.title, 'Kaynak adı'),
-          line: integer(evidence.line, 1, 'Kaynak satırı'),
-          sha256: evidence.sha256,
-          quote: evidence.quote
-        }
+      var source = {
+        title: label(evidence.title, 'Kaynak adı'),
+        line: integer(evidence.line, 1, 'Kaynak konumu'),
+        sha256: evidence.sha256,
+        quote: evidence.quote
       };
+      if (evidence.locatorKind !== undefined || evidence.originalSha256 !== undefined) {
+        if (!validDocxSource(evidence)) throw new TypeError('Word kaynak kimliği geçersiz.');
+        source.locatorKind = evidence.locatorKind;
+        source.originalSha256 = evidence.originalSha256;
+      }
+      return { subject: label(claim.subject, 'Konu veya ölçüt'), value: value, evidence: source };
     }
 
     function cleanEvidence(entry, task) {
@@ -5067,6 +5069,11 @@
     };
   }
 
+  function validDocxSource(source) {
+    return source.locatorKind === 'DOCX_BODY_PARAGRAPH' && typeof source.originalSha256 === 'string' &&
+      source.originalSha256.length === 64 && /^[a-f0-9]{64}$/.test(source.originalSha256);
+  }
+
   function createResearchNotebook(storageAdapter) {
     var key = 'caelus_research_notebook_v1';
     var sourceLimit = 20;
@@ -5103,7 +5110,8 @@
       if (!saved || saved.schema !== 1 || !Array.isArray(saved.sources) ||
           saved.sources.length > sourceLimit || saved.sources.some(function (source) {
             return !source || typeof source.title !== 'string' || typeof source.content !== 'string' ||
-              source.content.length > documentLimit || !/^[a-f0-9]{64}$/.test(source.sha256);
+              source.content.length > documentLimit || !/^[a-f0-9]{64}$/.test(source.sha256) ||
+              ((source.locatorKind !== undefined || source.originalSha256 !== undefined) && !validDocxSource(source));
           })) throw new Error('Yerel araştırma defteri okunamadı.');
       return saved.sources;
     }
@@ -5113,12 +5121,25 @@
       if (!Number.isSafeInteger(number) || number < 1 || number > lines.length || !lines[number - 1].trim()) {
         throw new RangeError('Kaynak satırı bulunamadı.');
       }
-      return { title: source.title, sha256: source.sha256, line: number, quote: lines[number - 1] };
+      return sourceReference(source, number, lines[number - 1]);
+    }
+
+    function sourceReference(source, number, quote) {
+      var reference = { title: source.title, sha256: source.sha256, line: number, quote: quote };
+      if (source.locatorKind) {
+        reference.locatorKind = source.locatorKind;
+        reference.originalSha256 = source.originalSha256;
+      }
+      return reference;
+    }
+
+    function identity(source) {
+      return source.originalSha256 ? 'docx:' + source.originalSha256 + ':' + source.sha256 : 'text:' + source.sha256;
     }
 
     function claim(reference, subject, value, sources) {
       if (!reference) throw new TypeError('Önce bir alıntı seçin.');
-      var source = sources.find(function (entry) { return entry.sha256 === reference.sha256; });
+      var source = sources.find(function (entry) { return identity(entry) === identity(reference); });
       if (!source || engine.computeSha256Hex(source.content) !== source.sha256) {
         throw new Error('Kaynak kaldırılmış veya içeriği değişmiş.');
       }
@@ -5135,17 +5156,23 @@
           throw new TypeError('Bir ila yirmi belge seçin.');
         }
         var sources = load();
-        var seen = new Set(sources.map(function (source) { return source.sha256; }));
+        var seen = new Set(sources.map(identity));
         var added = 0;
         documents.forEach(function (document) {
           var title = required(document.title, 'Belge adı', 250);
           // Preserve source line numbers and quoted whitespace.
           required(document.content, 'Belge metni', documentLimit);
           var content = document.content.replace(/\r\n?/g, '\n');
-          var hash = engine.computeSha256Hex(content);
-          if (!seen.has(hash)) {
-            sources.push({ title: title, content: content, sha256: hash });
-            seen.add(hash);
+          var source = { title: title, content: content, sha256: engine.computeSha256Hex(content) };
+          if (document.locatorKind !== undefined || document.originalSha256 !== undefined) {
+            if (!validDocxSource(document)) throw new TypeError('Word kaynak kimliği geçersiz.');
+            source.locatorKind = document.locatorKind;
+            source.originalSha256 = document.originalSha256;
+          }
+          var id = identity(source);
+          if (!seen.has(id)) {
+            sources.push(source);
+            seen.add(id);
             added += 1;
           }
         });
@@ -5173,7 +5200,7 @@
             var score = 0;
             query.forEach(function (term) { if (tokens.has(term)) score += 1; });
             if (score > 0) {
-              hits.push({ title: source.title, sha256: source.sha256, line: index + 1, quote: quote, score: score });
+              hits.push(Object.assign(sourceReference(source, index + 1, quote), { score: score }));
             }
           });
         });
@@ -5183,7 +5210,7 @@
         var sources = load();
         var a = claim(first, subject, firstValue, sources);
         var b = claim(second, subject, secondValue, sources);
-        if (a.evidence.sha256 === b.evidence.sha256 && a.evidence.line === b.evidence.line) {
+        if (identity(a.evidence) === identity(b.evidence) && a.evidence.line === b.evidence.line) {
           throw new Error('Karşılaştırmak için iki farklı satır seçin.');
         }
         return {

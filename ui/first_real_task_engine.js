@@ -890,7 +890,7 @@
    * Hem Node.js (zlib.inflateRawSync) hem de tarayıcıda çalışır;
    * formül ifadelerini (<f>) ve önbellekli değerleri (<v>) ayrı ayrı okur.
    */
-  function extractZipEntriesSync(uint8Bytes) {
+  function extractZipEntriesSync(uint8Bytes, selection) {
     const buf = uint8Bytes instanceof Uint8Array ? uint8Bytes : new Uint8Array(uint8Bytes || []);
     if (buf.length < 22 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
       throw new Error('CORRUPT_OR_INVALID_ZIP_HEADER: Dosya geçerli bir ZIP/OpenXML (.xlsx) kapsayıcısı değil.');
@@ -901,7 +901,8 @@
     let eocdOffset = -1;
     const minEocd = Math.max(0, buf.length - 65557);
     for (let i = buf.length - 22; i >= minEocd; i--) {
-      if (view.getUint32(i, true) === 0x06054b50) {
+      if (view.getUint32(i, true) === 0x06054b50 &&
+          (!selection || i + 22 + view.getUint16(i + 20, true) === buf.length)) {
         eocdOffset = i;
         break;
       }
@@ -917,14 +918,22 @@
       throw new Error('CORRUPT_ZIP_CENTRAL_DIRECTORY: Merkezi dizin sınırları dosya boyutunu aşıyor.');
     }
 
+    if (selection && (totalEntries > 2048 || cdOffset + cdSize !== eocdOffset ||
+        view.getUint16(eocdOffset + 4, true) !== 0 || view.getUint16(eocdOffset + 6, true) !== 0 ||
+        view.getUint16(eocdOffset + 8, true) !== totalEntries)) {
+      throw new Error('Word arşivinin merkezi dizini desteklenmiyor.');
+    }
+
     let inflateRawFn = null;
     if (typeof require === 'function') {
       try {
         const zlib = require('zlib');
-        inflateRawFn = (compBytes) => new Uint8Array(zlib.inflateRawSync(Buffer.from(compBytes)));
+        inflateRawFn = (compBytes, limit) => new Uint8Array(
+          zlib.inflateRawSync(compBytes, limit === undefined ? undefined : { maxOutputLength: limit })
+        );
       } catch (_) {}
     }
-    if (!inflateRawFn && typeof globalThis !== 'undefined' && typeof globalThis.caelusInflateRawSync === 'function') {
+    if (!inflateRawFn && !selection && typeof globalThis !== 'undefined' && typeof globalThis.caelusInflateRawSync === 'function') {
       inflateRawFn = globalThis.caelusInflateRawSync;
     }
 
@@ -944,8 +953,18 @@
       const commentLen = view.getUint16(ptr + 32, true);
       const localHeaderOffset = view.getUint32(ptr + 42, true);
 
+      const flags = view.getUint16(ptr + 8, true);
+      const crc = view.getUint32(ptr + 16, true);
+      const next = ptr + 46 + fileNameLen + extraLen + commentLen;
+      if (selection && next > eocdOffset) throw new Error('Word arşivinde geçersiz dizin kaydı.');
       const fileName = decoder.decode(buf.subarray(ptr + 46, ptr + 46 + fileNameLen));
-      ptr += 46 + fileNameLen + extraLen + commentLen;
+      ptr = next;
+      if (selection) {
+        if (fileName !== selection.name) continue;
+        if (entries.has(fileName) || (flags & 1) || uncompressedSize === 0 || uncompressedSize > selection.limit) {
+          throw new Error('Word belge metni yinelenmiş, şifreli veya boyut sınırını aşıyor.');
+        }
+      }
 
       if (localHeaderOffset + 30 > buf.length || view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
         throw new Error(`CORRUPT_ZIP_LOCAL_HEADER: '${fileName}' yerel başlığı bozuk.`);
@@ -954,6 +973,12 @@
       const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
       const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
       const dataEnd = dataStart + compressedSize;
+      if (selection && (dataEnd > cdOffset || dataStart > cdOffset ||
+          view.getUint16(localHeaderOffset + 8, true) !== compressionMethod ||
+          view.getUint16(localHeaderOffset + 6, true) !== flags ||
+          decoder.decode(buf.subarray(localHeaderOffset + 30, localHeaderOffset + 30 + localNameLen)) !== fileName)) {
+        throw new Error('Word belge metninin arşiv başlığı geçersiz.');
+      }
       if (dataEnd > buf.length) {
         throw new Error(`CORRUPT_ZIP_DATA_SLICE: '${fileName}' veri dilimi bozuk.`);
       }
@@ -963,15 +988,22 @@
         entries.set(fileName, compSlice);
       } else if (compressionMethod === 8) {
         if (inflateRawFn) {
-          entries.set(fileName, inflateRawFn(compSlice));
+          entries.set(fileName, inflateRawFn(compSlice, selection ? uncompressedSize : undefined));
         } else {
           // Tarayıcıda senkron deflate yoksa saf JS RFC 1951 inflate çözücüsü kullan
-          entries.set(fileName, tinyInflateRaw(compSlice, uncompressedSize));
+          entries.set(fileName, tinyInflateRaw(compSlice, uncompressedSize, selection ? uncompressedSize : undefined));
         }
       } else {
         throw new Error(`UNSUPPORTED_ZIP_COMPRESSION: '${fileName}' desteklenmeyen sıkıştırma yöntemi (${compressionMethod}).`);
       }
+      if (selection) {
+        const bytes = entries.get(fileName);
+        if (bytes.length !== uncompressedSize || crc32Bytes(bytes) !== crc) {
+          throw new Error('Word belge metninin arşiv bütünlüğü doğrulanamadı.');
+        }
+      }
     }
+    if (selection && ptr !== eocdOffset) throw new Error('Word arşiv dizini eksik.');
 
     return entries;
   }
@@ -980,9 +1012,13 @@
    * Saf JS RFC 1951 (Deflate-Raw) açıcı — tarayıcıda Node zlib olmadığında bile
    * herhangi bir dış kütüphane olmadan gerçek .xlsx dosyalarını açar.
    */
-  function tinyInflateRaw(src, expectedLen) {
+  function tinyInflateRaw(src, expectedLen, outputLimit = Infinity) {
     const out = [];
     let bitPos = 0;
+
+    function checkOutput(count) {
+      if (out.length + count > outputLimit) throw new Error('DEFLATE_OUTPUT_LIMIT_EXCEEDED');
+    }
 
     function readBits(n) {
       let val = 0;
@@ -1069,6 +1105,8 @@
         const nlen = readBits(16);
         if ((len ^ 0xffff) !== nlen) throw new Error('CORRUPT_STORED_BLOCK');
         let byteIdx = bitPos >> 3;
+        checkOutput(len);
+        if (byteIdx + len > src.length) throw new Error('CORRUPT_STORED_BLOCK');
         for (let i = 0; i < len; i++) out.push(src[byteIdx++]);
         bitPos = byteIdx << 3;
       } else if (btype === 1 || btype === 2) {
@@ -1110,6 +1148,7 @@
           const sym = decodeSymbol(litHuff);
           if (sym === 256) break;
           if (sym < 256) {
+            checkOutput(1);
             out.push(sym);
           } else {
             const lenIdx = sym - 257;
@@ -1117,6 +1156,10 @@
             const distSym = decodeSymbol(distHuff);
             const dist = DIST_BASE[distSym] + readBits(DIST_EXTRA[distSym]);
             const start = out.length - dist;
+            if (!Number.isFinite(length) || !Number.isFinite(start) || start < 0) {
+              throw new Error('CORRUPT_DEFLATE_REFERENCE');
+            }
+            checkOutput(length);
             for (let i = 0; i < length; i++) {
               out.push(out[start + i]);
             }
@@ -1126,7 +1169,76 @@
         throw new Error('INVALID_DEFLATE_BLOCK_TYPE');
       }
     }
+    if (outputLimit !== Infinity && out.length !== expectedLen) throw new Error('CORRUPT_DEFLATE_LENGTH');
     return new Uint8Array(out.length ? out : new Array(expectedLen || 0).fill(0));
+  }
+
+  function readOpenXmlDocxMainPart(input) {
+    const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
+    if (buf.length > 2000000) throw new RangeError('Word dosyası en fazla 2 MB olabilir.');
+    const name = 'word/document.xml';
+    const xmlBytes = extractZipEntriesSync(buf, { name, limit: 2000000 }).get(name);
+    if (!xmlBytes) throw new Error('Word belgesinin ana metni bulunamadı.');
+    const xml = new TextDecoder('utf-8', { fatal: true }).decode(xmlBytes);
+    if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml)) throw new Error('Word belgesindeki DTD veya entity bildirimi desteklenmiyor.');
+    return { xml, originalSha256: computeSha256Hex(buf) };
+  }
+
+  function readOpenXmlDocxText(input, Parser = globalThis.DOMParser) {
+    const { xml, originalSha256 } = readOpenXmlDocxMainPart(input);
+    if (typeof Parser !== 'function') throw new Error('Bu ortamda Word XML okuyucusu kullanılamıyor.');
+    const doc = new Parser().parseFromString(xml, 'application/xml');
+    const root = doc.documentElement;
+    const ns = root?.namespaceURI;
+    if (root?.localName !== 'document' || ![
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+      'http://purl.oclc.org/ooxml/wordprocessingml/main'
+    ].includes(ns) || doc.getElementsByTagNameNS('*', 'parsererror').length) {
+      throw new Error('Word belge XML yapısı geçersiz.');
+    }
+    const body = Array.from(root.children).find((node) => node.namespaceURI === ns && node.localName === 'body');
+    if (!body) throw new Error('Word belgesi ana gövdesi bulunamadı.');
+
+    function excluded(node) {
+      return (node.namespaceURI === ns && ['del', 'moveFrom', 'txbxContent'].includes(node.localName)) ||
+        (node.namespaceURI === 'http://schemas.openxmlformats.org/markup-compatibility/2006' &&
+         node.localName === 'AlternateContent');
+    }
+
+    // Only extract document-body text. Do not traverse relationships or embedded files.
+    const stack = [body];
+    const paragraphs = [];
+    let paragraph = null;
+    let length = 0;
+    while (stack.length) {
+      const node = stack.pop();
+      if (node === null) {
+        paragraphs.push(paragraph.join(''));
+        paragraph = null;
+        length += 1;
+        continue;
+      }
+      if (excluded(node)) continue;
+      if (node.namespaceURI === ns) {
+        const tag = node.localName;
+        if (tag === 'p') {
+          if (paragraph !== null) continue;
+          paragraph = [];
+          stack.push(null);
+        } else if (paragraph !== null && ['t', 'tab', 'br', 'cr'].includes(tag)) {
+          const text = tag === 't' ? node.textContent.replace(/[\r\n]/g, ' ') : ' ';
+          length += text.length;
+          if (length > 100000) throw new RangeError('Word metni defterin 100.000 karakter sınırını aşıyor.');
+          paragraph.push(text);
+          continue;
+        }
+      }
+      if (length > 100000) throw new RangeError('Word metni defterin 100.000 karakter sınırını aşıyor.');
+      for (let i = node.children.length - 1; i >= 0; i--) stack.push(node.children[i]);
+    }
+    const content = paragraphs.join('\n');
+    if (!content.trim()) throw new Error('Word belgesinin ana gövdesinde aktarılabilir metin bulunamadı.');
+    return { content, locatorKind: 'DOCX_BODY_PARAGRAPH', originalSha256 };
   }
 
   function parseOpenXmlXlsxBytes(uint8Bytes, fileName = 'kullanici_dosyasi.xlsx') {
@@ -4512,6 +4624,8 @@
     detectCsvDelimiter,
     parseCsvRows,
     parseOpenXmlXlsxBytes,
+    readOpenXmlDocxMainPart,
+    readOpenXmlDocxText,
     readCsvContent,
     suggestColumnMappings,
     normalizeEntityStem,
