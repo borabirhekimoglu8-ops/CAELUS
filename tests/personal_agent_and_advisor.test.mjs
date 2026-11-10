@@ -876,3 +876,47 @@ test('A decision task survives restart and replays a recommendation before and a
   resumed.clear();
   assert.equal(original.load(), null);
 });
+
+test('Experiment keeps its prior prediction and reports compatibility without claiming causation', async (t) => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const crypto = (await import('node:crypto')).webcrypto;
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-10T08:00:00Z') });
+  const workspace = CaelusConversationalAdvisor.createExperimentWorkspace(adapter, crypto);
+  const protocol = {
+    question: 'Sevkiyat neden bekliyor?', measurement: 'gecikme, dakika',
+    intervention: 'Deneme aracını bir saat erken çıkar', source: 'Ön kayıt A',
+    baseline: { low: 0, high: 10 },
+    hypotheses: [
+      { name: 'Sınır kuyruğu', expected: { low: 0, high: 10 } },
+      { name: 'Yazılım kaydı', expected: { low: 25, high: 40 } }
+    ]
+  };
+  const pending = await workspace.register(protocol);
+  assert.equal(pending.outcome, 'AWAITING_OBSERVATION');
+  assert.equal(pending.predictionsOverlap, false);
+  const resumed = CaelusConversationalAdvisor.createExperimentWorkspace(adapter, crypto);
+  t.mock.timers.setTime(Date.parse('2026-11-10T11:40:00Z'));
+  const observed = await resumed.observe({ value: 35, source: 'Sevkiyat kaydı B' });
+  assert.equal(observed.record.digest, pending.record.digest);
+  assert.equal(observed.baselineMatched, false);
+  assert.deepEqual(observed.compatibleHypotheses, ['Yazılım kaydı']);
+  assert.equal(observed.outcome, 'ONE_COMPATIBLE');
+  await assert.rejects(resumed.observe({ value: 3, source: 'Kayıt C' }), /zaten/);
+  assert.equal((await resumed.load()).record.observation.value, 35);
+  const [key, raw] = storage.entries().next().value;
+  const changed = JSON.parse(raw);
+  changed.observation.value = 3;
+  storage.set(key, JSON.stringify(changed));
+  await assert.rejects(resumed.load(), /gözleminin bütünlüğü/);
+
+  resumed.clear();
+  protocol.hypotheses[0].expected.high = 30;
+  const overlapping = await resumed.register(protocol);
+  assert.equal(overlapping.predictionsOverlap, true);
+  assert.equal((await resumed.observe({ value: 27, source: 'Kayıt D' })).outcome, 'INCONCLUSIVE');
+});

@@ -6925,6 +6925,42 @@ body.theme-light .linear-setting-row {
           <p id="laa-decision-status" role="status"></p>
           <div id="laa-decision-output"></div>
         </details>
+        <details id="laa-experiment-workspace">
+          <summary>Dünya İtiraz Ediyor · Deney kaydı</summary>
+          <p>Ölçümden önce tahmini, rakip açıklamaları ve deney adımını kaydedin. Sonuç geldiğinde hangi aralıkların ölçümle uyumlu olduğunu görün.</p>
+          <form id="laa-experiment-protocol">
+            <label>Soru <input name="question" maxlength="250" required></label>
+            <label>Ölçüm ve birim <input name="measurement" maxlength="250" required></label>
+            <label>Deney adımı <input name="intervention" maxlength="250" required></label>
+            <label>Ön kayıt dayanağı <input name="source" maxlength="250" required></label>
+            <fieldset>
+              <legend>Temel tahmin</legend>
+              <label>Alt sınır <input name="baselineLow" type="number" step="any" required></label>
+              <label>Üst sınır <input name="baselineHigh" type="number" step="any" required></label>
+            </fieldset>
+            <fieldset>
+              <legend>Birinci hipotez</legend>
+              <label>Açıklama <input name="firstName" maxlength="250" required></label>
+              <label>Alt sınır <input name="firstLow" type="number" step="any" required></label>
+              <label>Üst sınır <input name="firstHigh" type="number" step="any" required></label>
+            </fieldset>
+            <fieldset>
+              <legend>İkinci hipotez</legend>
+              <label>Açıklama <input name="secondName" maxlength="250" required></label>
+              <label>Alt sınır <input name="secondLow" type="number" step="any" required></label>
+              <label>Üst sınır <input name="secondHigh" type="number" step="any" required></label>
+            </fieldset>
+            <button type="submit" class="btn btn-sm btn-primary">Deneyi önceden kaydet</button>
+          </form>
+          <form id="laa-experiment-observation" hidden>
+            <label>Ölçülen değer <input name="value" type="number" step="any" required></label>
+            <label>Gözlem kaynağı <input name="source" maxlength="250" required></label>
+            <button type="submit" class="btn btn-sm">Ölçümü kaydet ve karşılaştır</button>
+          </form>
+          <button id="laa-experiment-delete" type="button" class="btn btn-sm" hidden>Yerel deney kaydını sil</button>
+          <p id="laa-experiment-status" role="status"></p>
+          <div id="laa-experiment-output"></div>
+        </details>
 
       </div>
 

@@ -4912,6 +4912,139 @@
     };
   }
 
+  function createExperimentWorkspace(storageAdapter, cryptoAdapter) {
+    var storageKey = 'caelus_experiment_workspace_v1';
+    var clearGeneration = 0;
+    if (!storageAdapter || !cryptoAdapter || !cryptoAdapter.subtle) {
+      throw new Error('Deney kaydı için yerel depolama ve Web Crypto gerekli.');
+    }
+
+    function textField(value, field) {
+      if (typeof value !== 'string' || !value.trim() || value.length > 250) {
+        throw new TypeError(field + ' boş veya çok uzun.');
+      }
+      return value.trim();
+    }
+
+    function finite(value, field) {
+      if (!Number.isFinite(value)) throw new TypeError(field + ' geçersiz.');
+      return value;
+    }
+
+    function interval(input) {
+      var low = finite(input.low, 'Alt sınır');
+      var high = finite(input.high, 'Üst sınır');
+      if (low > high) throw new RangeError('Alt sınır üst sınırı aşamaz.');
+      return { low: low, high: high };
+    }
+
+    function protocol(input) {
+      if (!input || !Array.isArray(input.hypotheses) || input.hypotheses.length !== 2) {
+        throw new TypeError('Tam iki rakip hipotez gerekli.');
+      }
+      var hypotheses = input.hypotheses.map(function (hypothesis) {
+        return { name: textField(hypothesis.name, 'Hipotez'), expected: interval(hypothesis.expected) };
+      });
+      if (hypotheses[0].name === hypotheses[1].name) throw new TypeError('Hipotez adları farklı olmalı.');
+      return {
+        question: textField(input.question, 'Soru'),
+        measurement: textField(input.measurement, 'Ölçüm ve birim'),
+        intervention: textField(input.intervention, 'Deney adımı'),
+        baseline: interval(input.baseline),
+        source: textField(input.source, 'Ön kayıt dayanağı'),
+        hypotheses: hypotheses
+      };
+    }
+
+    function iso(value) {
+      if (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) ||
+          new Date(value).toISOString() !== value) throw new TypeError('Deney zaman damgası geçersiz.');
+      return value;
+    }
+
+    async function digest(record) {
+      var bytes = new TextEncoder().encode(JSON.stringify(record));
+      var hash = await cryptoAdapter.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hash), function (value) {
+        return value.toString(16).padStart(2, '0');
+      }).join('');
+    }
+
+    function readRaw() {
+      return storageAdapter.getItem(storageKey);
+    }
+
+    async function read(raw) {
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || parsed.schema !== 1) throw new Error('Deney kayıt şeması geçersiz.');
+      var snapshot = { schema: 1, createdAt: iso(parsed.createdAt), protocol: protocol(parsed.protocol) };
+      if (await digest(snapshot) !== parsed.digest) throw new Error('Deney ön kaydının bütünlüğü doğrulanamadı.');
+      var observation = null;
+      if (parsed.observation !== null) {
+        var item = parsed.observation;
+        observation = { value: finite(item.value, 'Ölçülen değer'), source: textField(item.source, 'Gözlem kaynağı'), receivedAt: iso(item.receivedAt) };
+        if (observation.receivedAt < snapshot.createdAt) throw new Error('Ölçüm ön kayıttan önce olamaz.');
+        if (await digest({ protocolDigest: parsed.digest, observation: observation }) !== parsed.observationDigest) {
+          throw new Error('Deney gözleminin bütünlüğü doğrulanamadı.');
+        }
+      }
+      return Object.assign({}, snapshot, { digest: parsed.digest, observation: observation, observationDigest: parsed.observationDigest || null });
+    }
+
+    function matches(bounds, value) { return bounds.low <= value && value <= bounds.high; }
+
+    function result(record) {
+      if (!record) return null;
+      var hypotheses = record.protocol.hypotheses;
+      var overlap = Math.max(hypotheses[0].expected.low, hypotheses[1].expected.low) <=
+        Math.min(hypotheses[0].expected.high, hypotheses[1].expected.high);
+      var observation = record.observation;
+      var fitting = observation ? hypotheses.filter(function (hypothesis) {
+        return matches(hypothesis.expected, observation.value);
+      }).map(function (hypothesis) { return hypothesis.name; }) : [];
+      return {
+        record: record,
+        predictionsOverlap: overlap,
+        baselineMatched: observation ? matches(record.protocol.baseline, observation.value) : null,
+        compatibleHypotheses: fitting,
+        outcome: !observation ? 'AWAITING_OBSERVATION' :
+          fitting.length === 1 ? 'ONE_COMPATIBLE' : fitting.length ? 'INCONCLUSIVE' : 'NONE_COMPATIBLE'
+      };
+    }
+
+    return {
+      load: async function () { return result(await read(readRaw())); },
+      register: async function (input) {
+        if (readRaw()) throw new Error('Mevcut deney ön kaydı zaten var.');
+        var generation = clearGeneration;
+        var snapshot = { schema: 1, createdAt: new Date().toISOString(), protocol: protocol(input) };
+        var hash = await digest(snapshot);
+        var record = Object.assign({}, snapshot, { digest: hash, observation: null, observationDigest: null });
+        if (generation !== clearGeneration || readRaw()) throw new Error('Yerel deney alanı başka bir işlemle değişti.');
+        storageAdapter.setItem(storageKey, JSON.stringify(record));
+        return result(record);
+      },
+      observe: async function (input) {
+        var raw = readRaw();
+        var record = await read(raw);
+        if (!record) throw new Error('Önce deney protokolünü kaydedin.');
+        if (record.observation) throw new Error('Bu deney için ölçüm zaten kaydedildi.');
+        var receivedAt = new Date().toISOString();
+        if (receivedAt < record.createdAt) throw new Error('Cihaz saati ön kayıttan geride.');
+        record.observation = { value: finite(input.value, 'Ölçülen değer'), source: textField(input.source, 'Gözlem kaynağı'), receivedAt: receivedAt };
+        record.observationDigest = await digest({ protocolDigest: record.digest, observation: record.observation });
+        if (readRaw() !== raw) throw new Error('Deney kaydı başka bir işlemle değişti.');
+        storageAdapter.setItem(storageKey, JSON.stringify(record));
+        return result(record);
+      },
+      clear: function () {
+        storageAdapter.removeItem(storageKey);
+        clearGeneration += 1;
+      }
+    };
+  }
+
   var CaelusWorldDataGate = {
     LOGICAL_DATA_ZONES_5: LOGICAL_DATA_ZONES_5,
     WORLD_GATE_MODES_3: WORLD_GATE_MODES_3,
@@ -4926,6 +5059,7 @@
 
   var CaelusConversationalAdvisor = {
     createDecisionWorkspace: createDecisionWorkspace,
+    createExperimentWorkspace: createExperimentWorkspace,
     ANSWER_PASSPORT_CLASSES_10: ANSWER_PASSPORT_CLASSES_10,
     EPISTEMIC_STATES_12: EPISTEMIC_STATES_12,
     EMPTY_WORLD_DATA_MESSAGE_TR: EMPTY_WORLD_DATA_MESSAGE_TR,

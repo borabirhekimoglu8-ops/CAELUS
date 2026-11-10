@@ -28237,6 +28237,89 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     }
   }
 
+  const experimentPanel = document.getElementById('laa-experiment-workspace');
+  let experimentWorkspace;
+  if (experimentPanel && advMod?.createExperimentWorkspace) {
+    const protocolForm = experimentPanel.querySelector('#laa-experiment-protocol');
+    const observationForm = experimentPanel.querySelector('#laa-experiment-observation');
+    const deleteBtn = experimentPanel.querySelector('#laa-experiment-delete');
+    const status = experimentPanel.querySelector('#laa-experiment-status');
+    const output = experimentPanel.querySelector('#laa-experiment-output');
+    const bounds = (range) => range.low + ' – ' + range.high;
+
+    function renderExperiment(result) {
+      protocolForm.hidden = Boolean(result);
+      observationForm.hidden = !result || Boolean(result.record.observation);
+      deleteBtn.hidden = !result;
+      output.replaceChildren();
+      if (!result) return;
+      const { record, baselineMatched, compatibleHypotheses, predictionsOverlap, outcome } = result;
+      const { protocol, observation } = record;
+      const heading = document.createElement('p');
+      heading.textContent = protocol.question + ' · ' + protocol.measurement + ' · ' + protocol.intervention;
+      const list = document.createElement('ul');
+      const entries = [
+        'Ön kayıt: ' + record.createdAt + ' · Dayanak: ' + protocol.source,
+        'Temel tahmin: ' + bounds(protocol.baseline),
+        ...protocol.hypotheses.map((hypothesis) => hypothesis.name + ': ' + bounds(hypothesis.expected)),
+        predictionsOverlap ? 'Hipotez aralıkları kesişiyor. Bazı ölçümler ayrım sağlayamaz.' : 'Hipotez aralıkları ayrık.'
+      ];
+      if (observation) {
+        entries.push(
+          'Gözlem: ' + observation.value + ' · Kaynak: ' + observation.source + ' · ' + observation.receivedAt,
+          baselineMatched ? 'Gözlem temel tahmin aralığında.' : 'Gözlem temel tahmin aralığı dışında.',
+          outcome === 'ONE_COMPATIBLE' ? 'Bu gözlemle uyumlu tek hipotez: ' + compatibleHypotheses[0] :
+            outcome === 'INCONCLUSIVE' ? 'Bu gözlem iki hipotezi ayıramıyor.' : 'Gözlem iki hipotezin de tahmini dışında.'
+        );
+      }
+      for (const entry of entries) {
+        const item = document.createElement('li');
+        item.textContent = entry;
+        list.append(item);
+      }
+      output.append(heading, list);
+    }
+
+    async function runExperiment(event, action) {
+      event?.preventDefault();
+      status.textContent = '';
+      try { await action(); } catch (error) { status.textContent = error.message; }
+    }
+
+    runExperiment(null, async () => {
+      experimentWorkspace = advMod.createExperimentWorkspace(window.localStorage, window.crypto);
+      renderExperiment(await experimentWorkspace.load());
+    });
+    protocolForm.addEventListener('submit', (event) => runExperiment(event, async () => {
+      if (!experimentWorkspace) throw new Error('Yerel deney kaydı kullanılamıyor.');
+      const v = protocolForm.elements;
+      const interval = (prefix) => ({ low: v[prefix + 'Low'].valueAsNumber, high: v[prefix + 'High'].valueAsNumber });
+      renderExperiment(await experimentWorkspace.register({
+        question: v.question.value, measurement: v.measurement.value,
+        intervention: v.intervention.value, source: v.source.value,
+        baseline: interval('baseline'),
+        hypotheses: [
+          { name: v.firstName.value, expected: interval('first') },
+          { name: v.secondName.value, expected: interval('second') }
+        ]
+      }));
+    }));
+    observationForm.addEventListener('submit', (event) => runExperiment(event, async () => {
+      const v = observationForm.elements;
+      renderExperiment(await experimentWorkspace.observe({ value: v.value.valueAsNumber, source: v.source.value }));
+    }));
+    function clearExperiment() {
+      experimentWorkspace?.clear();
+      protocolForm.reset();
+      observationForm.reset();
+      renderExperiment(null);
+    }
+    deleteBtn.addEventListener('click', (event) => runExperiment(event, () => {
+      if (window.confirm('Yerel deney kaydı ve ölçüm silinsin mi?')) clearExperiment();
+    }));
+    deleteUserDataBtn?.addEventListener('click', (event) => runExperiment(event, clearExperiment));
+  }
+
   const askInput = document.getElementById('inp-laa-advisor-question');
   const askBtn = document.getElementById('btn-laa-advisor-ask');
   const replayBtn = document.getElementById('btn-laa-advisor-replay');
