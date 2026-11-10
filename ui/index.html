@@ -6873,6 +6873,16 @@ body.theme-light .linear-setting-row {
           <button type="button" class="btn btn-sm btn-primary" id="btn-laa-advisor-ask">Sor &amp; Kanıtla</button>
         </div>
 
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label for="inp-laa-advisor-as-of">Bu oturumdaki kanıtları şu an itibarıyla değerlendir (yerel saat)</label>
+          <input type="datetime-local" step="1" id="inp-laa-advisor-as-of" class="dt-editor-input">
+          <button type="button" class="btn btn-sm" id="btn-laa-advisor-replay">Geçmişi Yeniden Oynat</button>
+          <label for="inp-laa-advisor-compare-as-of">İkinci kesit (isteğe bağlı)</label>
+          <input type="datetime-local" step="1" id="inp-laa-advisor-compare-as-of" class="dt-editor-input">
+          <span id="laa-advisor-replay-status" role="status"></span>
+        </div>
+
+        <div id="laa-advisor-replay-comparison" hidden></div>
         <div id="laa-advisor-turn-output" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem;"></div>
       </div>
 

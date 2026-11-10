@@ -551,7 +551,8 @@ test('P1 (Bölüm 5): Danışman Yerel Dosya Sorgulama (Satır Numaralı Kanıt)
   assert.ok(poemTurn.answerText.includes('kurgusal metin, şiir veya hikâye üretmez'));
 });
 
-test('P2 & P3 (Bölüm 6 & 7): Kişisel Ajan Varsayılan Kapalı İzinler, Kalıcı Saklama (Storage), Çalışma Zamanı Sınırları, Kaçırılan Zamanlama ve Cedar/Datalog/ProvSQL/Z3 Prototipleri', () => {
+test('P2 & P3 (Bölüm 6 & 7): Kişisel Ajan Varsayılan Kapalı İzinler, Kalıcı Saklama (Storage), Çalışma Zamanı Sınırları, Kaçırılan Zamanlama ve Cedar/Datalog/ProvSQL/Z3 Prototipleri', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-10T00:00:00Z') });
   // Bellek içi localStorage taklidi (sayfa yenileme kalıcılık testi için)
   const memoryStorageMap = new Map();
   const storageAdapter = {
@@ -794,3 +795,44 @@ test('Bölüm 9: Egemen Dijital Alan Arayüzü (ui/index.html & ui/app.js) — 6
 
 
 
+
+test('Historical replay uses receipt time, preserves revisions, and isolates live dialogue', (t) => {
+  const early = '2026-11-10T08:00:00Z';
+  const late = '2026-11-10T11:40:00Z';
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(early) });
+  const advisor = CaelusConversationalAdvisor.createConversationalAdvisorSession();
+  const source = {
+    record_id: 'notice-1',
+    source_id: 'official',
+    source_url: 'https://example.org/notice-1',
+    source_published_at: early,
+    ingested_at: early,
+    event_time: early,
+    title: 'Sakız limanı',
+    summary: 'İlk kayıtta rıhtım açık.',
+    entities: ['Sakız']
+  };
+  advisor.ingestWorldRecord(source);
+  t.mock.timers.setTime(Date.parse(late));
+  advisor.ingestWorldRecord({ ...source, summary: 'Düzeltme kaydında rıhtım kapalı.' });
+  advisor.ingestWorldRecord({ ...source, record_id: 'notice-2', title: 'Sakız yeni duyuru' });
+
+  const question = 'Sakız hakkında ne değişti?';
+  const earlyReplay = advisor.replayAdvisorTurn(question, '2026-11-10T09:00:00Z');
+  assert.equal(earlyReplay.answerPassport.availableWorldRecordCount, 1);
+  assert.match(earlyReplay.answerText, /rıhtım açık/);
+  assert.doesNotMatch(earlyReplay.answerText, /rıhtım kapalı/);
+  const lateReplay = advisor.replayAdvisorTurn(question, late);
+  assert.equal(lateReplay.answerPassport.availableWorldRecordCount, 2);
+  assert.match(lateReplay.answerText, /rıhtım kapalı/);
+  const comparison = advisor.compareAdvisorReplayCuts(question, '2026-11-10T09:00:00Z', late);
+  assert.match(comparison.before.answerText, /rıhtım açık/);
+  assert.match(comparison.after.answerText, /rıhtım kapalı/);
+  assert.deepEqual(
+    comparison.evidenceChanges.map(({ kind, recordId, receivedAt }) => [kind, recordId, receivedAt]),
+    [['REVISED', 'notice-1', '2026-11-10T11:40:00.000Z'], ['ADDED', 'notice-2', '2026-11-10T11:40:00.000Z']]
+  );
+  assert.throws(() => advisor.compareAdvisorReplayCuts(question, late, late), RangeError);
+  assert.equal(advisor.processAdvisorTurn(question).turnIndex, 1);
+  assert.throws(() => advisor.replayAdvisorTurn(question, 'invalid'), RangeError);
+});

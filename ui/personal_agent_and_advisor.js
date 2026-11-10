@@ -2222,6 +2222,85 @@
     // sahte kullanıcı tercihleri gerçek veri yerine otomatik yüklenmez!
     var initialRealWorldRecords = [];
     var initialTrainingSampleRecords = [];
+    var receivedVersionsById = new Map();
+
+    function rememberReceivedVersion(record, receivedAt) {
+      if (record.isSampleFixture || record.epistemic_status === 'UNVERIFIED_CLAIM') return;
+      // Keep a copy independent of both the connector and live advisor memory.
+      var snapshot = JSON.parse(JSON.stringify(record));
+      var signature = JSON.stringify(snapshot, function (key, value) {
+        return key === 'ingested_at' || key === 'last_checked_at' ? undefined : value;
+      });
+      var versions = receivedVersionsById.get(record.record_id) || [];
+      if (versions.length && versions[versions.length - 1].signature === signature) return;
+      versions.push({ receivedAt: receivedAt, signature: signature, record: snapshot });
+      receivedVersionsById.set(record.record_id, versions);
+    }
+
+    function getReplayCut(knowledgeAsOf) {
+      var cutoff = Date.parse(knowledgeAsOf);
+      if (!Number.isFinite(cutoff) || cutoff > Date.now()) {
+        throw new RangeError('Geçerli ve geçmiş bir bilgi kesiti seçin.');
+      }
+      var records = [];
+      receivedVersionsById.forEach(function (versions) {
+        for (var i = versions.length - 1; i >= 0; i--) {
+          if (versions[i].receivedAt <= cutoff) {
+            records.push(versions[i]);
+            break;
+          }
+        }
+      });
+      records.sort(function (a, b) { return b.receivedAt - a.receivedAt; });
+      return { cutoff: cutoff, records: records };
+    }
+
+    function answerReplayCut(userUtterance, cut) {
+      var replay = createConversationalAdvisorSession({
+        worldRecords: cut.records.map(function (entry) {
+          return Object.assign({}, entry.record, { ingested_at: new Date(entry.receivedAt).toISOString() });
+        }),
+        language: opts.language
+      });
+      var result = replay.processAdvisorTurn(userUtterance);
+      result.answerPassport.knowledgeAsOf = new Date(cut.cutoff).toISOString();
+      result.answerPassport.availableWorldRecordCount = cut.records.length;
+      return result;
+    }
+
+    function replayAdvisorTurn(userUtterance, knowledgeAsOf) {
+      return answerReplayCut(userUtterance, getReplayCut(knowledgeAsOf));
+    }
+
+    function compareAdvisorReplayCuts(userUtterance, beforeAsOf, afterAsOf) {
+      var before = getReplayCut(beforeAsOf);
+      var after = getReplayCut(afterAsOf);
+      if (after.cutoff <= before.cutoff) {
+        throw new RangeError('İkinci bilgi kesiti ilk kesitten sonra olmalı.');
+      }
+      var previousById = new Map(before.records.map(function (entry) {
+        return [entry.record.record_id, entry];
+      }));
+      var evidenceChanges = [];
+      after.records.forEach(function (entry) {
+        var record = entry.record;
+        var previous = previousById.get(record.record_id);
+        if (previous && previous.signature === entry.signature) return;
+        evidenceChanges.push({
+          kind: previous ? 'REVISED' : 'ADDED',
+          recordId: record.record_id,
+          title: record.title,
+          sourceUrl: record.source_url,
+          eventTime: record.event_time,
+          receivedAt: new Date(entry.receivedAt).toISOString()
+        });
+      });
+      return {
+        before: answerReplayCut(userUtterance, before),
+        after: answerReplayCut(userUtterance, after),
+        evidenceChanges: evidenceChanges
+      };
+    }
 
     if (Array.isArray(opts.worldRecords) && opts.worldRecords.length > 0) {
       for (var wIdx = 0; wIdx < opts.worldRecords.length; wIdx++) {
@@ -2230,6 +2309,7 @@
           initialTrainingSampleRecords.push(normW);
         } else if (normW.epistemic_status !== 'USER_PREFERENCE') {
           initialRealWorldRecords.push(normW);
+          rememberReceivedVersion(normW, Date.now());
         }
       }
     } else if (trainingSampleModeActive) {
@@ -3168,6 +3248,7 @@
     function addWorldRecordsToAdvisorMemory(records, addOptions) {
       var aOpts = addOptions || {};
       if (!Array.isArray(records)) return memoryStore.C_SOURCED_WORLD_MEMORY.length;
+      var receivedAt = Date.now();
       for (var i = 0; i < records.length; i++) {
         var raw = records[i];
         if (!raw || !raw.record_id) continue;
@@ -3188,6 +3269,7 @@
         if (norm.epistemic_status === 'UNVERIFIED_CLAIM' && aOpts.allowUnverifiedInWorldMemory !== true) {
           continue;
         }
+        rememberReceivedVersion(norm, receivedAt);
         var exists = memoryStore.C_SOURCED_WORLD_MEMORY.some(function (ex) {
           return ex.record_id === norm.record_id;
         });
@@ -3211,6 +3293,8 @@
 
     return {
       processAdvisorTurn: processAdvisorTurn,
+      replayAdvisorTurn: replayAdvisorTurn,
+      compareAdvisorReplayCuts: compareAdvisorReplayCuts,
       updateUserPreferences: updateUserPreferences,
       clearDialogueState: clearDialogueState,
       deleteUserPreferences: deleteUserPreferences,

@@ -28125,6 +28125,58 @@ function initCaelusLivingAdvisorAndAgentStudio() {
 
   const askInput = document.getElementById('inp-laa-advisor-question');
   const askBtn = document.getElementById('btn-laa-advisor-ask');
+  const replayBtn = document.getElementById('btn-laa-advisor-replay');
+  const replayStatus = document.getElementById('laa-advisor-replay-status');
+  const replayComparison = document.getElementById('laa-advisor-replay-comparison');
+  if (replayBtn && replayStatus && replayComparison && advisorSession) {
+    const clearReplayComparison = () => {
+      replayComparison.hidden = true;
+      replayComparison.replaceChildren();
+      replayStatus.textContent = '';
+    };
+    replayBtn.addEventListener('click', () => {
+      clearReplayComparison();
+      const question = askInput?.value.trim();
+      const asOf = document.getElementById('inp-laa-advisor-as-of')?.value;
+      if (!question || !asOf) {
+        replayStatus.textContent = 'Soruyu ve geçmiş bilgi kesitini girin.';
+        return;
+      }
+      try {
+        const compareAsOf = document.getElementById('inp-laa-advisor-compare-as-of')?.value;
+        const comparison = compareAsOf ? advisorSession.compareAdvisorReplayCuts(question, asOf, compareAsOf) : null;
+        const result = comparison ? comparison.after : advisorSession.replayAdvisorTurn(question, asOf);
+        if (comparison) {
+          const previousAnswer = document.createElement('p');
+          previousAnswer.textContent = 'İlk kesitteki yanıt: ' + comparison.before.answerText;
+          const changes = document.createElement('ul');
+          for (const change of comparison.evidenceChanges) {
+            const item = document.createElement('li');
+            item.textContent = (change.kind === 'REVISED' ? 'Güncellendi: ' : 'Eklendi: ') +
+              change.title + ' · ' + change.receivedAt + ' · ' + change.sourceUrl;
+            changes.append(item);
+          }
+          if (!changes.childElementCount) {
+            const item = document.createElement('li');
+            item.textContent = 'İki kesit arasında kaynak değişikliği yok.';
+            changes.append(item);
+          }
+          replayComparison.append(previousAnswer, changes);
+          replayComparison.hidden = false;
+        }
+        const count = result.answerPassport.availableWorldRecordCount;
+        renderAdvisorTurnOutput(result);
+        replayStatus.textContent = 'Geçmiş bilgi kesiti: ' + (compareAsOf || asOf).replace('T', ' ') + ' · ' + count + ' kaynak kaydı';
+      } catch (error) {
+        replayStatus.textContent = error instanceof RangeError ? error.message : 'Geçmiş bilgi kesiti değerlendirilemedi.';
+      }
+    });
+    askBtn?.addEventListener('click', clearReplayComparison);
+    drawer.querySelectorAll('.laa-advisor-quick-q, #btn-laa-reset-dialogue-state').forEach((button) => {
+      button.addEventListener('click', clearReplayComparison);
+    });
+  }
+
   if (askBtn && advisorSession) {
     askBtn.addEventListener('click', () => {
       const q = askInput ? askInput.value.trim() : '';
