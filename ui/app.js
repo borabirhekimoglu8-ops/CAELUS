@@ -28126,6 +28126,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
 
   const decisionPanel = document.getElementById('laa-decision-workspace');
   let decisionWorkspace;
+  let stageDecisionResearchClaim;
   if (decisionPanel && advMod?.createDecisionWorkspace) {
     const taskForm = decisionPanel.querySelector('#laa-decision-task');
     const evidenceForm = decisionPanel.querySelector('#laa-decision-evidence');
@@ -28135,6 +28136,18 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     const optionTemplate = decisionPanel.querySelector('#laa-decision-option');
     const status = decisionPanel.querySelector('#laa-decision-status');
     const output = decisionPanel.querySelector('#laa-decision-output');
+    const attachment = decisionPanel.querySelector('#laa-decision-research-attachment');
+    const attachmentSummary = decisionPanel.querySelector('#laa-decision-research-summary');
+    const attachmentQuote = decisionPanel.querySelector('#laa-decision-research-quote');
+    let pendingResearchClaim;
+    function clearDecisionAttachment() {
+      if (pendingResearchClaim) evidenceForm.elements.reference.value = '';
+      pendingResearchClaim = undefined;
+      attachmentSummary.textContent = '';
+      attachmentQuote.textContent = '';
+      attachment.hidden = true;
+    }
+
     const statuses = {
       AVAILABLE: 'Uygulanabilir', WAITING: 'Teyit bekliyor', DENIED: 'Teyit reddedildi',
       OUTSIDE_LIMITS: 'Hedef veya bütçe dışında', EXPIRED: 'Karar süresi doldu'
@@ -28160,6 +28173,19 @@ function initCaelusLivingAdvisorAndAgentStudio() {
           ' · Son karar: ' + displayTime(option.deadline) + ' · ' + statuses[option.status] +
           (option.condition ? ' · ' + option.condition : '') +
           (option.evidence ? ' · Kaynak: ' + option.evidence.reference : '');
+        const research = option.evidence?.researchClaim;
+        if (research) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.textContent = research.evidence.title + ':' + research.evidence.line + ' · ' +
+            research.subject + ': ' + research.value;
+          const quote = document.createElement('blockquote');
+          quote.style.whiteSpace = 'pre-wrap';
+          quote.style.overflowWrap = 'anywhere';
+          quote.textContent = research.evidence.quote;
+          details.append(summary, quote);
+          item.append(details);
+        }
         options.append(item);
       }
       output.replaceChildren(heading, options);
@@ -28174,8 +28200,12 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       taskForm.hidden = Boolean(saved);
       replayForm.hidden = !saved;
       deleteBtn.hidden = !saved;
+      clearDecisionAttachment();
+      evidenceForm.reset();
       const select = evidenceForm.elements.condition;
-      select.replaceChildren();
+      const prompt = new Option('Koşul seçin', '', true, true);
+      prompt.disabled = true;
+      select.replaceChildren(prompt);
       const conditions = new Set(saved?.task.options.map((option) => option.condition).filter(Boolean));
       for (const condition of conditions) select.add(new Option(condition, condition));
       evidenceForm.hidden = conditions.size === 0;
@@ -28196,6 +28226,25 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       status.textContent = error.message;
     }
     if (decisionWorkspace) {
+      stageDecisionResearchClaim = (claim) => {
+        const saved = decisionWorkspace.load();
+        if (!saved || !saved.task.options.some((option) => option.condition)) {
+          throw new Error('Önce teyit koşulu olan bir karar görevi oluşturun.');
+        }
+        if (claim.evidence.quote.length > 4096) throw new Error('En fazla 4.096 karakterlik bir kaynak satırı seçin.');
+        clearDecisionAttachment();
+        evidenceForm.reset();
+        pendingResearchClaim = claim;
+        const { title, line, quote } = claim.evidence;
+        evidenceForm.elements.reference.value = title.slice(0, 220) + ':' + line;
+        attachmentSummary.textContent = title + ':' + line + ' · ' + claim.subject + ': ' + claim.value;
+        attachmentQuote.textContent = quote;
+        attachment.hidden = false;
+        decisionPanel.open = true;
+        status.textContent = 'Alıntı eklendi. Koşulu ve durumu seçip kaydedin.';
+        evidenceForm.elements.condition.focus();
+      };
+      decisionPanel.querySelector('#laa-decision-detach-research').addEventListener('click', clearDecisionAttachment);
       decisionPanel.querySelector('#laa-decision-add-option').addEventListener('click', addOption);
       taskForm.addEventListener('submit', (event) => handleDecision(event, () => {
         const values = taskForm.elements;
@@ -28215,10 +28264,12 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       evidenceForm.addEventListener('submit', (event) => handleDecision(event, () => {
         const values = evidenceForm.elements;
         const update = decisionWorkspace.recordEvidence({
-          condition: values.condition.value, status: values.status.value, reference: values.reference.value
+          condition: values.condition.value, status: values.status.value, reference: values.reference.value,
+          researchClaim: pendingResearchClaim
         });
         renderDecision(update.after, update.before);
-        values.reference.value = '';
+        clearDecisionAttachment();
+        evidenceForm.reset();
       }));
       replayForm.addEventListener('submit', (event) => handleDecision(event, () => {
         renderDecision(decisionWorkspace.replay(new Date(replayForm.elements.asOf.value).toISOString()));
@@ -28390,8 +28441,14 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     claims.addEventListener('submit', (event) => runResearch(event, () => {
       const form = claims.elements;
       const first = hits[Number(form.first.value)];
-      if (event.submitter?.value === 'draft') {
+      if (event.submitter?.value === 'draft' || event.submitter?.value === 'attach') {
         const draft = notebook.draft(first, form.subject.value, form.firstValue.value);
+        if (event.submitter.value === 'attach') {
+          if (!stageDecisionResearchClaim) throw new Error('Karar görevi kullanılamıyor.');
+          stageDecisionResearchClaim(draft.assumption);
+          status.textContent = 'Alıntı karar görevi formuna eklendi.';
+          return;
+        }
         const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' }));
         const link = document.createElement('a');
         link.href = url;

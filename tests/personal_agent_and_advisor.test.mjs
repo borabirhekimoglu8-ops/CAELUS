@@ -953,3 +953,40 @@ test('Research notebook restores source lines, flags candidate conflicts and exp
   restored.clear();
   assert.deepEqual(notebook.list(), []);
 });
+
+test('A notebook citation changes a decision only after explicit assessment and survives replay', (t) => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const start = '2026-11-10T08:00:00.000Z';
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const { createResearchNotebook, createDecisionWorkspace } = CaelusConversationalAdvisor;
+  const notebook = createResearchNotebook(adapter);
+  notebook.addSources([{ title: 'Duyuru.md', content: '# Liman\nYanaşma saati 14.00 olarak teyit edildi.' }]);
+  const citation = notebook.search('yanaşma saati')[0];
+  const draft = notebook.draft(citation, 'Yanaşma saati', '14.00');
+  const workspace = createDecisionWorkspace(adapter);
+  workspace.create({
+    goal: 'Ek sefer', minUnits: 300, maxCost: 100000,
+    options: [{ name: 'İkinci sefer', units: 305, cost: 60000, deadline: '2026-11-10T14:00:00.000Z', condition: 'Yanaşma' }]
+  });
+  const input = { condition: 'Yanaşma', reference: 'Duyuru.md:2', researchClaim: draft.assumption };
+  assert.equal(workspace.replay().status, 'WAITING_FOR_EVIDENCE');
+  assert.throws(() => workspace.recordEvidence(input), /Teyit durumu/);
+  assert.throws(() => workspace.recordEvidence({
+    ...input, status: 'CONFIRMED', researchClaim: { ...input.researchClaim, value: '15.00' }
+  }), /alıntısında/);
+  assert.equal(workspace.load().evidence.length, 0);
+
+  t.mock.timers.setTime(Date.parse('2026-11-10T11:40:00Z'));
+  const result = workspace.recordEvidence({ ...input, status: 'CONFIRMED' });
+  assert.equal(result.before.status, 'WAITING_FOR_EVIDENCE');
+  assert.equal(result.after.recommended.name, 'İkinci sefer');
+  notebook.clear();
+  const restored = createDecisionWorkspace(adapter);
+  assert.equal(restored.replay(start).status, 'WAITING_FOR_EVIDENCE');
+  assert.deepEqual(restored.replay().recommended.evidence.researchClaim, draft.assumption);
+});

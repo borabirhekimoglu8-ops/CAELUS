@@ -4807,6 +4807,26 @@
       };
     }
 
+    function cleanResearchClaim(claim) {
+      var evidence = claim && claim.evidence;
+      if (!evidence || typeof evidence.sha256 !== 'string' || evidence.sha256.length !== 64 ||
+          !/^[a-f0-9]{64}$/.test(evidence.sha256) || typeof evidence.quote !== 'string' || evidence.quote.length > 4096) {
+        throw new TypeError('Araştırma alıntısı geçersiz veya 4.096 karakterden uzun.');
+      }
+      var value = label(claim.value, 'Kaynakta geçen değer');
+      if (!evidence.quote.includes(value)) throw new TypeError('Değer kaynak alıntısında bulunamadı.');
+      return {
+        subject: label(claim.subject, 'Konu veya ölçüt'),
+        value: value,
+        evidence: {
+          title: label(evidence.title, 'Kaynak adı'),
+          line: integer(evidence.line, 1, 'Kaynak satırı'),
+          sha256: evidence.sha256,
+          quote: evidence.quote
+        }
+      };
+    }
+
     function cleanEvidence(entry, task) {
       var condition = label(entry.condition, 'Teyit koşulu');
       if (!task.options.some(function (option) { return option.condition === condition; })) {
@@ -4815,12 +4835,14 @@
       if (!['CONFIRMED', 'DENIED', 'CONFLICTING'].includes(entry.status)) {
         throw new TypeError('Teyit durumu geçersiz.');
       }
-      return {
+      var cleaned = {
         condition: condition,
         status: entry.status,
         reference: label(entry.reference, 'Kaynak veya belge referansı'),
         receivedAt: timestamp(entry.receivedAt)
       };
+      if (entry.researchClaim !== undefined) cleaned.researchClaim = cleanResearchClaim(entry.researchClaim);
+      return cleaned;
     }
 
     function evaluate(task, evidence, cutoff) {

@@ -6909,12 +6909,18 @@ body.theme-light .linear-setting-row {
           </template>
           <form id="laa-decision-evidence" hidden>
             <label>Koşul <select name="condition" required></select></label>
-            <label>Durum <select name="status">
+            <label>Durum <select name="status" required>
+              <option value="" selected disabled>Durum seçin</option>
               <option value="CONFIRMED">Teyit edildi</option>
               <option value="DENIED">Reddedildi</option>
               <option value="CONFLICTING">Çelişkili</option>
             </select></label>
             <label>Kaynak veya belge referansı <input name="reference" maxlength="250" required></label>
+            <div id="laa-decision-research-attachment" hidden>
+              <p id="laa-decision-research-summary" style="overflow-wrap:anywhere;"></p>
+              <blockquote id="laa-decision-research-quote" style="white-space:pre-wrap;overflow-wrap:anywhere;"></blockquote>
+              <button type="button" class="btn btn-sm" id="laa-decision-detach-research">Alıntıyı kaldır</button>
+            </div>
             <button type="submit" class="btn btn-sm">Kanıtı kaydet ve yeniden hesapla</button>
           </form>
           <form id="laa-decision-replay" hidden>
@@ -6982,6 +6988,7 @@ body.theme-light .linear-setting-row {
             <label>İkinci alıntıda geçen değer <input name="secondValue" maxlength="250"></label>
             <button type="submit" value="compare" class="btn btn-sm">Değerleri karşılaştır</button>
             <button type="submit" value="draft" class="btn btn-sm">İlk alıntıdan senaryo taslağı indir</button>
+            <button type="submit" value="attach" class="btn btn-sm">İlk alıntıyı karar görevine ekle</button>
           </form>
           <button type="button" id="laa-research-clear" class="btn btn-sm">Yerel defteri sil</button>
           <p id="laa-research-status" role="status"></p>
