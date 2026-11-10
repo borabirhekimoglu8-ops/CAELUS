@@ -4755,6 +4755,163 @@
     };
   }
 
+  function createDecisionWorkspace(storageAdapter) {
+    var storageKey = 'caelus_decision_workspace_v1';
+    if (!storageAdapter || typeof storageAdapter.getItem !== 'function' ||
+        typeof storageAdapter.setItem !== 'function' || typeof storageAdapter.removeItem !== 'function') {
+      throw new Error('Kalıcı görev için yerel depolama gerekli.');
+    }
+
+    function integer(value, minimum, name) {
+      if (!Number.isSafeInteger(value) || value < minimum) throw new TypeError(name + ' geçersiz.');
+      return value;
+    }
+
+    function label(value, name) {
+      if (typeof value !== 'string' || !value.trim() || value.length > 250) {
+        throw new TypeError(name + ' boş veya çok uzun.');
+      }
+      return value.trim();
+    }
+
+    function timestamp(value) {
+      if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) ||
+          !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) {
+        throw new TypeError('UTC zaman damgası geçersiz.');
+      }
+      return value;
+    }
+
+    function cleanTask(input) {
+      if (!input || !Array.isArray(input.options) || !input.options.length || input.options.length > 20) {
+        throw new TypeError('Bir ila yirmi seçenek girin.');
+      }
+      var names = new Set();
+      var options = input.options.map(function (option) {
+        var name = label(option.name, 'Seçenek');
+        if (names.has(name)) throw new TypeError('Seçenek adları benzersiz olmalı.');
+        names.add(name);
+        return {
+          name: name,
+          units: integer(option.units, 0, 'Kapasite'),
+          cost: integer(option.cost, 0, 'Maliyet'),
+          deadline: timestamp(option.deadline),
+          condition: option.condition ? label(option.condition, 'Teyit koşulu') : null
+        };
+      });
+      return {
+        goal: label(input.goal, 'Hedef'),
+        minUnits: integer(input.minUnits, 1, 'Asgari kapasite'),
+        maxCost: integer(input.maxCost, 0, 'Bütçe'),
+        options: options
+      };
+    }
+
+    function cleanEvidence(entry, task) {
+      var condition = label(entry.condition, 'Teyit koşulu');
+      if (!task.options.some(function (option) { return option.condition === condition; })) {
+        throw new TypeError('Bu koşul göreve ait değil.');
+      }
+      if (!['CONFIRMED', 'DENIED', 'CONFLICTING'].includes(entry.status)) {
+        throw new TypeError('Teyit durumu geçersiz.');
+      }
+      return {
+        condition: condition,
+        status: entry.status,
+        reference: label(entry.reference, 'Kaynak veya belge referansı'),
+        receivedAt: timestamp(entry.receivedAt)
+      };
+    }
+
+    function evaluate(task, evidence, cutoff) {
+      var latestByCondition = new Map();
+      evidence.forEach(function (entry) {
+        if (entry.receivedAt <= cutoff) latestByCondition.set(entry.condition, entry);
+      });
+      var options = task.options.map(function (option) {
+        var confirmation = latestByCondition.get(option.condition) || null;
+        var status = 'AVAILABLE';
+        if (option.units < task.minUnits || option.cost > task.maxCost) status = 'OUTSIDE_LIMITS';
+        else if (option.deadline < cutoff) status = 'EXPIRED';
+        else if (confirmation && confirmation.status === 'DENIED') status = 'DENIED';
+        else if (option.condition && (!confirmation || confirmation.status !== 'CONFIRMED')) status = 'WAITING';
+        return Object.assign({}, option, { status: status, evidence: confirmation });
+      });
+      var available = options.filter(function (option) { return option.status === 'AVAILABLE'; });
+      available.sort(function (a, b) { return a.cost - b.cost || b.units - a.units; });
+      return {
+        asOf: cutoff,
+        goal: task.goal,
+        status: available.length ? 'PLAN_AVAILABLE' : options.some(function (option) {
+          return option.status === 'WAITING';
+        }) ? 'WAITING_FOR_EVIDENCE' : 'NO_FEASIBLE_PLAN',
+        recommended: available[0] || null,
+        options: options
+      };
+    }
+
+    function load() {
+      var raw = storageAdapter.getItem(storageKey);
+      if (!raw) return null;
+      var state = JSON.parse(raw);
+      if (!state || state.schema !== 1 || !Array.isArray(state.evidence) || state.evidence.length > 200) {
+        throw new Error('Görev kaydı okunamadı.');
+      }
+      var task = cleanTask(state.task);
+      var createdAt = timestamp(state.createdAt);
+      var previousAt = createdAt;
+      var evidence = state.evidence.map(function (entry) {
+        var cleaned = cleanEvidence(entry, task);
+        if (cleaned.receivedAt < previousAt) throw new Error('Kanıt zaman sırası geçersiz.');
+        previousAt = cleaned.receivedAt;
+        return cleaned;
+      });
+      return { schema: 1, task: task, createdAt: createdAt, evidence: evidence };
+    }
+
+    function save(state) {
+      storageAdapter.setItem(storageKey, JSON.stringify(state));
+    }
+
+    return {
+      create: function (input) {
+        if (load()) throw new Error('Yeni görev açmadan önce mevcut görevi silin.');
+        var state = { schema: 1, task: cleanTask(input), createdAt: new Date().toISOString(), evidence: [] };
+        save(state);
+        return state;
+      },
+      load: load,
+      recordEvidence: function (input) {
+        var state = load();
+        if (!state) throw new Error('Önce bir görev kaydedin.');
+        if (state.evidence.length >= 200) throw new Error('Bu görev kanıt kayıt sınırına ulaştı.');
+        var now = new Date().toISOString();
+        var previous = state.evidence.at(-1);
+        if (now < (previous ? previous.receivedAt : state.createdAt)) {
+          throw new Error('Cihaz saati önceki kayıt zamanından geride.');
+        }
+        var entry = cleanEvidence(Object.assign({}, input, { receivedAt: now }), state.task);
+        var before = evaluate(state.task, state.evidence, now);
+        state.evidence.push(entry);
+        var after = evaluate(state.task, state.evidence, now);
+        save(state);
+        return { before: before, after: after, evidence: entry };
+      },
+      replay: function (asOf) {
+        var state = load();
+        if (!state) return null;
+        var cutoff = asOf === undefined ? new Date().toISOString() : timestamp(asOf);
+        if (cutoff < state.createdAt || cutoff > new Date().toISOString()) {
+          throw new RangeError('Bilgi kesiti görevin başlangıcı ile şimdi arasında olmalı.');
+        }
+        return evaluate(state.task, state.evidence, cutoff);
+      },
+      clear: function () {
+        storageAdapter.removeItem(storageKey);
+      }
+    };
+  }
+
   var CaelusWorldDataGate = {
     LOGICAL_DATA_ZONES_5: LOGICAL_DATA_ZONES_5,
     WORLD_GATE_MODES_3: WORLD_GATE_MODES_3,
@@ -4768,6 +4925,7 @@
   };
 
   var CaelusConversationalAdvisor = {
+    createDecisionWorkspace: createDecisionWorkspace,
     ANSWER_PASSPORT_CLASSES_10: ANSWER_PASSPORT_CLASSES_10,
     EPISTEMIC_STATES_12: EPISTEMIC_STATES_12,
     EMPTY_WORLD_DATA_MESSAGE_TR: EMPTY_WORLD_DATA_MESSAGE_TR,

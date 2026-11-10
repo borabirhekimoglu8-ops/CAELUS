@@ -6884,6 +6884,48 @@ body.theme-light .linear-setting-row {
 
         <div id="laa-advisor-replay-comparison" hidden></div>
         <div id="laa-advisor-turn-output" style="display:flex; flex-direction:column; gap:8px; font-size:0.78rem;"></div>
+
+        <details id="laa-decision-workspace">
+          <summary>Geleceği Hedefle · Karar görevi</summary>
+          <p>Hedefi ve seçenekleri kaydedin. Teyitleri belge referansıyla ekleyip kararın nasıl değiştiğini görün.</p>
+          <form id="laa-decision-task">
+            <label>Hedef <input name="goal" required maxlength="250"></label>
+            <label>Asgari kapasite <input name="minUnits" type="number" min="1" step="1" required></label>
+            <label>Azami bütçe <input name="maxCost" type="number" min="0" step="1" required></label>
+            <div id="laa-decision-options"></div>
+            <button type="button" class="btn btn-sm" id="laa-decision-add-option">Seçenek ekle</button>
+            <button type="submit" class="btn btn-sm btn-primary">Görevi kaydet</button>
+          </form>
+          <template id="laa-decision-option">
+            <fieldset>
+              <legend>Seçenek</legend>
+              <label>Ad <input name="optionName" required maxlength="250"></label>
+              <label>Kapasite <input name="optionUnits" type="number" min="0" step="1" required></label>
+              <label>Maliyet <input name="optionCost" type="number" min="0" step="1" required></label>
+              <label>Son karar (yerel saat) <input name="optionDeadline" type="datetime-local" required></label>
+              <label>Teyit koşulu (isteğe bağlı) <input name="optionCondition" maxlength="250"></label>
+              <button type="button" class="btn btn-sm" data-remove-option>Seçeneği kaldır</button>
+            </fieldset>
+          </template>
+          <form id="laa-decision-evidence" hidden>
+            <label>Koşul <select name="condition" required></select></label>
+            <label>Durum <select name="status">
+              <option value="CONFIRMED">Teyit edildi</option>
+              <option value="DENIED">Reddedildi</option>
+              <option value="CONFLICTING">Çelişkili</option>
+            </select></label>
+            <label>Kaynak veya belge referansı <input name="reference" maxlength="250" required></label>
+            <button type="submit" class="btn btn-sm">Kanıtı kaydet ve yeniden hesapla</button>
+          </form>
+          <form id="laa-decision-replay" hidden>
+            <label>Geçmiş bilgi kesiti (yerel saat) <input name="asOf" type="datetime-local" step="0.001" required></label>
+            <button type="submit" class="btn btn-sm">O anda değerlendir</button>
+          </form>
+          <button type="button" class="btn btn-sm" id="laa-decision-delete" hidden>Yerel görevi sil</button>
+          <p id="laa-decision-status" role="status"></p>
+          <div id="laa-decision-output"></div>
+        </details>
+
       </div>
 
       <!-- SEKME 3: KİŞİSEL AJAN OLUŞTURMA VE ÇALIŞTIRMA PLATFORMU -->

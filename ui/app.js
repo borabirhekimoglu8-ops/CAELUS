@@ -28041,6 +28041,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         exported_at: new Date().toISOString(),
         schema: 'CAELUS_SOVEREIGN_USER_EXPORT_V1',
         advisor_memory: advisorSession ? advisorSession.inspectSeparatedMemory() : null,
+        decision_task: decisionWorkspace ? decisionWorkspace.load() : null,
         world_gate_zones: worldDataGate ? worldDataGate.inspectZones() : null,
         agents: agentStudio ? agentStudio.listAgents().map((a) => agentStudio.exportAgentTemplateSafe(a)) : []
       };
@@ -28121,6 +28122,119 @@ function initCaelusLivingAdvisorAndAgentStudio() {
       advisorSession.updateUserPreferences({ interestAreas: list });
       showSovereignFeedback(`✓ Kişisel ilgi alanlarınız yerel hafızaya kaydedildi: <strong>${escapeHtml(list.join(', ') || 'Temizlendi')}</strong>`, false);
     });
+  }
+
+  const decisionPanel = document.getElementById('laa-decision-workspace');
+  let decisionWorkspace;
+  if (decisionPanel && advMod?.createDecisionWorkspace) {
+    const taskForm = decisionPanel.querySelector('#laa-decision-task');
+    const evidenceForm = decisionPanel.querySelector('#laa-decision-evidence');
+    const replayForm = decisionPanel.querySelector('#laa-decision-replay');
+    const deleteBtn = decisionPanel.querySelector('#laa-decision-delete');
+    const optionRows = decisionPanel.querySelector('#laa-decision-options');
+    const optionTemplate = decisionPanel.querySelector('#laa-decision-option');
+    const status = decisionPanel.querySelector('#laa-decision-status');
+    const output = decisionPanel.querySelector('#laa-decision-output');
+    const statuses = {
+      AVAILABLE: 'Uygulanabilir', WAITING: 'Teyit bekliyor', DENIED: 'Teyit reddedildi',
+      OUTSIDE_LIMITS: 'Hedef veya bütçe dışında', EXPIRED: 'Karar süresi doldu'
+    };
+    const planName = (plan) => plan.recommended?.name ||
+      (plan.status === 'WAITING_FOR_EVIDENCE' ? 'Teyit bekleniyor' : 'Uygulanabilir seçenek yok');
+    const displayTime = (time) => new Date(time).toLocaleString('tr-TR');
+    function addOption() {
+      if (optionRows.childElementCount >= 20) return;
+      const row = optionTemplate.content.cloneNode(true);
+      row.querySelector('[data-remove-option]').addEventListener('click', (event) => {
+        if (optionRows.childElementCount > 1) event.currentTarget.closest('fieldset').remove();
+      });
+      optionRows.append(row);
+    }
+    function renderDecision(plan, previous) {
+      const heading = document.createElement('p');
+      heading.textContent = plan.goal + ' · ' + displayTime(plan.asOf) + ' · Sonuç: ' + planName(plan);
+      const options = document.createElement('ul');
+      for (const option of plan.options) {
+        const item = document.createElement('li');
+        item.textContent = option.name + ' · ' + option.units + ' birim · ' + option.cost +
+          ' · Son karar: ' + displayTime(option.deadline) + ' · ' + statuses[option.status] +
+          (option.condition ? ' · ' + option.condition : '') +
+          (option.evidence ? ' · Kaynak: ' + option.evidence.reference : '');
+        options.append(item);
+      }
+      output.replaceChildren(heading, options);
+      if (previous) {
+        const change = document.createElement('p');
+        change.textContent = 'Önce: ' + planName(previous) + ' / Şimdi: ' + planName(plan);
+        output.prepend(change);
+      }
+    }
+    function refreshDecision() {
+      const saved = decisionWorkspace.load();
+      taskForm.hidden = Boolean(saved);
+      replayForm.hidden = !saved;
+      deleteBtn.hidden = !saved;
+      const select = evidenceForm.elements.condition;
+      select.replaceChildren();
+      const conditions = new Set(saved?.task.options.map((option) => option.condition).filter(Boolean));
+      for (const condition of conditions) select.add(new Option(condition, condition));
+      evidenceForm.hidden = conditions.size === 0;
+      if (saved) renderDecision(decisionWorkspace.replay());
+      else output.replaceChildren();
+    }
+    function handleDecision(event, action) {
+      event.preventDefault();
+      status.textContent = '';
+      try { action(); } catch (error) { status.textContent = error.message; }
+    }
+    try {
+      decisionWorkspace = advMod.createDecisionWorkspace(window.localStorage);
+      addOption();
+      addOption();
+      refreshDecision();
+    } catch (error) {
+      status.textContent = error.message;
+    }
+    if (decisionWorkspace) {
+      decisionPanel.querySelector('#laa-decision-add-option').addEventListener('click', addOption);
+      taskForm.addEventListener('submit', (event) => handleDecision(event, () => {
+        const values = taskForm.elements;
+        const options = Array.from(optionRows.children, (row) => ({
+          name: row.querySelector('[name=optionName]').value,
+          units: row.querySelector('[name=optionUnits]').valueAsNumber,
+          cost: row.querySelector('[name=optionCost]').valueAsNumber,
+          deadline: new Date(row.querySelector('[name=optionDeadline]').value).toISOString(),
+          condition: row.querySelector('[name=optionCondition]').value.trim()
+        }));
+        decisionWorkspace.create({
+          goal: values.goal.value, minUnits: values.minUnits.valueAsNumber,
+          maxCost: values.maxCost.valueAsNumber, options
+        });
+        refreshDecision();
+      }));
+      evidenceForm.addEventListener('submit', (event) => handleDecision(event, () => {
+        const values = evidenceForm.elements;
+        const update = decisionWorkspace.recordEvidence({
+          condition: values.condition.value, status: values.status.value, reference: values.reference.value
+        });
+        renderDecision(update.after, update.before);
+        values.reference.value = '';
+      }));
+      replayForm.addEventListener('submit', (event) => handleDecision(event, () => {
+        renderDecision(decisionWorkspace.replay(new Date(replayForm.elements.asOf.value).toISOString()));
+      }));
+      deleteBtn.addEventListener('click', (event) => handleDecision(event, () => {
+        if (!window.confirm('Yerel görev ve teyit geçmişi silinsin mi?')) return;
+        decisionWorkspace.clear();
+        taskForm.reset();
+        refreshDecision();
+      }));
+      deleteUserDataBtn?.addEventListener('click', (event) => handleDecision(event, () => {
+        decisionWorkspace.clear();
+        taskForm.reset();
+        refreshDecision();
+      }));
+    }
   }
 
   const askInput = document.getElementById('inp-laa-advisor-question');

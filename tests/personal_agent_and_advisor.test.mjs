@@ -836,3 +836,43 @@ test('Historical replay uses receipt time, preserves revisions, and isolates liv
   assert.equal(advisor.processAdvisorTurn(question).turnIndex, 1);
   assert.throws(() => advisor.replayAdvisorTurn(question, 'invalid'), RangeError);
 });
+
+test('A decision task survives restart and replays a recommendation before and after evidence', (t) => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const start = '2026-11-10T08:00:00.000Z';
+  const deadline = '2026-11-10T15:00:00.000Z';
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const original = CaelusConversationalAdvisor.createDecisionWorkspace(adapter);
+  original.create({
+    goal: 'Çeşme–Sakız', minUnits: 300, maxCost: 100000,
+    options: [
+      { name: 'İkinci sefer', units: 305, cost: 60000, deadline, condition: 'Yanaşma' },
+      { name: 'Yedek gemi', units: 320, cost: 85000, deadline },
+      { name: 'Kapasite yetersiz', units: 299, cost: 50000, deadline }
+    ]
+  });
+  const resumed = CaelusConversationalAdvisor.createDecisionWorkspace(adapter);
+  assert.equal(resumed.replay().recommended.name, 'Yedek gemi');
+  assert.equal(resumed.replay().options[2].status, 'OUTSIDE_LIMITS');
+  t.mock.timers.setTime(Date.parse('2026-11-10T11:40:00Z'));
+  assert.throws(() => resumed.recordEvidence({ condition: 'Yanlış koşul', status: 'CONFIRMED', reference: 'Belge A' }));
+  const update = resumed.recordEvidence({ condition: 'Yanaşma', status: 'CONFIRMED', reference: 'Belge A' });
+  assert.equal(update.before.recommended.name, 'Yedek gemi');
+  assert.equal(update.after.recommended.name, 'İkinci sefer');
+  assert.equal(update.after.recommended.evidence.reference, 'Belge A');
+  assert.equal(resumed.replay(start).recommended.name, 'Yedek gemi');
+  t.mock.timers.setTime(Date.parse('2026-11-10T12:00:00Z'));
+  const disputed = resumed.recordEvidence({ condition: 'Yanaşma', status: 'CONFLICTING', reference: 'Belge B' });
+  assert.equal(disputed.after.options[0].status, 'WAITING');
+  assert.equal(disputed.after.recommended.name, 'Yedek gemi');
+  assert.equal(resumed.replay(update.after.asOf).recommended.name, 'İkinci sefer');
+  t.mock.timers.setTime(Date.parse('2026-11-10T15:01:00Z'));
+  assert.equal(resumed.replay().status, 'NO_FEASIBLE_PLAN');
+  resumed.clear();
+  assert.equal(original.load(), null);
+});
