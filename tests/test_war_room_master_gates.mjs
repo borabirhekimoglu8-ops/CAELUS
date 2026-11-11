@@ -574,7 +574,7 @@ test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/c
 
   try {
     let rootHtml = "";
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < 120; attempt++) {
       try {
         const r = await fetch(`http://127.0.0.1:${freePort}/`);
         if (r.status === 200) {

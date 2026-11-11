@@ -336,16 +336,28 @@ TEST_CASE("mobile key protection registration contract") {
               CAELUS_MOBILE_E_INVALID_ARGUMENT);
     }
     SUBCASE("without a delegate, plaintext identity persistence is refused") {
-        // Clear the delegate: POSIX fallback refuses plaintext key files, so
-        // engine creation must fail closed instead of writing a raw seed.
+        // Clear the delegate: POSIX fallback refuses plaintext key files, while
+        // Windows falls back to OS DPAPI protection (never raw 32-byte seeds).
         REQUIRE(caelus_mobile_register_key_protection_v1(
                     nullptr, nullptr, nullptr) == CAELUS_MOBILE_OK);
         const std::string dir = scratch_dir();
         const std::string identity = dir + "/identity.key";
         const auto config = base_config(dir, identity, 0, 1, 1);
         int32_t status = 0;
+#if defined(_WIN32)
+        CaelusMobileEngine* created =
+            caelus_mobile_engine_create_v1(&config, &status);
+        CHECK(created != nullptr);
+        CHECK(status == CAELUS_MOBILE_OK);
+        if (created != nullptr) {
+            caelus_mobile_engine_destroy_v1(created);
+            const std::string key_file = read_file(identity);
+            CHECK(key_file.size() > 32u);
+        }
+#else
         CHECK(caelus_mobile_engine_create_v1(&config, &status) == nullptr);
         CHECK(status == CAELUS_MOBILE_E_INTERNAL);
+#endif
         register_test_key_protection();
     }
     SUBCASE("identity persists and reloads through the delegate") {
@@ -874,7 +886,8 @@ TEST_CASE("mobile neural assurance runs the shared audited tick sequence") {
     CHECK(state.find("\"last_gate_decision\":\"") != std::string::npos);
     CHECK(state.find("\"observed_history_ticks\":") != std::string::npos);
 
-    // The audit chain must contain the full neural evidence trail.
+    // The audit chain must contain the full neural evidence trail, and sealing
+    // must append SESSION_END before SEAL for external forensic verification.
     const std::string audit =
         fetch_string(box.handle, &caelus_mobile_export_audit_v1);
     CHECK(audit.find("NEURAL_INFERENCE_V1") != std::string::npos);
@@ -882,6 +895,18 @@ TEST_CASE("mobile neural assurance runs the shared audited tick sequence") {
     CHECK(audit.find("SCENARIO_ACTIVATED") != std::string::npos);
     CHECK(audit.find("NEURAL_MODEL_LOADED") != std::string::npos);
     CHECK(audit.find("MOBILE_TICK") != std::string::npos);
+
+    REQUIRE(caelus_mobile_seal_session_v1(box.handle) == CAELUS_MOBILE_OK);
+    const std::string sealed_audit =
+        fetch_string(box.handle, &caelus_mobile_export_audit_v1);
+    CHECK(sealed_audit.find("\"SESSION_END\"") < sealed_audit.find("\"SEAL\""));
+    if (const char* export_path = std::getenv("CAELUS_TEST_EXPORT_AUDIT_PATH");
+        export_path != nullptr && export_path[0] != '\0') {
+        std::ofstream out(export_path, std::ios::binary | std::ios::trunc);
+        REQUIRE(static_cast<bool>(out));
+        out.write(sealed_audit.data(),
+                  static_cast<std::streamsize>(sealed_audit.size()));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -917,13 +942,21 @@ TEST_CASE("mobile audit surface: path, status, export, lifecycle, seal") {
     CHECK(caelus_mobile_note_lifecycle_v1(box.handle, 99) ==
           CAELUS_MOBILE_E_INVALID_ARGUMENT);
 
-    // Seal, then export: the exported NDJSON must end with the SEAL line.
+    // Seal, then export: the exported NDJSON must close SESSION_START with
+    // SESSION_END before the terminal SEAL line, and sealing is idempotent.
     REQUIRE(caelus_mobile_seal_session_v1(box.handle) == CAELUS_MOBILE_OK);
+    CHECK(caelus_mobile_seal_session_v1(box.handle) == CAELUS_MOBILE_OK);
     const std::string exported =
         fetch_string(box.handle, &caelus_mobile_export_audit_v1);
-    CHECK(exported.find("\"SESSION_START\"") != std::string::npos);
+    const size_t start_pos = exported.find("\"SESSION_START\"");
+    const size_t end_pos = exported.find("\"SESSION_END\"");
+    const size_t seal_pos = exported.find("\"SEAL\"");
+    CHECK(start_pos != std::string::npos);
     CHECK(exported.find("APP_LIFECYCLE") != std::string::npos);
-    CHECK(exported.find("SEAL") != std::string::npos);
+    CHECK(end_pos != std::string::npos);
+    CHECK(seal_pos != std::string::npos);
+    CHECK(start_pos < end_pos);
+    CHECK(end_pos < seal_pos);
 
     // After sealing, audited operations must fail closed and the status
     // must report the sealed latch.

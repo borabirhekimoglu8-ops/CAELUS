@@ -506,9 +506,9 @@ echo ---------------------------------------------------------------------------
 echo ---------kt----     : %OUT_EXE%
 echo Boyut     : ~!EXE_SIZE_KB! KB  (~!EXE_SIZE_MB! MB)  [!EXE_BYTES! bayt]
 echo Toolchain : %CXX_TOOL%  ^|  Rust target: %RUST_TARGET%
-if /I "%CAELUS_PRODUCTION%"=="1" echo PRODUCTION GATES: COMPILED-OUT  ^(CAELUS_PRODUCTION — SELF_SIGNED_DEV / plugin dev-bypass / pin-bypass derleme-disi^)
+if /I "%CAELUS_PRODUCTION%"=="1" echo PRODUCTION GATES: COMPILED-OUT  ^(CAELUS_PRODUCTION -- SELF_SIGNED_DEV / plugin dev-bypass / pin-bypass derleme-disi^)
 if !EXE_BYTES! GEQ %MAX_BYTES% (
-    echo Hedef     : ^<50 MB ✗  AŞILDI  ^(!EXE_BYTES! ^> %MAX_BYTES% bayt^)
+    echo Hedef     : ^<50 MB X  ASILDI  ^(!EXE_BYTES! ^> %MAX_BYTES% bayt^)
     echo.
     echo [HATA] Statik binary 50 MB sinirini asti ------- build BASARISIZ.
     echo        Boyut dusurme onerileri:

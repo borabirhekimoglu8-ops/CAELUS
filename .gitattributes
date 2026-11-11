@@ -18,9 +18,13 @@
 *.webmanifest text eol=lf
 *.ndjson text eol=lf
 *.v2 text eol=lf
+*.ftl text eol=lf
 configs/*.json text eol=lf
+locales/**/*.json text eol=lf
+scenarios/pilot_aegean_ferry_airlock/*.json text eol=lf
 CMakeLists.txt text eol=lf
 models/assurance_v1/manifest.json text eol=lf
+models/assurance_v1/model.sig text eol=lf
 models/assurance_v1/training_manifest.json text eol=lf
 models/assurance_v1/training_metrics.json text eol=lf
 tools/caelus_blake3.py text eol=lf
@@ -33,4 +37,3 @@ tests/fixtures/*.log -text
 scenarios/*.json -text
 caelus_world_store.json -text
 models/assurance_v1/weights.bin -text
-models/assurance_v1/model.sig -text

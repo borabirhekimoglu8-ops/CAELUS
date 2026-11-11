@@ -147,6 +147,7 @@ struct CaelusMobileEngine {
     Phase phase = Phase::Created;
     bool ticks_executed = false;
     bool poisoned = false;
+    bool session_end_emitted = false;
     std::string last_error;
 
     // Core components
@@ -320,6 +321,19 @@ bool append_audit(CaelusMobileEngine& handle, const std::string& event_json) {
     return handle.audit.is_open() && handle.audit.append(event_json);
 }
 
+bool append_session_end_once(CaelusMobileEngine& handle) {
+    if (handle.session_end_emitted) return true;
+    if (!handle.audit.is_open()) return false;
+    std::ostringstream event;
+    event << "{\"type\":\"SESSION_END\""
+          << ",\"tick\":" << handle.engine.current_tick()
+          << ",\"poisoned\":" << (handle.poisoned ? "true" : "false")
+          << "}";
+    if (!handle.audit.append(event.str())) return false;
+    handle.session_end_emitted = true;
+    return true;
+}
+
 /** Deliver every scheduled intel event with tick <= now (connector parity). */
 size_t deliver_scheduled_intel(CaelusMobileEngine& handle) {
     const uint64_t now = handle.engine.current_tick();
@@ -401,7 +415,10 @@ int32_t run_one_tick(CaelusMobileEngine& handle) {
                 // not abort the host app: latch the handle poisoned so no
                 // further execution can happen on unaudited mutated state.
                 handle.poisoned = true;
-                if (handle.audit.is_open()) handle.audit.seal();
+                if (handle.audit.is_open()) {
+                    (void)append_session_end_once(handle);
+                    handle.audit.seal();
+                }
                 handle.last_error =
                     "FATAL: symbolic pre-state could not be restored after "
                     "an authority audit failure; engine handle is poisoned";
@@ -1071,12 +1088,7 @@ void caelus_mobile_engine_destroy_v1(CaelusMobileEngine* engine) {
     if (owned == nullptr) return; // not live (double destroy) or busy
     try {
         if (owned->audit.is_open()) {
-            std::ostringstream event;
-            event << "{\"type\":\"SESSION_END\""
-                  << ",\"tick\":" << owned->engine.current_tick()
-                  << ",\"poisoned\":" << (owned->poisoned ? "true" : "false")
-                  << "}";
-            (void)owned->audit.append(event.str());
+            (void)append_session_end_once(*owned);
             (void)owned->audit.seal();
         }
     } catch (...) {
@@ -1598,6 +1610,13 @@ int32_t caelus_mobile_seal_session_v1(CaelusMobileEngine* engine) {
         if (!handle.audit.is_open()) {
             return fail(handle, CAELUS_MOBILE_E_AUDIT_FAILURE,
                         "audit chain is not open");
+        }
+        if (handle.phase == Phase::Sealed) {
+            return CAELUS_MOBILE_OK;
+        }
+        if (!append_session_end_once(handle)) {
+            return fail(handle, CAELUS_MOBILE_E_AUDIT_FAILURE,
+                        "SESSION_END audit event could not be committed");
         }
         if (!handle.audit.seal()) {
             return fail(handle, CAELUS_MOBILE_E_AUDIT_FAILURE,
