@@ -322,11 +322,49 @@ public:
     void bind_engine(WsEmitter* emitter, std::atomic<uint64_t>* tick_ctr) noexcept {
         emitter_  = emitter;
         tick_ctr_ = tick_ctr;
+        reload_intel_manifest();
+        reload_airlock_manifest();
         // Build the CaelusEngineFns struct for plugins.
-        engine_fns_.engine_ctx  = this;
-        engine_fns_.emit_json   = &PluginRegistry::ffi_emit_json;
-        engine_fns_.inject_intel= &PluginRegistry::ffi_inject_intel;
-        engine_fns_.current_tick= &PluginRegistry::ffi_current_tick;
+        engine_fns_.engine_ctx          = this;
+        engine_fns_.emit_json           = &PluginRegistry::ffi_emit_json;
+        engine_fns_.inject_intel        = &PluginRegistry::ffi_inject_intel;
+        engine_fns_.current_tick        = &PluginRegistry::ffi_current_tick;
+        engine_fns_.verify_intel_source = &PluginRegistry::ffi_verify_intel_source;
+        engine_fns_.verify_airlock_v2   = airlock_manifest_valid_
+            ? &PluginRegistry::ffi_verify_airlock_v2
+            : nullptr;
+    }
+
+    /** Reload the host-level FIELD-IDENTITY v2 manifest from CAELUS_TRUSTED_INTEL_MANIFEST. */
+    bool reload_intel_manifest() noexcept {
+        intel_manifest_.clear();
+        const char* spec = std::getenv("CAELUS_TRUSTED_INTEL_MANIFEST");
+        if (!spec || !spec[0]) {
+            intel_manifest_valid_ = false;
+            return true;
+        }
+        intel_manifest_valid_ = intel_manifest_.load_from_env_spec(spec);
+        return intel_manifest_valid_;
+    }
+
+    /** Reload the host-level Sidecar Airlock v2 manifest from CAELUS_AIRLOCK_MANIFEST_PATH. */
+    bool reload_airlock_manifest() noexcept {
+        airlock_manifest_.clear();
+        const char* path = std::getenv("CAELUS_AIRLOCK_MANIFEST_PATH");
+        if (!path || !path[0]) {
+            airlock_manifest_valid_ = false;
+            engine_fns_.verify_airlock_v2 = nullptr;
+            return true;
+        }
+        airlock_manifest_valid_ = airlock_manifest_.load_from_file(path);
+        engine_fns_.verify_airlock_v2 = airlock_manifest_valid_
+            ? &PluginRegistry::ffi_verify_airlock_v2
+            : nullptr;
+        return airlock_manifest_valid_;
+    }
+
+    [[nodiscard]] const CaelusEngineFns& engine_fns() const noexcept {
+        return engine_fns_;
     }
 
     /**
@@ -639,6 +677,10 @@ private:
     CaelusEngineFns          engine_fns_{};
     void*                    intel_ctx_ = nullptr;
     IntelInjectFn            intel_inject_fn_ = nullptr;
+    connector_detail::IntelSourceManifest intel_manifest_{};
+    bool                     intel_manifest_valid_ = false;
+    airlock_detail::AirlockSourceManifestV2 airlock_manifest_{};
+    bool                     airlock_manifest_valid_ = false;
 
     // T-23 KEYMGMT köprü durumu: enjekte edilen Rust kayıt fonksiyonu ve
     // "şu anda Rust'a delege kayıtlı mı?" bayrağı.
@@ -747,6 +789,58 @@ private:
         auto* self = static_cast<PluginRegistry*>(ctx);
         if (!self || !self->tick_ctr_) return 0;
         return self->tick_ctr_->load(std::memory_order_relaxed);
+    }
+    static uint8_t ffi_verify_intel_source(void* ctx,
+                                           uint64_t source_slot_id,
+                                           const uint8_t* msg,
+                                           size_t msg_len,
+                                           const uint8_t* pubkey32,
+                                           const uint8_t* sig64) noexcept {
+        auto* self = static_cast<PluginRegistry*>(ctx);
+        if (!self || !self->intel_manifest_valid_) return 0;
+        return connector_detail::verify_intel_source_against_manifest(
+                   self->intel_manifest_, source_slot_id, msg, msg_len,
+                   pubkey32, sig64)
+                   ? 1u
+                   : 0u;
+    }
+    static uint8_t ffi_verify_airlock_v2(void* ctx,
+                                         const char* source_id,
+                                         const char* key_id,
+                                         const char* event_kind,
+                                         const uint8_t* msg,
+                                         size_t msg_len,
+                                         const uint8_t* pubkey32,
+                                         const uint8_t* sig64,
+                                         uint32_t* out_error_code) noexcept {
+        if (out_error_code) *out_error_code = CAELUS_AIRLOCK_ERR_UNTRUSTED_SOURCE;
+        auto* self = static_cast<PluginRegistry*>(ctx);
+        if (!self || !self->airlock_manifest_valid_ || !source_id || !key_id ||
+            !event_kind || !msg || !pubkey32 || !sig64) {
+            return 0u;
+        }
+        const airlock_detail::AirlockSourceEntryV2* entry =
+            self->airlock_manifest_.find_verified(source_id, key_id, pubkey32);
+        if (!entry) {
+            if (out_error_code) *out_error_code = CAELUS_AIRLOCK_ERR_UNTRUSTED_SOURCE;
+            return 0u;
+        }
+        bool kind_ok = false;
+        for (const auto& k : entry->allowed_event_kinds) {
+            if (k == event_kind) { kind_ok = true; break; }
+        }
+        if (!kind_ok) {
+            if (out_error_code) *out_error_code = CAELUS_AIRLOCK_ERR_UNAUTHORIZED_KIND;
+            return 0u;
+        }
+        const connector_detail::IntelSigVerifyFn verify =
+            connector_detail::intel_sig_verifier_slot().load(std::memory_order_acquire);
+        if (!verify || verify(msg, msg_len, pubkey32, sig64) != 1u) {
+            if (out_error_code) *out_error_code = CAELUS_AIRLOCK_ERR_SIGNATURE_MISMATCH;
+            return 0u;
+        }
+        if (out_error_code) *out_error_code = CAELUS_AIRLOCK_OK;
+        return 1u;
     }
 };
 

@@ -166,7 +166,11 @@ echo -e "${BOLD}[AŞAMA 2/3] Rust Shadow-Mesh Derlemesi (LTO + opt-z)${RESET}"
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
 
 pushd "$ROOT" > /dev/null
-cargo build --release --locked 2>&1 | sed 's/^/   /'
+if [[ "${CAELUS_SKIP_RUST:-0}" == "1" && -f "$RUST_LIB" ]]; then
+    inf "CAELUS_SKIP_RUST=1 — mevcut $RUST_LIB yeniden kullanılıyor."
+else
+    cargo build --release --locked 2>&1 | sed 's/^/   /'
+fi
 if [[ ! -f "$RUST_LIB" ]]; then
     die "Beklenen statik kütüphane bulunamadı: $RUST_LIB"
 fi

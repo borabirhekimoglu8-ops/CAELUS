@@ -372,11 +372,15 @@ impl CausalEngine {
                 if crisis_level < min_cl {
                     continue;
                 }
-                let node_id = self.intel_bindings[bi].node_id.clone();
                 let scale_fp = self.intel_bindings[bi].scale_fp;
                 let crisis_step_fp = self.intel_bindings[bi].crisis_step_fp;
                 let mode = self.intel_bindings[bi].mode;
-                if let Some(n) = self.get_node_mut(&node_id) {
+                let target_idx = {
+                    let target_id = self.intel_bindings[bi].node_id.as_str();
+                    self.nodes.iter().position(|n| n.id == target_id)
+                };
+                if let Some(ni) = target_idx {
+                    let n = &mut self.nodes[ni];
                     let signal = fp_add_saturating(
                         fp_mul(field_coeff_fp, scale_fp),
                         fp_mul((crisis_level as i64) * FP_ONE, crisis_step_fp),
@@ -399,7 +403,7 @@ impl CausalEngine {
                 applied += 1;
             }
             if let Some(gate) = self.get_node_mut("Regulatory_Gate") {
-                let bump = d_to_fp(crisis_level as f64 * 0.10);
+                let bump = (crisis_level as i64) * 100_000;
                 gate.state_fp =
                     fp_clamp(fp_add_saturating(gate.state_fp, bump), 0, gate.capacity_fp);
                 gate.reported_state_fp = gate.state_fp;
@@ -407,9 +411,9 @@ impl CausalEngine {
             }
             if crisis_level >= 3 {
                 if let Some(transit) = self.get_node_mut("Transit_Node") {
-                    let bump = d_to_fp(0.20);
+                    const TRANSIT_CRITICAL_BUMP_FP: i64 = 200_000;
                     transit.state_fp = fp_clamp(
-                        fp_add_saturating(transit.state_fp, bump),
+                        fp_add_saturating(transit.state_fp, TRANSIT_CRITICAL_BUMP_FP),
                         0,
                         transit.capacity_fp,
                     );
@@ -428,7 +432,8 @@ impl CausalEngine {
 
     // ── Tick yayılımı ────────────────────────────────────────────────────────
 
-    pub fn tick(&mut self) -> EngineSnapshot {
+    /// Sıfır heap tahsisli, saf 1e6 sabit nokta (i64) tek-adım simülasyon ilerletmesi.
+    pub fn step_tick(&mut self) {
         self.propagate_edges();
         self.apply_feedback_loops();
         self.update_trust();
@@ -441,16 +446,18 @@ impl CausalEngine {
         self.check_hysteresis();
         self.check_deadlines();
         self.tick_ += 1;
+    }
 
+    pub fn tick(&mut self) -> EngineSnapshot {
+        self.step_tick();
         self.build_snapshot()
     }
 
     pub fn run_ticks(&mut self, n: u32) -> EngineSnapshot {
-        let mut snap = self.build_snapshot();
         for _ in 0..n {
-            snap = self.tick();
+            self.step_tick();
         }
-        snap
+        self.build_snapshot()
     }
 
     // ── İkna kaldıracı ──────────────────────────────────────────────────────
@@ -476,40 +483,50 @@ impl CausalEngine {
         let roll = (rng.next() % (FP_SCALE as u64)) as i64;
         let success = roll < self.levers[li].success_p_fp;
 
-        let outcome = if success {
-            self.levers[li].on_success.clone()
-        } else {
-            self.levers[li].on_failure.clone()
+        let (target_idx, state_delta_fp, trust_delta_fp, friction_delta_fp, clear_irrecoverable) = {
+            let outcome = if success {
+                &self.levers[li].on_success
+            } else {
+                &self.levers[li].on_failure
+            };
+            let idx = if outcome.target_node_id.is_empty() {
+                None
+            } else {
+                let tid = outcome.target_node_id.as_str();
+                self.nodes.iter().position(|n| n.id == tid)
+            };
+            (
+                idx,
+                outcome.state_delta_fp,
+                outcome.trust_delta_fp,
+                outcome.friction_delta_fp,
+                outcome.clear_irrecoverable,
+            )
         };
 
-        if !outcome.target_node_id.is_empty() {
-            if let Some(n) = self
-                .nodes
-                .iter_mut()
-                .find(|n| n.id == outcome.target_node_id)
-            {
-                n.state_fp = fp_clamp(
-                    fp_add_saturating(n.state_fp, outcome.state_delta_fp),
-                    0,
-                    n.capacity_fp,
-                );
-                n.trust_fp = fp_clamp(
-                    fp_add_saturating(n.trust_fp, outcome.trust_delta_fp),
-                    0,
-                    FP_ONE,
-                );
-                n.reported_state_fp = n.state_fp;
-                if success && outcome.clear_irrecoverable {
-                    n.irrecoverable = false;
-                }
+        if let Some(ni) = target_idx {
+            let n = &mut self.nodes[ni];
+            n.state_fp = fp_clamp(
+                fp_add_saturating(n.state_fp, state_delta_fp),
+                0,
+                n.capacity_fp,
+            );
+            n.trust_fp = fp_clamp(
+                fp_add_saturating(n.trust_fp, trust_delta_fp),
+                0,
+                FP_ONE,
+            );
+            n.reported_state_fp = n.state_fp;
+            if success && clear_irrecoverable {
+                n.irrecoverable = false;
             }
         }
-        if success && outcome.clear_irrecoverable {
+        if success && clear_irrecoverable {
             self.clear_outage_recovery();
         }
-        if outcome.friction_delta_fp != 0 {
+        if friction_delta_fp != 0 {
             self.permanent_friction_fp = fp_clamp(
-                fp_add_saturating(self.permanent_friction_fp, outcome.friction_delta_fp),
+                fp_add_saturating(self.permanent_friction_fp, friction_delta_fp),
                 -FP_ONE,
                 FRICTION_MAX_FP,
             );
@@ -630,12 +647,16 @@ impl CausalEngine {
 
     fn propagate_edges(&mut self) {
         const DAMP_FP: i64 = 50_000; // 0.05 per tick
+        const MAX_STACK_EDGE_DELTAS: usize = 1024;
 
+        #[derive(Clone, Copy)]
         struct Delta {
             idx: usize,
             val: i64,
         }
-        let mut deltas: Vec<Delta> = Vec::with_capacity(self.edges.len());
+        let mut stack_deltas = [Delta { idx: 0, val: 0 }; MAX_STACK_EDGE_DELTAS];
+        let mut delta_count: usize = 0;
+        let mut overflow_deltas: Option<Vec<Delta>> = None;
 
         for edge in &self.edges {
             if !edge.active || edge.to.is_empty() {
@@ -656,16 +677,29 @@ impl CausalEngine {
             let utilization = fp_div(from.state_fp, from.capacity_fp);
             let trusted_u = fp_mul(from.trust_fp, utilization);
             let delta = fp_mul(fp_mul(trusted_u, edge.multiplier_fp), DAMP_FP);
-            deltas.push(Delta {
+            let entry = Delta {
                 idx: to_idx,
                 val: delta,
-            });
+            };
+            if delta_count < MAX_STACK_EDGE_DELTAS {
+                stack_deltas[delta_count] = entry;
+                delta_count += 1;
+            } else {
+                overflow_deltas.get_or_insert_with(Vec::new).push(entry);
+            }
         }
 
-        for d in &deltas {
+        for d in &stack_deltas[..delta_count] {
             let n = &mut self.nodes[d.idx];
             n.state_fp = fp_clamp(fp_add_saturating(n.state_fp, d.val), 0, n.capacity_fp);
             n.reported_state_fp = n.state_fp; // gizleme yoksa raporlanan = gerçek
+        }
+        if let Some(extra) = &overflow_deltas {
+            for d in extra {
+                let n = &mut self.nodes[d.idx];
+                n.state_fp = fp_clamp(fp_add_saturating(n.state_fp, d.val), 0, n.capacity_fp);
+                n.reported_state_fp = n.state_fp;
+            }
         }
     }
 
@@ -691,8 +725,12 @@ impl CausalEngine {
             }
 
             let gain = self.loops[lpi].gain_fp;
-            let first_id = self.loops[lpi].path[0].clone();
-            if let Some(first) = self.get_node_mut(&first_id) {
+            let first_idx = {
+                let first_id = self.loops[lpi].path[0].as_str();
+                self.nodes.iter().position(|n| n.id == first_id)
+            };
+            if let Some(fi) = first_idx {
+                let first = &mut self.nodes[fi];
                 let amplification = fp_mul(fp_mul(gain - FP_ONE, min_signal), LOOP_DAMP_FP);
                 first.state_fp = fp_clamp(
                     fp_add_saturating(first.state_fp, amplification),

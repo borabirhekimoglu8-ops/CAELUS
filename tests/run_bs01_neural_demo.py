@@ -103,7 +103,17 @@ def copy_regular(source: Path, destination: Path, maximum: int = MAX_FILE_BYTES)
 
 
 def clean_environment() -> dict[str, str]:
-    allowed = ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR")
+    allowed = (
+        "SYSTEMROOT",
+        "WINDIR",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "USERPROFILE",
+        "HOME",
+    )
     environment = {name: os.environ[name] for name in allowed if name in os.environ}
     environment.update(
         {

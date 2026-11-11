@@ -11,6 +11,8 @@
 // surface `unsafe` would not change the ABI, so we allow this clippy lint here.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+pub mod airlock_adapters;
+pub mod airlock_host;
 pub mod audit_log;
 pub mod model_verify;
 pub mod network;
@@ -18,9 +20,9 @@ pub mod scenario_verify;
 
 // ─── Primary Shadow-Mesh Authentication FFI surface ───────────────────────────
 pub use network::mesh_auth::{
-    caelus_identity_fingerprint, caelus_identity_free, caelus_identity_load_or_create,
-    caelus_identity_new, caelus_identity_pubkey, caelus_mesh_handshake, CaelusIdentityHandle,
-    CaelusSessionResult,
+    caelus_derive_key_argon2id, caelus_identity_fingerprint, caelus_identity_free,
+    caelus_identity_load_or_create, caelus_identity_new, caelus_identity_pubkey,
+    caelus_mesh_handshake, CaelusIdentityHandle, CaelusSessionResult,
 };
 
 // ─── Discovery + Intel Feed FFI surface ───────────────────────────────────────

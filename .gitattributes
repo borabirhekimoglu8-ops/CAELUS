@@ -1,3 +1,36 @@
-# Preserve the bytes used in model signatures and verifier integrity checks.
+# Enforce pure LF across scripts, workflows, deterministic manifests, and source files
+# so Windows checkouts with core.autocrlf=true never inject CR (\r).
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.rs text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.c text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.webmanifest text eol=lf
+*.ndjson text eol=lf
+*.v2 text eol=lf
+configs/*.json text eol=lf
+CMakeLists.txt text eol=lf
 models/assurance_v1/manifest.json text eol=lf
+models/assurance_v1/training_manifest.json text eol=lf
+models/assurance_v1/training_metrics.json text eol=lf
 tools/caelus_blake3.py text eol=lf
+
+# Windows batch scripts use native CRLF.
+*.bat text eol=crlf
+
+# Preserve exact byte-for-byte framing on signed scenarios, models, world store, and forensic fixtures.
+tests/fixtures/*.log -text
+scenarios/*.json -text
+caelus_world_store.json -text
+models/assurance_v1/weights.bin -text
+models/assurance_v1/model.sig -text

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "claude/**"]
+    branches: [main, "claude/**", "feat/**"]
   pull_request:
   workflow_dispatch:
 
@@ -14,9 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
-
       - name: Install Python verifier dependencies
         run: python3 -m pip install --upgrade blake3 cryptography
 
@@ -26,16 +23,24 @@ jobs:
           cargo --version
           g++ --version | head -1
           python3 --version
+          node --version
 
-      - name: Run full CI pipeline (builds dist/caelus_os and verifies C++/Rust core)
+      - name: Fetch dependencies for the offline dataset test
+        run: cargo fetch --locked --manifest-path caelus_core/Cargo.toml
+
+      - name: Run full CI pipeline (builds CAELUS_PRODUCTION=1 dist/caelus_os and verifies C++/Rust/Neural/Airlock/WarRoom)
         run: |
-          chmod +x build.sh ci.sh
+          chmod +x build.sh ci.sh tools/build_host_bridge.sh tools/run_war_room_demo.sh
           ./ci.sh
 
-      - name: Extract deterministic CDET block
+      - name: Extract deterministic CDET block (UTF-8 LF)
         run: |
-          rm -f caelus_audit_0000000000000000.log
-          ./dist/caelus_os --scenario UNIVERSAL_BASELINE --det-mode | grep '^CDET:' > cdet-linux.txt
+          tmp_dir="$(mktemp -d)"
+          (
+            cd "$tmp_dir"
+            "$GITHUB_WORKSPACE/dist/caelus_os" --scenario UNIVERSAL_BASELINE --det-mode
+          ) | grep -E '^CDET:' > cdet-linux.txt
+          rm -rf "$tmp_dir"
           wc -l cdet-linux.txt
 
       - name: Upload CDET artifact
@@ -45,34 +50,40 @@ jobs:
           path: cdet-linux.txt
           if-no-files-found: error
 
-      - name: Upload Linux binary
+      - name: Upload Linux production binary
         uses: actions/upload-artifact@v4
         with:
           name: caelus_os-linux
           path: dist/caelus_os
           if-no-files-found: error
 
-      - name: Validate universal browser scenario compiler & NCM-2 against native Linux binary
+      - name: Validate universal browser scenario compiler, War Room AG-UI, Airlock MCP & NCM-2 against native Linux binary
         env:
           CAELUS_OFFLINE_ONLY: "1"
           CAELUS_REQUIRE_NATIVE_BIN: "1"
         run: |
           CAELUS_SKIP_RUST=1 ./build.sh
           rustup target add wasm32-unknown-unknown
-          cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          cargo build --locked --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
           node --check ui/scenario_compiler.js
           node --check ui/living_world_model.js
           node --check ui/discovery_value_engine.js
           node --check ui/first_real_task_engine.js
           node --check ui/personal_agent_and_advisor.js
+          node --check ui/sidecar_airlock_mcp.js
+          node --check ui/war_room_ag_ui_engine.js
+          node --check ui/war_room_cockpit.js
           node --check ui/spatial_experience.js
           node --check ui/app.js
+          node --check tools/caelus_mcp_server.mjs
+          node --check tools/caelus_ag_ui_ws_server.mjs
           node --test tests/universal_scenario_compiler.test.mjs
           node --test tests/living_world_model.test.mjs
           node --test tests/discovery_value_engine.test.mjs
           node --test tests/first_real_task.test.mjs
           node --test tests/personal_agent_and_advisor.test.mjs
           node tools/caelus_mcp_server.mjs --self-test
+          node --test tests/test_war_room_master_gates.mjs
           node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
@@ -87,10 +98,9 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Verus-pinned Rust toolchain
-        run: rustup toolchain install 1.95.0-x86_64-pc-windows-msvc
+        run: rustup toolchain install 1.95.0-x86_64-pc-windows-msvc --no-self-update --profile minimal
 
       - name: Install Python verifier dependencies
-        # ci.bat prefers the `py -3` launcher; install into that interpreter.
         run: py -3 -m pip install --upgrade blake3 cryptography
 
       - name: Toolchain versions
@@ -98,65 +108,42 @@ jobs:
         run: |
           rustc --version
           cargo --version
-          cl.exe 2>&1 | findstr /I version
+          where cl.exe
           py -3 --version
+          node --version
 
       - name: Fetch dependencies for the offline dataset test
         run: cargo fetch --locked --manifest-path caelus_core/Cargo.toml
 
-      - name: Run full CI pipeline
+      - name: Run full CI pipeline (builds CAELUS_PRODUCTION=1 dist\caelus_os.exe and verifies C++/Rust/Neural/Airlock/WarRoom)
         shell: cmd
         env:
           CAELUS_CXX: MSVC
           PYTHONUTF8: "1"
-        # ci.bat checks dataset provenance before building the production binary.
-        run: ci.bat
-
-      - name: Validate universal browser scenario compiler & NCM-2 against native Windows binary
-        shell: pwsh
-        env:
-          CAELUS_OFFLINE_ONLY: "1"
-          CAELUS_REQUIRE_NATIVE_BIN: "1"
         run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
-          node --check ui/scenario_compiler.js
-          node --check ui/living_world_model.js
-          node --check ui/discovery_value_engine.js
-          node --check ui/first_real_task_engine.js
-          node --check ui/personal_agent_and_advisor.js
-          node --check ui/spatial_experience.js
-          node --check ui/app.js
-          node --test tests/universal_scenario_compiler.test.mjs
-          node --test tests/living_world_model.test.mjs
-          node --test tests/discovery_value_engine.test.mjs
-          node --test tests/first_real_task.test.mjs
-          node --test tests/personal_agent_and_advisor.test.mjs
-          node tools/caelus_mcp_server.mjs --self-test
-          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
-          node --test tests/universal_wasm_scenario.test.mjs
+          call ci.bat
+          if errorlevel 1 exit /b 1
 
-      - name: Determinism diagnostics
-        if: failure()
+      - name: Extract deterministic CDET block (pure UTF-8 LF, no BOM)
         shell: pwsh
         run: |
-          Get-Item dist\caelus_os.exe | Format-List Length, LastWriteTime
-          Remove-Item -ErrorAction SilentlyContinue caelus_audit_0000000000000000.log
-          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
-          Copy-Item caelus_audit_0000000000000000.log run1.log
-          Remove-Item caelus_audit_0000000000000000.log
-          & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode | Out-Null
-          Copy-Item caelus_audit_0000000000000000.log run2.log
-          Write-Host '--- RUN1 audit ---'; Get-Content run1.log
-          Write-Host '--- RUN2 audit ---'; Get-Content run2.log
-
-      - name: Extract deterministic CDET block
-        shell: pwsh
-        run: |
-          Remove-Item -ErrorAction SilentlyContinue caelus_audit_0000000000000000.log
-          $out = & .\dist\caelus_os.exe --scenario UNIVERSAL_BASELINE --det-mode 2>&1
-          $out | Where-Object { $_ -match '^CDET:' } | Set-Content -Encoding ascii cdet-windows.txt
-          Get-Content cdet-windows.txt | Measure-Object -Line
+          $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "caelus_cdet_extract"
+          if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+          New-Item -ItemType Directory -Path $tmpDir | Out-Null
+          Push-Location $tmpDir
+          try {
+            $out = & "$env:GITHUB_WORKSPACE\dist\caelus_os.exe" --scenario UNIVERSAL_BASELINE --det-mode 2>&1
+          } finally {
+            Pop-Location
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmpDir
+          }
+          $cdetLines = $out | ForEach-Object { $_.ToString().TrimEnd("`r") } | Where-Object { $_ -match '^CDET:' }
+          if (-not $cdetLines -or $cdetLines.Count -eq 0) {
+            throw "No CDET lines emitted by dist\caelus_os.exe"
+          }
+          $lfText = ($cdetLines -join "`n") + "`n"
+          [System.IO.File]::WriteAllText("$env:GITHUB_WORKSPACE\cdet-windows.txt", $lfText, [System.Text.UTF8Encoding]::new($false))
+          Write-Host "Extracted $($cdetLines.Count) CDET lines (pure UTF-8 LF)"
 
       - name: Upload CDET artifact
         uses: actions/upload-artifact@v4
@@ -165,12 +152,48 @@ jobs:
           path: cdet-windows.txt
           if-no-files-found: error
 
-      - name: Upload Windows binary
+      - name: Upload Windows production binary
         uses: actions/upload-artifact@v4
         with:
           name: caelus_os-windows
           path: dist/caelus_os.exe
           if-no-files-found: error
+
+      - name: Validate universal browser scenario compiler, War Room AG-UI, Airlock MCP & NCM-2 against native Windows binary
+        shell: pwsh
+        env:
+          CAELUS_OFFLINE_ONLY: "1"
+          CAELUS_REQUIRE_NATIVE_BIN: "1"
+          CAELUS_CXX: "MSVC"
+          CAELUS_SKIP_RUST: "1"
+        run: |
+          cmd.exe /c "call build.bat"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add wasm32-unknown-unknown
+          cargo build --locked --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check ui/scenario_compiler.js
+          node --check ui/living_world_model.js
+          node --check ui/discovery_value_engine.js
+          node --check ui/first_real_task_engine.js
+          node --check ui/personal_agent_and_advisor.js
+          node --check ui/sidecar_airlock_mcp.js
+          node --check ui/war_room_ag_ui_engine.js
+          node --check ui/war_room_cockpit.js
+          node --check ui/spatial_experience.js
+          node --check ui/app.js
+          node --check tools/caelus_mcp_server.mjs
+          node --check tools/caelus_ag_ui_ws_server.mjs
+          node --test tests/universal_scenario_compiler.test.mjs
+          node --test tests/living_world_model.test.mjs
+          node --test tests/discovery_value_engine.test.mjs
+          node --test tests/first_real_task.test.mjs
+          node --test tests/personal_agent_and_advisor.test.mjs
+          node tools/caelus_mcp_server.mjs --self-test
+          node --test tests/test_war_room_master_gates.mjs
+          node --test apps/caelus-ncm-mobile/tests/ncm2-quality.test.mjs
+          node --test tests/universal_wasm_scenario.test.mjs
+          Remove-Item -Force -ErrorAction SilentlyContinue caelus_audit_*.log
 
   cross-platform-determinism:
     name: Cross-platform CDET equality
@@ -185,10 +208,7 @@ jobs:
 
       - name: Compare CDET blocks bit-for-bit
         run: |
-          # Normalize line endings only (Windows text pipeline emits CRLF);
-          # the CDET payload itself must match byte-for-byte.
-          tr -d '\r' < cdet-windows.txt > cdet-windows.lf.txt
           echo "--- linux ---";   cat cdet-linux.txt
-          echo "--- windows ---"; cat cdet-windows.lf.txt
-          cmp cdet-linux.txt cdet-windows.lf.txt
-          echo "CDET blocks are bit-identical across Linux and Windows."
+          echo "--- windows ---"; cat cdet-windows.txt
+          cmp cdet-linux.txt cdet-windows.txt
+          echo "CDET blocks are 100% bit-identical across Linux and Windows (pure UTF-8 LF)."

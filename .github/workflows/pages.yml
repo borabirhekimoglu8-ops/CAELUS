@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,8 +19,9 @@ jobs:
   build-and-deploy:
     name: Build WASM and deploy GitHub Pages
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -30,18 +32,20 @@ jobs:
       - name: Check out the CI-verified commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install WebAssembly target
         run: rustup target add wasm32-unknown-unknown
 
       - name: Build deterministic browser engine
+        env:
+          RUSTFLAGS: "-D warnings"
         run: >-
           cargo build --release --locked
           --target wasm32-unknown-unknown
-          --manifest-path caelus_wasm/Cargo.toml
+          -p caelus_wasm
 
-      - name: Validate universal scenario compiler
+      - name: Validate universal scenario compiler and agent studio
         env:
           CAELUS_OFFLINE_ONLY: "1"
           # pages.yml builds only caelus_wasm.wasm (no native C++17 dist/caelus_os binary).
@@ -63,16 +67,21 @@ jobs:
           node --test tests/personal_agent_and_advisor.test.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
-      - name: Assemble offline-first iPhone package
+      - name: Assemble offline-first iPhone PWA package
         run: python3 tools/build_standalone.py
 
-      - name: Validate deploy artifact
+      - name: Validate deploy artifact and subpath (/CAELUS/) PWA contract
         run: |
           test -s dist/index.html
           test -s dist/caelus_standalone.html
+          test -s dist/caelus_wasm.wasm
           test -s dist/manifest.webmanifest
           test -s dist/sw.js
+          test -f dist/.nojekyll
           grep -q 'CAELUS_WASM_B64' dist/index.html
+          grep -q 'manifest.webmanifest' dist/index.html
+          grep -q 'apple-mobile-web-app-capable' dist/index.html
+          grep -q "serviceWorker.register('./sw.js'" dist/index.html
           grep -q 'CaelusScenarioCompiler' dist/index.html
           grep -q 'CaelusLivingWorldModel' dist/index.html
           grep -q 'CaelusDiscoveryValueEngine' dist/index.html
@@ -88,6 +97,8 @@ jobs:
           grep -q 'BS-01_SAHTE_UFUK' dist/index.html
           grep -q 'BS-02_GOLGE_ARSIV' dist/index.html
           grep -q 'BS-03_KUM_SAATI' dist/index.html
+          ! grep -Eq '(src|href)=["'\'']/[^/]' dist/index.html
+          node --test tests/spatial_interface.test.mjs
 
       - name: Upload offline-first standalone bundle artifact
         uses: actions/upload-artifact@v4
@@ -96,37 +107,15 @@ jobs:
           path: dist
           if-no-files-found: error
 
-      # Not: actions/configure-pages@v5 içinde `enablement: true` kullanıldığında
-      # GITHUB_TOKEN depo ayarlarını değiştirmeye (Pages sitesi oluşturmaya) çalışır
-      # ve entegrasyon yetkisi (403 Resource not accessible by integration) hatası verir.
-      # Bu nedenle `enablement: true` kaldırılmıştır. Depo yöneticisi GitHub arayüzünden
-      # Settings -> Pages -> Build and deployment -> Source: GitHub Actions ayarını
-      # bir kez etkinleştirdiğinde aşağıdaki adımlar otomatik yayın yapar.
       - name: Configure GitHub Pages
         id: configure_pages
         uses: actions/configure-pages@v5
-        continue-on-error: true
-
-      - name: Report GitHub Pages repository setting requirement if not yet enabled
-        if: steps.configure_pages.outcome != 'success'
-        run: |
-          echo "::notice title=GitHub Pages Ayarı Gerekli::Depoda GitHub Pages henüz etkinleştirilmemiş. Paket (caelus-pages-dist) üretildi ve doğrulandı; canlı Pages yayını için depo ayarlarından Settings -> Pages -> Source: GitHub Actions seçilmelidir."
-          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-            {
-              echo "### GitHub Pages Yayın Durumu"
-              echo "- **Derleme ve Doğrulama:** Başarılı (\`dist/index.html\`, \`dist/caelus_standalone.html\`, \`caelus-pages-dist\` artifact hazır)."
-              echo "- **Canlı Pages Yayını:** Atlandı (\`actions/configure-pages@v5\` depo ayarlarında GitHub Pages kaynağı etkinleştirilmediği için tamamlanmadı)."
-              echo "- **Gerekli Yönetici İşlemi:** GitHub depo arayüzünde **Settings → Pages → Build and deployment → Source: GitHub Actions** seçilmelidir."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Upload Pages artifact
-        if: steps.configure_pages.outcome == 'success'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
       - name: Deploy
         id: deployment
-        if: steps.configure_pages.outcome == 'success'
         uses: actions/deploy-pages@v4

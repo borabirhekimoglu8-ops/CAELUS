@@ -11,8 +11,10 @@ caelus_ml/generated/
 # SwiftPM build artifacts and host-built native archives.
 platforms/ios/CAELUSMobile/.build/
 *.log
+caelus_audit_*.log*
 *.tmp
 *.sig.tmp
+cdet-*.txt
 dist/
 
 # Generated build trees and bytecode
@@ -20,6 +22,22 @@ build_cmake/
 build_tests/
 __pycache__/
 *.pyc
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.iobj
+*.ipdb
+*.o
+*.d
+
+# Apple / Swift / Next.js generated build artifacts
+*.xcframework/
+DerivedData/
+.swiftpm/
+platforms/ios/**/.build/
+apps/caelus-ncm-mobile/.next/
+apps/caelus-ncm-mobile/out/
 
 # War Room UI extracted at runtime from the embedded binary (deleted on clean
 # exit; source of truth is ui/index.html + ui/app.js).
@@ -28,20 +46,25 @@ caelus_app.js
 
 # Committed test fixtures are exempt from the *.log rule above.
 !tests/fixtures/*.log
+!tests/fixtures/*.log.*
 
-# Private signing material must be generated/stored outside the repository.
+# Private signing & device key material — generate locally; NEVER commit.
+*.key
+*.pem
+*.seed
 tools/caelus_signing.key
-
-# Per-device identity seed — generate locally; never commit.
 caelus_identity.key
 
 # WASM ve yardımcı araç build çıktıları (üretilmiş)
 caelus_wasm/target/
+tests/neural_reference/target/
 tools/caelus_xlsx_engine/target/
+tools/verus/
 
 # Yerel yedekleme klasörleri ve geçici arşivler
 backups/
 *.prev.json
+caelus_world_store.prev.json
 CAELUS_v8_Gorselli_Tam_Paket.zip
 _chrome_profile_*
 **/_chrome_profile_*/

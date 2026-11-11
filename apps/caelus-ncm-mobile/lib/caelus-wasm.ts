@@ -63,7 +63,7 @@ export class CaelusWasmEngine {
 
   async init(): Promise<void> {
     if (this.exports) return;
-    const response = await fetch("/caelus_wasm.wasm", { cache: "force-cache" });
+    const response = await fetch("./caelus_wasm.wasm", { cache: "force-cache" });
     if (!response.ok) throw new Error("Yerel CAELUS çekirdeği yüklenemedi.");
     const bytes = await response.arrayBuffer();
     const { instance } = await WebAssembly.instantiate(bytes, {});

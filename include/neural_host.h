@@ -853,6 +853,7 @@ inline std::string neural_authority_audit_event(
     const NeuralControllerV1& controller,
     const NeuralTickEvidenceV1& evidence,
     uint64_t session_id) {
+    (void)controller;
     if (!evidence.authority_record_required) return {};
     std::ostringstream out;
     out << "{\"type\":\"NEURAL_AUTHORITY_V1\""

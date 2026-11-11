@@ -1,0 +1,901 @@
+/* ============================================================================
+ * CAELUS OS — Endüstriyel Komuta Kokpiti Tasarım Tokenları ve 4-Bölgeli C2 Izgarası
+ * Standartlar: OpenBridge 6.0 (Day/Dusk/Night), Astro UXDS (Ciddiyet + Şekil),
+ *              NASA OpenMCT (Çift-Zamanlı İletken), OpenCTI (Epistemik Statü)
+ * A-3 Yasası: %100 Hava Boşluklu (Air-Gapped) — Sıfır Dış Font / CDN / Tile İsteği
+ * ============================================================================ */
+
+:root,
+[data-ob-theme="dusk"] {
+  /* OpenBridge Alacakaranlık / Operasyon Merkezi Yüzeyleri */
+  --surface-canvas: #090d16;
+  --surface-panel: #101726;
+  --surface-elevated: #172033;
+  --surface-inset: #0b101b;
+  --border-subtle: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.30);
+
+  /* Tipografi Hiyerarşisi */
+  --text-primary: #e6edf7;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Astro UXDS Semantik Ciddiyet (Renk + İkon Şekli + Metin Etiketi Zorunlu) */
+  --status-critical: #ff3b30;       /* KURAL_İHLALİ / Kesin Engel */
+  --status-serious: #ff9500;        /* Yüksek Stres / Gecikme Eşiği */
+  --status-caution: #ffcc00;        /* Çelişkili İddia / Eskimiş Veri */
+  --status-nominal: #30d158;        /* GEÇTİ / Doğrulanmış Akış */
+  --status-insufficient: #64748b;   /* KANIT_YETERSİZ / Fail-Closed Kilit */
+
+  --status-critical-bg: rgba(255, 59, 48, 0.14);
+  --status-serious-bg: rgba(255, 149, 0, 0.14);
+  --status-caution-bg: rgba(255, 204, 0, 0.14);
+  --status-nominal-bg: rgba(48, 209, 88, 0.14);
+  --status-insufficient-bg: rgba(100, 116, 139, 0.18);
+
+  /* OpenCTI Epistemik Statü Renkleri */
+  --epistemic-observation: #38bdf8; /* Doğrudan Sensör Ölçümü */
+  --epistemic-claim: #f59e0b;       /* Tek Kaynak Beyanı / İddia */
+  --epistemic-hypothesis: #a855f7;  /* Model / Tahmin Hipotezi */
+
+  --epistemic-observation-bg: rgba(56, 189, 248, 0.13);
+  --epistemic-claim-bg: rgba(245, 158, 11, 0.14);
+  --epistemic-hypothesis-bg: rgba(168, 85, 247, 0.14);
+
+  /* Harita Deniz / Kara Katman Tonları */
+  --chart-sea: #07111f;
+  --chart-sea-deep: #050c17;
+  --chart-land: #152033;
+  --chart-land-stroke: #334868;
+  --chart-grid: rgba(56, 189, 248, 0.09);
+
+  /* Tipografi ve Tabular Hizalama */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Fira Code", Consolas, monospace;
+
+  /* Performans Dostu Hareket (Yalnızca transform/opacity, <=160ms) */
+  --ease-out-c2: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+[data-ob-theme="night"] {
+  /* Gece Vardiyası: Sıfır mavi ışık parlaması, koyu kehribar/kırmızı spektrum */
+  --surface-canvas: #050505;
+  --surface-panel: #0c0c0c;
+  --surface-elevated: #141414;
+  --surface-inset: #080808;
+  --text-primary: #d97736;
+  --text-secondary: #9a5223;
+  --text-muted: #703b18;
+  --border-subtle: rgba(217, 119, 54, 0.24);
+  --border-strong: rgba(217, 119, 54, 0.44);
+
+  --status-critical: #e03e2d;
+  --status-serious: #d97706;
+  --status-caution: #ca8a04;
+  --status-nominal: #65a30d;
+  --status-insufficient: #78553a;
+
+  --status-critical-bg: rgba(224, 62, 45, 0.18);
+  --status-serious-bg: rgba(217, 119, 6, 0.18);
+  --status-caution-bg: rgba(202, 138, 4, 0.18);
+  --status-nominal-bg: rgba(101, 163, 13, 0.16);
+  --status-insufficient-bg: rgba(120, 85, 58, 0.20);
+
+  --epistemic-observation: #e08b46;
+  --epistemic-claim: #eab308;
+  --epistemic-hypothesis: #c084fc;
+
+  --epistemic-observation-bg: rgba(224, 139, 70, 0.15);
+  --epistemic-claim-bg: rgba(234, 179, 8, 0.15);
+  --epistemic-hypothesis-bg: rgba(192, 132, 252, 0.14);
+
+  --chart-sea: #060606;
+  --chart-sea-deep: #030303;
+  --chart-land: #140e09;
+  --chart-land-stroke: #6b3b19;
+  --chart-grid: rgba(217, 119, 54, 0.12);
+}
+
+[data-ob-theme="day"] {
+  /* OpenBridge Parlak Köprüüstü Gündüz Modu: Güneş parlamasında yüksek kontrast */
+  --surface-canvas: #e9eef5;
+  --surface-panel: #ffffff;
+  --surface-elevated: #f3f6fb;
+  --surface-inset: #e2e8f0;
+  --border-subtle: rgba(15, 23, 42, 0.16);
+  --border-strong: rgba(15, 23, 42, 0.32);
+  --text-primary: #0b1324;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+
+  --status-critical: #c81e1e;
+  --status-serious: #b45309;
+  --status-caution: #92400e;
+  --status-nominal: #15803d;
+  --status-insufficient: #475569;
+
+  --status-critical-bg: rgba(200, 30, 30, 0.11);
+  --status-serious-bg: rgba(180, 83, 9, 0.12);
+  --status-caution-bg: rgba(245, 158, 11, 0.18);
+  --status-nominal-bg: rgba(21, 128, 61, 0.12);
+  --status-insufficient-bg: rgba(71, 85, 105, 0.13);
+
+  --epistemic-observation: #0369a1;
+  --epistemic-claim: #b45309;
+  --epistemic-hypothesis: #6d28d9;
+
+  --epistemic-observation-bg: rgba(3, 105, 161, 0.11);
+  --epistemic-claim-bg: rgba(180, 83, 9, 0.12);
+  --epistemic-hypothesis-bg: rgba(109, 40, 217, 0.11);
+
+  --chart-sea: #dbeafe;
+  --chart-sea-deep: #bfdbfe;
+  --chart-land: #f1f5f9;
+  --chart-land-stroke: #475569;
+  --chart-grid: rgba(15, 23, 42, 0.09);
+}
+
+.metric-value,
+.timestamp-cell,
+.hash-badge {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Klavye ile tetiklenen eylemlerde sıfır animasyon gecikmesi */
+[data-kbd-instant="1"] *,
+[data-kbd-instant="1"] *::before,
+[data-kbd-instant="1"] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Kokpit Aktifken Eski 3B Evrensel Stüdyo Kabuğunu Gizle (DOM Korunur) */
+body[data-c2-cockpit="active"] {
+  background: var(--surface-canvas) !important;
+  background-image: none !important;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  margin: 0;
+  overflow-x: hidden;
+}
+
+body[data-c2-cockpit="active"] .workbench-shell {
+  display: none !important;
+}
+
+body:not([data-c2-cockpit="active"]) #caelus-war-room-cockpit-shell {
+  display: none !important;
+}
+
+/* Evrensel Stüdyo Modundayken War Room'a Geri Dönüş Kapsülü */
+.wr-return-floating-pill {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 9990;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--epistemic-observation);
+  background: #090d16;
+  color: #e6edf7;
+  font-family: var(--font-ui);
+  font-size: 0.80rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
+  display: inline-flex;
+}
+
+/* ============================================================================
+ * 4-BÖLGELİ ENDÜSTRİYEL KOMUTA KOKPİTİ IZGARASI (WAR ROOM SHELL)
+ * ============================================================================ */
+.wr-cockpit-shell {
+  display: grid;
+  grid-template-rows: auto minmax(440px, 1fr) auto;
+  min-height: 100dvh;
+  width: 100%;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.38;
+}
+
+.wr-cockpit-shell *,
+.wr-cockpit-shell *::before,
+.wr-cockpit-shell *::after {
+  box-sizing: border-box;
+}
+
+.wr-cockpit-shell button:focus-visible,
+.wr-cockpit-shell input:focus-visible,
+.wr-cockpit-shell select:focus-visible,
+.wr-cockpit-shell [tabindex]:focus-visible {
+  outline: 2px solid var(--epistemic-observation);
+  outline-offset: 2px;
+}
+
+/* ── Bölge 1: TopCommandBar ─────────────────────────────────────────────── */
+.wr-top-command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.wr-brand-cluster,
+.wr-staleness-cluster,
+.wr-seal-cluster,
+.wr-controls-cluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wr-system-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.wr-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.wr-mode-pill[data-transport="WS_LIVE"] {
+  border-color: var(--status-nominal);
+  background: var(--status-nominal-bg);
+  color: var(--status-nominal);
+}
+
+.wr-staleness-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
+  font-family: var(--font-mono);
+  font-size: 0.70rem;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.wr-staleness-pill[data-freshness="FRESH"] {
+  border-color: rgba(48, 209, 88, 0.36);
+  color: var(--status-nominal);
+}
+
+.wr-staleness-pill[data-freshness="STALE"] {
+  border-color: var(--status-caution);
+  background: var(--status-caution-bg);
+  color: var(--status-caution);
+  font-weight: 700;
+}
+
+.wr-staleness-pill[data-freshness="PENDING"] {
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.wr-verdict-banner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.77rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.wr-verdict-banner-badge[data-verdict="KURAL_İHLALİ"] {
+  background: var(--status-critical-bg);
+  border-color: var(--status-critical);
+  color: var(--status-critical);
+}
+
+.wr-verdict-banner-badge[data-verdict="KANIT_YETERSİZ"] {
+  background: var(--status-insufficient-bg);
+  border-color: var(--status-insufficient);
+  color: var(--text-primary);
+}
+
+.wr-verdict-banner-badge[data-verdict="GEÇTİ"] {
+  background: var(--status-nominal-bg);
+  border-color: var(--status-nominal);
+  color: var(--status-nominal);
+}
+
+/* >= 44x44px Operatör Dokunma / Tıklama Hedefi Standardı */
+.wr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 11px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  white-space: nowrap;
+  transition: opacity 140ms var(--ease-out-c2), transform 140ms var(--ease-out-c2);
+}
+
+.wr-btn:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.wr-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wr-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.wr-btn-active,
+.wr-btn[aria-pressed="true"],
+.wr-btn[aria-selected="true"] {
+  border-color: var(--epistemic-observation);
+  background: var(--epistemic-observation-bg);
+  color: var(--text-primary);
+}
+
+.wr-btn-seal {
+  border-color: var(--status-nominal);
+  background: var(--status-nominal-bg);
+  color: var(--status-nominal);
+  font-weight: 700;
+}
+
+.wr-btn-warn {
+  border-color: var(--status-serious);
+  background: var(--status-serious-bg);
+  color: var(--status-serious);
+}
+
+.wr-hash-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+  font-variant-numeric: tabular-nums lining-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ── Merkez Gövde: Bölge 2 (%60 Sol) + Bölge 4 (%40 Sağ) ────────────────── */
+.wr-main-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(360px, 4fr);
+  gap: 8px;
+  padding: 8px 10px;
+  min-height: 0;
+}
+
+.wr-stage-panel,
+.wr-agent-dock-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wr-panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wr-stage-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 390px;
+  display: flex;
+  flex-direction: column;
+  background: var(--chart-sea);
+  overflow: hidden;
+}
+
+/* Taktik Harita ve WorldMonitor Katman Çubuğu */
+.wr-map-container {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 380px;
+}
+
+.wr-map-layer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wr-layer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.wr-layer-chip[aria-pressed="true"] {
+  border-color: var(--epistemic-observation);
+  background: var(--epistemic-observation-bg);
+  color: var(--text-primary);
+}
+
+.wr-tactical-svg {
+  width: 100%;
+  flex: 1;
+  min-height: 340px;
+  display: block;
+  background: var(--chart-sea);
+  user-select: none;
+}
+
+.wr-map-hud-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+.wr-map-hud-card {
+  pointer-events: auto;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-strong);
+  font-size: 0.73rem;
+  color: var(--text-primary);
+}
+
+/* Mod 2: Nedensel Graf ve "What-If" Stres Masası */
+.wr-graph-desk-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 1fr);
+  flex: 1;
+  min-height: 380px;
+  background: var(--surface-canvas);
+}
+
+.wr-causal-svg-wrap {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  min-height: 0;
+}
+
+.wr-causal-svg {
+  width: 100%;
+  flex: 1;
+  min-height: 350px;
+  display: block;
+  background: var(--surface-inset);
+}
+
+.wr-stress-desk-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface-panel);
+  overflow-y: auto;
+}
+
+.wr-conflict-dash-line {
+  stroke: var(--status-critical);
+  stroke-width: 2.4;
+  stroke-dasharray: 6 4;
+}
+
+/* Epistemik Statü Rozetleri (OpenCTI Standardı) */
+.wr-epistemic-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.wr-epistemic-badge[data-epistemic="OBSERVATION"] {
+  color: var(--epistemic-observation);
+  background: var(--epistemic-observation-bg);
+  border-color: var(--epistemic-observation);
+}
+
+.wr-epistemic-badge[data-epistemic="CLAIM"] {
+  color: var(--epistemic-claim);
+  background: var(--epistemic-claim-bg);
+  border-color: var(--epistemic-claim);
+}
+
+.wr-epistemic-badge[data-epistemic="HYPOTHESIS"] {
+  color: var(--epistemic-hypothesis);
+  background: var(--epistemic-hypothesis-bg);
+  border-color: var(--epistemic-hypothesis);
+}
+
+/* ── Bölge 4: FourAgentCommandDock (%40 Sağ Sütun) ──────────────────────── */
+.wr-agent-roster-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wr-agent-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
+  font-size: 0.70rem;
+}
+
+.wr-agent-pill[data-agent-state="ALERT"],
+.wr-agent-pill[data-agent-state="CONFLICT"] {
+  border-color: var(--status-critical);
+  background: var(--status-critical-bg);
+}
+
+.wr-agent-pill[data-agent-state="LOCKED"] {
+  border-color: var(--status-caution);
+  background: var(--status-caution-bg);
+}
+
+.wr-agent-pill[data-agent-state="READY"] {
+  border-color: rgba(48, 209, 88, 0.38);
+}
+
+.wr-agent-scroll-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 520px;
+}
+
+.wr-conflict-matrix-box {
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--status-caution);
+  background: var(--status-caution-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wr-conflict-pair-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.wr-conflict-source-cell {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+}
+
+.wr-action-card {
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wr-action-card[data-focused="true"] {
+  border-color: var(--epistemic-observation);
+}
+
+.wr-action-card[data-sealed="true"] {
+  border-color: var(--status-nominal);
+}
+
+.wr-action-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Katlanabilir Kanıt-Bağlı Komuta Asistanı Çubuğu */
+.wr-assistant-drawer {
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface-inset);
+}
+
+.wr-assistant-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.77rem;
+  list-style: none;
+}
+
+.wr-assistant-body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Bölge 3: BiTemporalTimeConductor & Sanallaştırılmış TelemetryStreamGrid ── */
+.wr-bottom-conductor-zone {
+  display: grid;
+  grid-template-columns: minmax(320px, 4.3fr) minmax(380px, 5.7fr);
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.wr-conductor-card,
+.wr-telemetry-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wr-bitemporal-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-subtle);
+}
+
+.wr-track-svg {
+  width: 100%;
+  height: 54px;
+  display: block;
+}
+
+.wr-cutoff-slider {
+  width: 100%;
+  height: 28px;
+  accent-color: var(--epistemic-observation);
+  cursor: pointer;
+}
+
+/* Sanallaştırılmış Yüksek Yoğunluklu Telemetri Tablosu (Sabit Satır = 36px, CLS = 0) */
+.wr-virtual-grid-header,
+.wr-virtual-grid-row {
+  display: grid;
+  grid-template-columns: 156px 96px 150px 108px 94px 94px 118px minmax(130px, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.wr-virtual-grid-header {
+  height: 30px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px 4px 0 0;
+  font-size: 0.69rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+.wr-virtual-viewport {
+  position: relative;
+  height: 180px;
+  overflow-y: auto;
+  overflow-x: auto;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-subtle);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+
+.wr-virtual-spacer {
+  position: relative;
+  width: 100%;
+  min-width: 930px;
+}
+
+.wr-virtual-grid-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 36px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.72rem;
+  cursor: pointer;
+  background: var(--surface-panel);
+}
+
+.wr-virtual-grid-row:hover {
+  background: var(--surface-elevated);
+}
+
+.wr-virtual-grid-row[data-future="true"] {
+  opacity: 0.48;
+  background: var(--surface-inset);
+}
+
+.wr-virtual-grid-row[data-rejected="true"] {
+  background: var(--status-critical-bg);
+}
+
+.wr-virtual-grid-row[data-selected="true"] {
+  outline: 1px solid var(--epistemic-observation);
+  outline-offset: -1px;
+}
+
+.wr-cell-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Modal Pencereler: Kriptografik Mühür Denetçisi & Cmd/Ctrl+K Hızlı Arama Paleti */
+.wr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9995;
+  background: rgba(3, 6, 12, 0.76);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 56px 16px 24px;
+}
+
+.wr-modal-backdrop[hidden] {
+  display: none !important;
+}
+
+.wr-modal-dialog {
+  width: 100%;
+  max-width: 720px;
+  max-height: 82dvh;
+  overflow-y: auto;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: var(--text-primary);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+}
+
+.wr-input {
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-inset);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.80rem;
+}
+
+@media (max-width: 1180px) {
+  .wr-main-workspace {
+    grid-template-columns: 1fr;
+  }
+  .wr-bottom-conductor-zone {
+    grid-template-columns: 1fr;
+  }
+  .wr-graph-desk-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .wr-agent-roster-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wr-conflict-pair-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -35,7 +35,7 @@ extern "C" {
 /* ─── ABI version ─────────────────────────────────────────────────────────── */
 
 #define CAELUS_PLUGIN_ABI_MAJOR   1u
-#define CAELUS_PLUGIN_ABI_MINOR   1u
+#define CAELUS_PLUGIN_ABI_MINOR   3u
 #define CAELUS_PLUGIN_ABI_VERSION ((CAELUS_PLUGIN_ABI_MAJOR << 16u) | CAELUS_PLUGIN_ABI_MINOR)
 
 /** Returns non-zero if the plugin ABI version is binary-compatible with the
@@ -54,6 +54,22 @@ static inline int caelus_abi_has_keymgmt(uint32_t plugin_abi_version) {
     uint16_t plug_major = (uint16_t)(plugin_abi_version >> 16u);
     uint16_t plug_minor = (uint16_t)(plugin_abi_version & 0xFFFFu);
     return (plug_major == (uint16_t)CAELUS_PLUGIN_ABI_MAJOR) && (plug_minor >= 1u);
+}
+
+/** Multi-source intel manifest descriptor & host callback were appended in
+ *  ABI 1.2 (FIELD-IDENTITY v2). */
+static inline int caelus_abi_has_intel_manifest(uint32_t plugin_abi_version) {
+    uint16_t plug_major = (uint16_t)(plugin_abi_version >> 16u);
+    uint16_t plug_minor = (uint16_t)(plugin_abi_version & 0xFFFFu);
+    return (plug_major == (uint16_t)CAELUS_PLUGIN_ABI_MAJOR) && (plug_minor >= 2u);
+}
+
+/** Bi-temporal Sidecar Airlock v2 manifest policy & verification callback were
+ *  appended in ABI 1.3 (CAELUS_INTEL_V2 Sidecar Airlock). */
+static inline int caelus_abi_has_airlock_v2(uint32_t plugin_abi_version) {
+    uint16_t plug_major = (uint16_t)(plugin_abi_version >> 16u);
+    uint16_t plug_minor = (uint16_t)(plugin_abi_version & 0xFFFFu);
+    return (plug_major == (uint16_t)CAELUS_PLUGIN_ABI_MAJOR) && (plug_minor >= 3u);
 }
 
 /* ─── Plugin class bitmask ────────────────────────────────────────────────── */
@@ -113,6 +129,46 @@ typedef struct CaelusIntelEvent {
     uint64_t source_slot_id;    /**< OTP slot ID of the reporting device       */
     uint64_t observed_at_tick;  /**< Engine tick when observation was made     */
 } CaelusIntelEvent;
+
+/**
+ * CaelusIntelSourceDescriptor — per-source identity pin entry (ABI minor 2+,
+ * FIELD-IDENTITY v2). Binds a non-zero 64-bit `source_slot_id` to its sole
+ * authorized Ed25519 public key so compromise of one field sensor cannot forge
+ * events attributed to another source slot.
+ */
+typedef struct CaelusIntelSourceDescriptor {
+    uint64_t source_slot_id;    /**< Non-zero 64-bit source/OTP slot ID        */
+    uint8_t  pubkey[32];        /**< Pinned 32-byte Ed25519 public key         */
+    uint32_t allowed_flags;     /**< Policy bitmask (0 = default allow)        */
+    uint32_t _reserved;
+} CaelusIntelSourceDescriptor;
+
+/**
+ * CaelusAirlockErrorCode — fail-closed rejection codes for ABI 1.3+ Sidecar
+ * Airlock verification (`CAELUS_INTEL_V2`).
+ */
+typedef enum CaelusAirlockErrorCode {
+    CAELUS_AIRLOCK_OK                      = 0u,
+    CAELUS_AIRLOCK_ERR_SIGNATURE_MISMATCH  = 1u,
+    CAELUS_AIRLOCK_ERR_UNTRUSTED_SOURCE    = 2u,
+    CAELUS_AIRLOCK_ERR_UNAUTHORIZED_KIND   = 3u,
+    CAELUS_AIRLOCK_ERR_SCHEMA_OR_RANGE     = 4u,
+    CAELUS_AIRLOCK_ERR_SOURCE_EQUIVOCATION = 5u,
+} CaelusAirlockErrorCode;
+
+/**
+ * CaelusAirlockSourcePolicyV2 — per-source key & authorization descriptor
+ * (ABI minor 3+, Sidecar Airlock `source_manifest.json`).
+ */
+typedef struct CaelusAirlockSourcePolicyV2 {
+    char     source_id[64];          /**< NUL-terminated ASCII source ID         */
+    char     key_id[64];             /**< NUL-terminated ASCII key ID            */
+    char     independence_group[64]; /**< NUL-terminated independence group ID   */
+    uint8_t  pubkey[32];             /**< Pinned 32-byte Ed25519 public key      */
+    int64_t  expires_at_ms;          /**< Epoch ms expiry (-1 = no expiry)       */
+    uint32_t origin_class;           /**< 0=SENSOR, 1=OPERATOR, 2=MODEL_OR_AGENT */
+    uint32_t _reserved;
+} CaelusAirlockSourcePolicyV2;
 
 /* ─── Reporter types ──────────────────────────────────────────────────────── */
 
@@ -200,6 +256,34 @@ typedef struct CaelusEngineFns {
      *  In --det-mode this returns the virtual clock tick.
      *  Thread-safe (atomic load). */
     uint64_t (*current_tick)(void* engine_ctx);
+
+    /** Verify a slot-scoped intel payload signature against the host's pinned
+     *  source manifest (ABI minor 2+ / FIELD-IDENTITY v2).
+     *  Returns 1 when `source_slot_id` is authorized for `pubkey32` AND `sig64`
+     *  is valid over `(msg, msg_len)`; returns 0 otherwise (fail-closed).
+     *  Optional: NULL on hosts older than ABI 1.2 or when no manifest is bound. */
+    uint8_t (*verify_intel_source)(void*          engine_ctx,
+                                   uint64_t       source_slot_id,
+                                   const uint8_t* msg,
+                                   size_t         msg_len,
+                                   const uint8_t* pubkey32,
+                                   const uint8_t* sig64);
+
+    /** Verify a `CAELUS_INTEL_V2` Sidecar Airlock packet against the host's
+     *  pinned `source_manifest.json` (`source_id -> key_id + pubkey + allowed
+     *  event_kind` — ABI minor 3+).
+     *  Returns 1 on success (`*out_error_code = CAELUS_AIRLOCK_OK`), 0 on any
+     *  fail-closed rejection (`*out_error_code` set to `CaelusAirlockErrorCode`).
+     *  Optional: NULL on hosts older than ABI 1.3. */
+    uint8_t (*verify_airlock_v2)(void*          engine_ctx,
+                                 const char*    source_id,
+                                 const char*    key_id,
+                                 const char*    event_kind,
+                                 const uint8_t* signed_msg,
+                                 size_t         signed_msg_len,
+                                 const uint8_t* pubkey32,
+                                 const uint8_t* sig64,
+                                 uint32_t*      out_error_code);
 } CaelusEngineFns;
 
 /* ─── The Plugin VTable (main contract) ──────────────────────────────────── */

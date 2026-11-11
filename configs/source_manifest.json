@@ -1,0 +1,62 @@
+{
+  "manifest_version": "2.0",
+  "require_v2_airlock": true,
+  "trust_anchor_pubkey": "f41f9e3038a8951ee21a3a82038c65c5369d370f117bb9d003f9fedc43a75703",
+  "manifest_sig": "23d2856579e5e2440ab20b9a207ec0b47ae78d635ec6c6ed8c4c22d6aec870320d9d759c5de5d3727110646a0dae0df1decad47757af7d8c2da6d67c718bae0d",
+  "sources": [
+    {
+      "source_id": "ais_terrestrial_aegean",
+      "pubkey_ed25519": "e385635f6ffba8f1ab9557e9a8ed16df063b8c1f71aca83f46573c7b66d230c3",
+      "key_id": "ais-key-2026-q4",
+      "independence_group": "rf_ais_receiver",
+      "default_epistemic_status": "OBSERVATION",
+      "allowed_event_kinds": ["VESSEL_POSITION", "BERTH_PROXIMITY", "AIS_SIGNAL_LOST"],
+      "max_staleness_ms": "120000"
+    },
+    {
+      "source_id": "ferry_operator_dispatch",
+      "pubkey_ed25519": "cb135e0908265dbbcfce2f191d1aa31c47d38ba46a563f4ef392e2b91d17ec4b",
+      "key_id": "ops-key-2026-q4",
+      "independence_group": "carrier_human_ops",
+      "default_epistemic_status": "CLAIM",
+      "allowed_event_kinds": ["SCHEDULE_REPORT", "DELAY_NOTICE"],
+      "max_staleness_ms": "900000"
+    },
+    {
+      "source_id": "open_meteo_marine_ensemble",
+      "pubkey_ed25519": "ed4512c6b419114bc9b1afa8b31c538bd4f62e57e465a9b0a0b2d427d504d5ca",
+      "key_id": "wx-key-2026-q4",
+      "independence_group": "numerical_weather_model",
+      "default_epistemic_status": "HYPOTHESIS",
+      "allowed_event_kinds": ["WAVE_FORECAST", "WIND_GUST_ENVELOPE"],
+      "max_staleness_ms": "3600000"
+    },
+    {
+      "source_id": "port_berth_sensor_sigacik",
+      "pubkey_ed25519": "c9d769f0400bdb1bc0743e22d815a3ef43a99cfd09ab2be3a617d407a4cd2c6d",
+      "key_id": "port-key-2026-q4",
+      "independence_group": "port_plc_telemetry",
+      "default_epistemic_status": "OBSERVATION",
+      "allowed_event_kinds": ["BERTH_PROXIMITY", "RAMP_OBSERVATION", "SHORE_POWER_STATE"],
+      "max_staleness_ms": "180000"
+    },
+    {
+      "source_id": "opensky_aegean_adsb",
+      "pubkey_ed25519": "e988fc461de2c97eb480bf85cd2ab974c19549308c03400ea721483cd31a1725",
+      "key_id": "osky-key-2026-q4",
+      "independence_group": "airspace_adsb_receiver",
+      "default_epistemic_status": "OBSERVATION",
+      "allowed_event_kinds": ["AIRCRAFT_STATE_VECTOR", "AIRSPACE_EMERGENCY_SQUAWK"],
+      "max_staleness_ms": "120000"
+    },
+    {
+      "source_id": "nmea2000_bridge_bus",
+      "pubkey_ed25519": "99ad4ca5c1998b2454316a2e4d5cfd4e9ff002f609513aae7a579cc96b9822e5",
+      "key_id": "n2k-key-2026-q4",
+      "independence_group": "vessel_canbus_sensors",
+      "default_epistemic_status": "OBSERVATION",
+      "allowed_event_kinds": ["N2K_WIND_DATA", "N2K_WATER_DEPTH", "N2K_RUDDER_ANGLE", "N2K_ENGINE_RAPID"],
+      "max_staleness_ms": "60000"
+    }
+  ]
+}

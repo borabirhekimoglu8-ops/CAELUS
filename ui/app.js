@@ -20280,6 +20280,15 @@ function buildMarkerPinCanvas(colorHex, isSelected, isRealEvent, labelBadge) {
   return c.toDataURL();
 }
 
+function resolveCaelusAssetUrl(relPath) {
+  if (typeof location !== 'undefined' && location.protocol !== 'file:') {
+    try {
+      return new URL(relPath, location.href).href;
+    } catch (_) {}
+  }
+  return relPath;
+}
+
 async function initCaelusCesiumGlobe() {
   const container = document.getElementById('dunyam-cesium-container');
   if (!container) return false;
@@ -20295,11 +20304,11 @@ async function initCaelusCesiumGlobe() {
   }
 
   try {
-    window.CESIUM_BASE_URL = '/vendor/cesium/';
+    window.CESIUM_BASE_URL = (location.protocol === 'file:' ? 'http://127.0.0.1:47809/vendor/cesium/' : resolveCaelusAssetUrl('./vendor/cesium/'));
     const Cesium = window.Cesium;
 
     const baseImageryProvider = await Cesium.TileMapServiceImageryProvider.fromUrl(
-      '/vendor/cesium/Assets/Textures/NaturalEarthII',
+      resolveCaelusAssetUrl('./vendor/cesium/Assets/Textures/NaturalEarthII'),
       {
         fileExtension: 'jpg',
         maximumLevel: 2,
@@ -22730,7 +22739,7 @@ function mountThreeStageForMode(mode) {
     const trPkg = window.CAELUS_3DTilesRenderer || window.CAELUS_TilesRenderer;
     if (trPkg && typeof trPkg.TilesRenderer === 'function') {
       try {
-        const tilesRenderer = new trPkg.TilesRenderer('/assets/tilesets/izmir_port_sample/tileset.json');
+        const tilesRenderer = new trPkg.TilesRenderer(resolveCaelusAssetUrl('./assets/tilesets/izmir_port_sample/tileset.json'));
         tilesRenderer.setCamera(camera);
         tilesRenderer.setResolutionFromRenderer(camera, renderer);
         scene.add(tilesRenderer.group);
@@ -23299,7 +23308,7 @@ function mountKesfetMapLibreView() {
         sources: {
           'natural-earth-local': {
             type: 'raster',
-            tiles: ['/vendor/cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{y}.jpg'],
+            tiles: [resolveCaelusAssetUrl('./vendor/cesium/Assets/Textures/NaturalEarthII/') + '{z}/{x}/{y}.jpg'],
             tileSize: 256,
             maxzoom: 2,
             scheme: 'tms'
@@ -23474,7 +23483,7 @@ function mountKozmosSpacekitScene() {
     const startDateObj = new Date(`${dateStr}T00:00:00Z`);
 
     const sim = new window.Spacekit.Simulation(container, {
-      basePath: '/vendor/spacekit',
+      basePath: resolveCaelusAssetUrl('./vendor/spacekit').replace(/\/$/, ''),
       startDate: startDateObj,
       jdPerSecond: 1.5,
       unitsPerAu: 8.5,
@@ -23487,7 +23496,7 @@ function mountKozmosSpacekitScene() {
 
     // Central Sun
     sim.createObject('SUN', {
-      textureUrl: '/vendor/spacekit/assets/sprites/lensflare0.png',
+      textureUrl: resolveCaelusAssetUrl('./vendor/spacekit/assets/sprites/lensflare0.png'),
       position: [0, 0, 0],
       scale: [2.4, 2.4, 2.4],
       theme: { color: 0xffd166 }
@@ -23523,7 +23532,7 @@ function mountKozmosSpacekitScene() {
       );
       const obj = sim.createObject(spec.id, {
         ephem,
-        textureUrl: '/vendor/spacekit/assets/sprites/fuzzyparticle.png',
+        textureUrl: resolveCaelusAssetUrl('./vendor/spacekit/assets/sprites/fuzzyparticle.png'),
         scale: [1.45, 1.45, 1.45],
         theme: {
           color: spec.color,

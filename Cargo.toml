@@ -3,13 +3,29 @@ name = "caelus_network"
 version = "0.1.0"
 edition = "2021"
 
-# CAELUS OS — Shadow-Mesh P2P Network Layer
+# CAELUS OS — Shadow-Mesh P2P Network & Sidecar Airlock Host Layer
 # Air-Gapped, No Cloud, 100% Deterministic
 # Compiled as a C-compatible static library for C++ FFI linkage
 
 [lib]
 name = "caelus_network"
 crate-type = ["staticlib", "rlib"]
+
+[features]
+default = [
+    "adapter_ais_stream",
+    "adapter_nmea2000",
+    "adapter_open_meteo",
+    "adapter_opensky",
+    "adapter_industrial_edge",
+    "adapter_ndjson_replay",
+]
+adapter_ais_stream = []
+adapter_nmea2000 = []
+adapter_open_meteo = []
+adapter_opensky = []
+adapter_industrial_edge = []
+adapter_ndjson_replay = []
 
 [[bin]]
 name = "caelus_sign_scenario"
@@ -19,7 +35,18 @@ path = "src/bin/caelus_sign_scenario.rs"
 name = "caelus_sign_model"
 path = "src/bin/caelus_sign_model.rs"
 
+[[bin]]
+name = "caelus_verify_audit"
+path = "src/bin/caelus_verify_audit.rs"
+
+[[bin]]
+name = "caelus_sidecar_airlock"
+path = "src/bin/caelus_sidecar_airlock.rs"
+
 [dependencies]
+# Isolated deterministic fixed-point kernel (no_std + alloc)
+caelus_core = { path = "caelus_core" }
+
 # Cryptographic identity: ed25519 signing & verification
 ed25519-dalek = { version = "2.1", features = ["rand_core", "zeroize"] }
 

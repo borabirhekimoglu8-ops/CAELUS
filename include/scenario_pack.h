@@ -1263,7 +1263,9 @@ private:
         scheme_out.clear();
         pubkey_pinned_out = false;
         if (sig.empty()) {
-#ifndef CAELUS_PRODUCTION
+#ifdef CAELUS_PRODUCTION
+            (void)allow_interactive_unsigned;
+#else
             if (allow_interactive_unsigned) {
                 std::cout << "[SCENARIO] Etkileşimli kullanıcı taslağı (imzasız) kabul edildi; DEV_UNSIGNED olarak işaretlendi.\n";
                 scheme_out = "DEV_UNSIGNED";
@@ -1342,7 +1344,6 @@ private:
         // derleme-içi güven çapasıyla (CAELUS_TRUSTED_PUBKEY) eşleşip
         // eşleşmediğini kontrol eder.  "Kim imzaladı?" sorusunu sorar.
         const bool is_pinned_key = (std::memcmp(pubkey, CAELUS_TRUSTED_PUBKEY, 32) == 0);
-        const bool is_known_dev_test_key = (std::memcmp(pubkey, CAELUS_DEV_TEST_PUBKEY, 32) == 0);
         pubkey_pinned_out = is_pinned_key;
 #ifdef CAELUS_PRODUCTION
         // CAELUS_PRODUCTION: CAELUS_ALLOW_DEV_SCENARIOS / CAELUS_TRUST_ANY_PUBKEY bypass'ları derleme-dışı — pin kontrolü koşulsuz.
@@ -1353,6 +1354,7 @@ private:
             return false;
         }
 #else
+        const bool is_known_dev_test_key = (std::memcmp(pubkey, CAELUS_DEV_TEST_PUBKEY, 32) == 0);
         if (!is_pinned_key) {
             if ((is_known_dev_test_key && !env_flag_enabled("CAELUS_STRICT_PINNED_PUBKEY")) ||
                 allow_interactive_unsigned ||

@@ -1,50 +1,85 @@
 #!/usr/bin/env python3
-"""CAELUS — bilgisayardan bağımsız (standalone) War Room sayfası üretici.
+"""CAELUS — bilgisayardan bağımsız (standalone) War Room ve PWA sayfası üretici.
 
-Nedensel motoru (caelus_core → caelus_wasm, WebAssembly) + War Room UI'ını +
-imzalı senaryoları TEK bir self-contained HTML dosyasına gömer. Sonuç dosya
-sunucu/masaüstü/ağ olmadan (file:// dahil) telefon/tarayıcıda gerçek
-simülasyonu çalıştırır — demo/uydurma veri yoktur.
+Nedensel motoru (caelus_core -> caelus_wasm, WebAssembly) + War Room UI'ını +
+imzalı senaryoları hem TEK bir self-contained HTML dosyasına (dist/caelus_standalone.html)
+gömer hem de GitHub Pages (/CAELUS/ alt dizini dahil) ve iPhone Safari/WebKit için
+tam çevrimdışı PWA paketini (dist/index.html, dist/caelus_wasm.wasm, dist/manifest.webmanifest,
+dist/sw.js, dist/assets/, dist/vendor/) üretir.
 
 Önkoşul (bir kez):
     rustup target add wasm32-unknown-unknown
 Derleme:
-    cargo build --release --target wasm32-unknown-unknown \
-        --manifest-path caelus_wasm/Cargo.toml
-    python3 tools/build_standalone.py            # → dist/caelus_standalone.html
+    cargo build --release --locked --target wasm32-unknown-unknown -p caelus_wasm
+    python3 tools/build_standalone.py
 """
 
 from __future__ import annotations
+
 import base64
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WASM = ROOT / "caelus_wasm/target/wasm32-unknown-unknown/release/caelus_wasm.wasm"
+WASM_CANDIDATES = [
+    ROOT / "target/wasm32-unknown-unknown/release/caelus_wasm.wasm",
+    ROOT / "caelus_wasm/target/wasm32-unknown-unknown/release/caelus_wasm.wasm",
+]
 SCENARIOS = ["BS-01_SAHTE_UFUK", "BS-02_GOLGE_ARSIV", "BS-03_KUM_SAATI"]
 SIG_RE = re.compile(r"^ed25519:([0-9a-fA-F]{64}):([0-9a-fA-F]{128})$")
+ROOT_ABS_ATTR_RE = re.compile(r'(?:src|href)\s*=\s*["\']\/[^\/]')
+
+
+def resolve_wasm_binary() -> Path | None:
+    existing = [p for p in WASM_CANDIDATES if p.is_file() and p.stat().st_size > 0]
+    if existing:
+        existing.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return existing[0]
+    existing_standalone = ROOT / "dist/caelus_standalone.html"
+    if existing_standalone.exists():
+        raw_st = existing_standalone.read_text(encoding="utf-8")
+        m_wasm = re.search(r'window\.CAELUS_WASM_B64\s*=\s*"([^"]+)"', raw_st)
+        if m_wasm:
+            fallback_wasm = WASM_CANDIDATES[0]
+            fallback_wasm.parent.mkdir(parents=True, exist_ok=True)
+            fallback_wasm.write_bytes(base64.b64decode(m_wasm.group(1)))
+            print(f"[BİLGİ] {fallback_wasm} mevcut dist/caelus_standalone.html içinden geri yüklendi.")
+            return fallback_wasm
+    return None
+
+
+def write_utf8_lf(path: Path, content: str) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as fh:
+        fh.write(content)
 
 
 def main() -> int:
-    if not WASM.exists():
-        existing_standalone = ROOT / "dist/caelus_standalone.html"
-        if existing_standalone.exists():
-            raw_st = existing_standalone.read_text(encoding="utf-8")
-            m_wasm = re.search(r'window\.CAELUS_WASM_B64\s*=\s*"([^"]+)"', raw_st)
-            if m_wasm:
-                WASM.parent.mkdir(parents=True, exist_ok=True)
-                WASM.write_bytes(base64.b64decode(m_wasm.group(1)))
-                print(f"[BİLGİ] {WASM} mevcut dist/caelus_standalone.html içinden geri yüklendi.")
-        if not WASM.exists():
-            print(f"HATA: {WASM} yok. Önce wasm'ı derleyin:\n"
-                  f"  cargo build --release --target wasm32-unknown-unknown "
-                  f"--manifest-path caelus_wasm/Cargo.toml", file=sys.stderr)
-            return 1
+    wasm_path = resolve_wasm_binary()
+    if wasm_path is None or not wasm_path.exists():
+        print(
+            "HATA: caelus_wasm.wasm bulunamadı. Önce WASM motorunu derleyin:\n"
+            "  cargo build --release --locked --target wasm32-unknown-unknown -p caelus_wasm",
+            file=sys.stderr,
+        )
+        return 1
+
+    wasm_bytes = wasm_path.read_bytes()
+    if len(wasm_bytes) < 8 or wasm_bytes[:4] != b"\x00asm":
+        print(f"HATA: {wasm_path} geçerli bir WebAssembly ikilisi değil", file=sys.stderr)
+        return 1
 
     idx = (ROOT / "ui/index.html").read_text(encoding="utf-8")
+    tokens_css_path = ROOT / "ui/tokens.css"
+    tokens_css = tokens_css_path.read_text(encoding="utf-8") if tokens_css_path.exists() else ""
+    if tokens_css:
+        idx = idx.replace(
+            '<link rel="stylesheet" href="./tokens.css">',
+            "<style>\n" + tokens_css + "\n</style>",
+        )
     compilerjs = (ROOT / "ui/scenario_compiler.js").read_text(encoding="utf-8")
     lwmjs_path = ROOT / "ui/living_world_model.js"
     lwmjs = lwmjs_path.read_text(encoding="utf-8") if lwmjs_path.exists() else ""
@@ -56,8 +91,14 @@ def main() -> int:
     paajs = paajs_path.read_text(encoding="utf-8") if paajs_path.exists() else ""
     spjs_path = ROOT / "ui/spatial_experience.js"
     spjs = spjs_path.read_text(encoding="utf-8") if spjs_path.exists() else ""
+    airlock_mcp_path = ROOT / "ui/sidecar_airlock_mcp.js"
+    airlock_mcp_js = airlock_mcp_path.read_text(encoding="utf-8") if airlock_mcp_path.exists() else ""
+    ag_ui_engine_path = ROOT / "ui/war_room_ag_ui_engine.js"
+    ag_ui_engine_js = ag_ui_engine_path.read_text(encoding="utf-8") if ag_ui_engine_path.exists() else ""
+    cockpit_js_path = ROOT / "ui/war_room_cockpit.js"
+    cockpit_js = cockpit_js_path.read_text(encoding="utf-8") if cockpit_js_path.exists() else ""
     appjs = (ROOT / "ui/app.js").read_text(encoding="utf-8")
-    wasm_b64 = base64.b64encode(WASM.read_bytes()).decode("ascii")
+    wasm_b64 = base64.b64encode(wasm_bytes).decode("ascii")
     trusted_pubkey = (ROOT / "tools/caelus_trusted_pubkey.txt").read_text(encoding="ascii").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{64}", trusted_pubkey):
         print("HATA: tools/caelus_trusted_pubkey.txt geçersiz", file=sys.stderr)
@@ -83,18 +124,47 @@ def main() -> int:
     # Standalone'da offline jitter'ı sustur (yerel motor gerçek veri verir).
     appjs = appjs.replace(
         "function fluctuate() {\n  if (state.isTyping) return;",
-        "function fluctuate() {\n  return; // STANDALONE: yerel WASM motoru gerçek veri verir; jitter yok\n  if (state.isTyping) return;")
+        "function fluctuate() {\n  return; // STANDALONE: yerel WASM motoru gerçek veri verir; jitter yok\n  if (state.isTyping) return;",
+    )
+
+    pilot_manifest_path = ROOT / "configs/source_manifest.json"
+    pilot_batch_path = ROOT / "scenarios/pilot_aegean_ferry_airlock/events.airlock.ndjson"
+    pilot_meta_path = ROOT / "scenarios/pilot_aegean_ferry_airlock/pilot_scenario_meta.json"
+    pilot_bundle = {}
+    if pilot_manifest_path.exists() and pilot_batch_path.exists():
+        pilot_bundle = {
+            "manifest_json": pilot_manifest_path.read_text(encoding="utf-8"),
+            "batch_ndjson": pilot_batch_path.read_text(encoding="utf-8"),
+            "meta": json.loads(pilot_meta_path.read_text(encoding="utf-8")) if pilot_meta_path.exists() else {},
+        }
 
     build_sha = os.environ.get("GITHUB_SHA", "local")[:12]
-    inject = ("<script>\n"
-              "window.CAELUS_WASM_B64=" + json.dumps(wasm_b64) + ";\n"
-              "window.CAELUS_SCENARIOS=" + json.dumps(scen) + ";\n"
-              "window.CAELUS_BUILD_SHA=" + json.dumps(build_sha) + ";\n"
-              "</script>\n")
+    inject = (
+        "<script>\n"
+        "window.CAELUS_WASM_B64=" + json.dumps(wasm_b64) + ";\n"
+        "window.CAELUS_SCENARIOS=" + json.dumps(scen) + ";\n"
+        "window.CAELUS_AIRLOCK_PILOT_BUNDLE=" + json.dumps(pilot_bundle) + ";\n"
+        "window.CAELUS_BUILD_SHA=" + json.dumps(build_sha) + ";\n"
+        "</script>\n"
+    )
     logo_path = ROOT / "ui/assets/caelus-logo.png"
     if logo_path.exists():
         logo_b64 = base64.b64encode(logo_path.read_bytes()).decode("ascii")
-        idx = idx.replace('src="/assets/caelus-logo.png"', f'src="data:image/png;base64,{logo_b64}"')
+        logo_data_uri = f"data:image/png;base64,{logo_b64}"
+        idx = idx.replace('src="./assets/caelus-logo.png"', f'src="{logo_data_uri}"')
+        idx = idx.replace('src="/assets/caelus-logo.png"', f'src="{logo_data_uri}"')
+
+    sw_register_snippet = (
+        "<script>\n"
+        "if ('serviceWorker' in navigator && "
+        "(location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1') && "
+        "location.port !== '47809') {\n"
+        "  window.addEventListener('load', function () {\n"
+        "    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () {});\n"
+        "  });\n"
+        "}\n"
+        "</script>\n"
+    )
 
     out = re.sub(
         r'<script src="scenario_compiler\.js"></script>[\s\S]*?<script src="app\.js"></script>',
@@ -106,7 +176,11 @@ def main() -> int:
             + ("<script>\n" + frtjs + "\n</script>\n" if frtjs else "")
             + ("<script>\n" + paajs + "\n</script>\n" if paajs else "")
             + ("<script>\n" + spjs + "\n</script>\n" if spjs else "")
-            + "<script>\n" + appjs + "\n</script>"
+            + ("<script>\n" + airlock_mcp_js + "\n</script>\n" if airlock_mcp_js else "")
+            + ("<script>\n" + ag_ui_engine_js + "\n</script>\n" if ag_ui_engine_js else "")
+            + ("<script>\n" + cockpit_js + "\n</script>\n" if cockpit_js else "")
+            + "<script>\n" + appjs + "\n</script>\n"
+            + sw_register_snippet
         ),
         idx,
         count=1,
@@ -115,13 +189,34 @@ def main() -> int:
         print("HATA: standalone JS gömme işaretçisi bulunamadı", file=sys.stderr)
         return 1
 
+    root_abs_hit = ROOT_ABS_ATTR_RE.search(out)
+    if root_abs_hit:
+        print(
+            f"HATA: dist/index.html içinde subpath (/CAELUS/) uyumsuz kök-mutlak bağlantı tespit edildi: "
+            f"{root_abs_hit.group(0)}",
+            file=sys.stderr,
+        )
+        return 1
+
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
+
+    # Kopyalanan yerel varlıklar: GitHub Pages (/CAELUS/) ve çevrimdışı PWA için
+    shutil.copy2(wasm_path, dist / "caelus_wasm.wasm")
+    if tokens_css_path.is_file():
+        shutil.copy2(tokens_css_path, dist / "tokens.css")
+    ui_assets_dir = ROOT / "ui/assets"
+    if ui_assets_dir.is_dir():
+        shutil.copytree(ui_assets_dir, dist / "assets", dirs_exist_ok=True)
+    ui_vendor_dir = ROOT / "ui/vendor"
+    if ui_vendor_dir.is_dir():
+        shutil.copytree(ui_vendor_dir, dist / "vendor", dirs_exist_ok=True)
+
     target = dist / "index.html"
-    target.write_text(out, encoding="utf-8")
+    write_utf8_lf(target, out)
     # Eski paylaşılmış bağlantıları bozmamak için aynı self-contained sayfayı
     # legacy dosya adıyla da üret.
-    (dist / "caelus_standalone.html").write_text(out, encoding="utf-8")
+    write_utf8_lf(dist / "caelus_standalone.html", out)
 
     manifest = {
         "name": "CAELUS Universal Decision Engine",
@@ -131,38 +226,96 @@ def main() -> int:
         "scope": "./",
         "display": "standalone",
         "orientation": "any",
-        "background_color": "#05090f",
-        "theme_color": "#05090f",
+        "background_color": "#040812",
+        "theme_color": "#040812",
+        "lang": "tr",
+        "icons": [
+            {
+                "src": "./assets/caelus-symbol.svg",
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any",
+            },
+            {
+                "src": "./assets/caelus-logo.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+        ],
     }
-    (dist / "manifest.webmanifest").write_text(
+    write_utf8_lf(
+        dist / "manifest.webmanifest",
         json.dumps(manifest, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
     )
 
     cache_name = f"caelus-{build_sha}"
     service_worker = f"""'use strict';
 const CACHE = {json.dumps(cache_name)};
-const ASSETS = ['./', './index.html', './caelus_standalone.html', './manifest.webmanifest'];
+const ASSETS = [
+  './',
+  './index.html',
+  './caelus_standalone.html',
+  './manifest.webmanifest',
+  './caelus_wasm.wasm',
+  './assets/caelus-symbol.svg',
+  './assets/caelus-logo.png'
+];
 self.addEventListener('install', event => {{
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => cache.addAll(ASSETS))
+      .then(() => self.skipWaiting())
+  );
 }});
 self.addEventListener('activate', event => {{
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 }});
 self.addEventListener('fetch', event => {{
   if (event.request.method !== 'GET') return;
-  event.respondWith(fetch(event.request).then(response => {{
-    const copy = response.clone();
-    caches.open(CACHE).then(cache => cache.put(event.request, copy));
-    return response;
-  }}).catch(() => caches.match(event.request).then(hit => hit || caches.match('./index.html'))));
+  const reqUrl = new URL(event.request.url);
+  if (reqUrl.origin !== self.location.origin) return;
+
+  if (event.request.mode === 'navigate') {{
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {{
+          if (response.ok) {{
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          }}
+          return response;
+        }})
+        .catch(() => caches.match(event.request).then(hit => hit || caches.match('./index.html') || caches.match('./')))
+    );
+    return;
+  }}
+
+  event.respondWith(
+    caches.match(event.request).then(cached => {{
+      const networkFetch = fetch(event.request).then(response => {{
+        if (response.ok) {{
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, copy));
+        }}
+        return response;
+      }});
+      return cached || networkFetch;
+    }})
+  );
 }});
 """
-    (dist / "sw.js").write_text(service_worker, encoding="utf-8")
-    (dist / ".nojekyll").write_text("", encoding="ascii")
-    print(f"yazıldı: {target} ({len(out)} bayt; wasm {len(wasm_b64)} b64, "
-          f"senaryolar: {', '.join(scen)})")
-    print("iPhone/Safari ve masaüstü için PWA paketi hazır — ilk açılıştan sonra çevrimdışı çalışır.")
+    write_utf8_lf(dist / "sw.js", service_worker)
+    write_utf8_lf(dist / ".nojekyll", "")
+    print(
+        f"yazıldı: {target} ({len(out)} bayt; wasm {len(wasm_bytes)} bayt [{wasm_path.relative_to(ROOT)}], "
+        f"senaryolar: {', '.join(scen)})"
+    )
+    print("iPhone/Safari ve masaüstü için subpath-safe (/CAELUS/) PWA paketi hazır — ilk açılıştan sonra çevrimdışı çalışır.")
     return 0
 
 
