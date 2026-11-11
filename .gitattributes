@@ -1,0 +1,27 @@
+# Enforce pure LF across scripts, workflows, and source files so Windows checkouts
+# with core.autocrlf=true never inject CR (\r) into shell scripts or deterministic sources.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.rs text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.c text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.webmanifest text eol=lf
+CMakeLists.txt text eol=lf
+
+# Windows batch scripts use native CRLF.
+*.bat text eol=crlf
+
+# Preserve exact byte-for-byte framing on signed scenarios, world store, and forensic fixtures.
+tests/fixtures/*.log -text
+scenarios/*.json -text
+caelus_world_store.json -text
