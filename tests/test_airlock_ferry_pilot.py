@@ -310,8 +310,8 @@ class SidecarAirlockPilotTest(unittest.TestCase):
                     "cargo",
                     "test",
                     "--locked",
-                    "-p",
-                    "caelus_core",
+                    "--manifest-path",
+                    str(ROOT / "caelus_core" / "Cargo.toml"),
                     "--no-default-features",
                     "--lib",
                     "--no-run",
@@ -351,8 +351,18 @@ class SidecarAirlockPilotTest(unittest.TestCase):
                 )
                 if sudo_res.returncode == 0:
                     unshare_res = sudo_res
-            if unshare_res.returncode != 0 and "Operation not permitted" in unshare_res.stderr:
-                # Kernel blocks userns without root; verify symbol table has zero socket syscalls
+            if unshare_res.returncode != 0 and (
+                "Operation not permitted" in unshare_res.stderr
+                or "Permission denied" in unshare_res.stderr
+            ):
+                # Kernel/AppArmor blocks userns without root; run test binary + verify zero socket syscalls
+                direct_res = subprocess.run(
+                    [test_exe, "airlock::tests"],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(direct_res.returncode, 0, direct_res.stderr)
                 if shutil.which("nm"):
                     nm_res = subprocess.run(
                         ["nm", "-u", test_exe], capture_output=True, text=True, check=True

@@ -1654,7 +1654,7 @@ def compile_command(tool: str, compiler: list[str]) -> list[str]:
     if os.name == "nt":
         cmd.append("-lws2_32")
     else:
-        cmd.append("-pthread")
+        cmd.extend(["-pthread", "-ldl"])
     return cmd
 
 
