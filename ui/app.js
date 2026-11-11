@@ -1360,6 +1360,7 @@ function handleEngineEvent(ev) {
     return;
   }
   if (!data || typeof data !== 'object') return;
+  if (data.protocol === 'CAELUS_AG_UI_V1') return;
 
   // Prevent background WS telemetry from overwriting an active Studio Draft Preview
   if (state.engineMode === 'draft_preview' && !WasmEngine.ready) {
@@ -17174,6 +17175,7 @@ function initQuietHolographyUi() {
     });
   });
   window.addEventListener('keydown', e => {
+    if (document.body && document.body.getAttribute('data-c2-cockpit') === 'active') return;
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
       openCaelusCommandPalette();
@@ -23822,6 +23824,7 @@ function initCaelusTenRepoIntegrations() {
     });
   }
   window.addEventListener('keydown', e => {
+    if (document.body && document.body.getAttribute('data-c2-cockpit') === 'active') return;
     if (e.key === 'Escape') {
       cancelCaelusTheatreCameraTransition();
     }
@@ -26513,6 +26516,7 @@ function initCaelusSpatialInterfaceSystem() {
 
   // Global keyboard shortcuts: Alt+M toggles spatial compass; Escape closes open spatial popovers/inspectors
   document.addEventListener('keydown', (e) => {
+    if (document.body && document.body.getAttribute('data-c2-cockpit') === 'active') return;
     if (e.altKey && (e.key === 'm' || e.key === 'M' || e.code === 'KeyM')) {
       e.preventDefault();
       toggleSpatialCompassPopover();
@@ -27096,6 +27100,7 @@ function initCaelusFirstRealTaskSystem() {
 
   // Klavye kısayolu: Alt+V
   document.addEventListener('keydown', (e) => {
+    if (document.body && document.body.getAttribute('data-c2-cockpit') === 'active') return;
     if (e.altKey && (e.key === 'v' || e.key === 'V' || e.code === 'KeyV')) {
       e.preventDefault();
       toggleFirstRealTaskDrawer();

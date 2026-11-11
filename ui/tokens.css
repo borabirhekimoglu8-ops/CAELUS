@@ -7,49 +7,52 @@
 
 :root,
 [data-ob-theme="dusk"] {
-  /* OpenBridge Alacakaranlık / Operasyon Merkezi Yüzeyleri */
-  --surface-canvas: #090d16;
-  --surface-panel: #101726;
-  --surface-elevated: #172033;
-  --surface-inset: #0b101b;
-  --border-subtle: rgba(148, 163, 184, 0.16);
-  --border-strong: rgba(148, 163, 184, 0.30);
+  /* OpenBridge Dusk / Operasyon Merkezi Ana Yüzeyler (§4.1 Birebir Tokenlar) */
+  --bg-canvas: #0b1017;
+  --bg-surface-1: #121a24;
+  --bg-surface-2: #1a2533;
+  --border-subtle: #263547;
+  --border-strong: #384e68;
+  --surface-canvas: var(--bg-canvas);
+  --surface-panel: var(--bg-surface-1);
+  --surface-elevated: var(--bg-surface-2);
+  --surface-inset: #090e15;
 
   /* Tipografi Hiyerarşisi */
-  --text-primary: #e6edf7;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #e6edf5;
+  --text-secondary: #b2c3d6;
+  --text-muted: #8fa3b8;
 
-  /* Astro UXDS Semantik Ciddiyet (Renk + İkon Şekli + Metin Etiketi Zorunlu) */
+  /* Astro UXDS Ciddiyet (Renk + İkon Şekli + Metin Etiketi Zorunlu) */
   --status-critical: #ff3b30;       /* KURAL_İHLALİ / Kesin Engel */
   --status-serious: #ff9500;        /* Yüksek Stres / Gecikme Eşiği */
-  --status-caution: #ffcc00;        /* Çelişkili İddia / Eskimiş Veri */
+  --status-caution: #ffcc00;        /* Çelişkili İddia / Stale Veri */
   --status-nominal: #30d158;        /* GEÇTİ / Doğrulanmış Akış */
-  --status-insufficient: #64748b;   /* KANIT_YETERSİZ / Fail-Closed Kilit */
+  --status-insufficient: #64d2ff;   /* KANIT_YETERSİZ / Kesikli Çerçeve */
 
-  --status-critical-bg: rgba(255, 59, 48, 0.14);
-  --status-serious-bg: rgba(255, 149, 0, 0.14);
-  --status-caution-bg: rgba(255, 204, 0, 0.14);
-  --status-nominal-bg: rgba(48, 209, 88, 0.14);
-  --status-insufficient-bg: rgba(100, 116, 139, 0.18);
+  --status-critical-bg: rgba(255, 59, 48, 0.15);
+  --status-serious-bg: rgba(255, 149, 0, 0.15);
+  --status-caution-bg: rgba(255, 204, 0, 0.15);
+  --status-nominal-bg: rgba(48, 209, 88, 0.15);
+  --status-insufficient-bg: rgba(100, 210, 255, 0.13);
 
-  /* OpenCTI Epistemik Statü Renkleri */
-  --epistemic-observation: #38bdf8; /* Doğrudan Sensör Ölçümü */
-  --epistemic-claim: #f59e0b;       /* Tek Kaynak Beyanı / İddia */
-  --epistemic-hypothesis: #a855f7;  /* Model / Tahmin Hipotezi */
+  /* OpenCTI Epistemik Statü */
+  --epistemic-observation: #2dd4bf; /* Doğrudan Sensör Ölçümü */
+  --epistemic-claim: #f59e0b;       /* Tek Kaynak İddiası */
+  --epistemic-hypothesis: #a78bfa;  /* Model Hipotezi */
 
-  --epistemic-observation-bg: rgba(56, 189, 248, 0.13);
-  --epistemic-claim-bg: rgba(245, 158, 11, 0.14);
-  --epistemic-hypothesis-bg: rgba(168, 85, 247, 0.14);
+  --epistemic-observation-bg: rgba(45, 212, 191, 0.14);
+  --epistemic-claim-bg: rgba(245, 158, 11, 0.15);
+  --epistemic-hypothesis-bg: rgba(167, 139, 250, 0.15);
 
   /* Harita Deniz / Kara Katman Tonları */
   --chart-sea: #07111f;
   --chart-sea-deep: #050c17;
   --chart-land: #152033;
-  --chart-land-stroke: #334868;
-  --chart-grid: rgba(56, 189, 248, 0.09);
+  --chart-land-stroke: #385175;
+  --chart-grid: rgba(45, 212, 191, 0.09);
 
-  /* Tipografi ve Tabular Hizalama */
+  /* Tipografi & Tabular Hizalama */
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "Fira Code", Consolas, monospace;
 
@@ -58,28 +61,32 @@
 }
 
 [data-ob-theme="night"] {
-  /* Gece Vardiyası: Sıfır mavi ışık parlaması, koyu kehribar/kırmızı spektrum */
-  --surface-canvas: #050505;
-  --surface-panel: #0c0c0c;
-  --surface-elevated: #141414;
-  --surface-inset: #080808;
+  /* Gece Vardiyası (§4.1 Birebir Tokenlar): Sıfır mavi parlama, kehribar spektrum */
+  --bg-canvas: #050505;
+  --bg-surface-1: #0d0a08;
+  --bg-surface-2: #17110d;
+  --border-subtle: #2e1f14;
+  --border-strong: #57361e;
+  --surface-canvas: var(--bg-canvas);
+  --surface-panel: var(--bg-surface-1);
+  --surface-elevated: var(--bg-surface-2);
+  --surface-inset: #080605;
+
   --text-primary: #d97736;
-  --text-secondary: #9a5223;
-  --text-muted: #703b18;
-  --border-subtle: rgba(217, 119, 54, 0.24);
-  --border-strong: rgba(217, 119, 54, 0.44);
+  --text-secondary: #b5622c;
+  --text-muted: #8c4f27;
 
   --status-critical: #e03e2d;
   --status-serious: #d97706;
   --status-caution: #ca8a04;
   --status-nominal: #65a30d;
-  --status-insufficient: #78553a;
+  --status-insufficient: #c27838;
 
   --status-critical-bg: rgba(224, 62, 45, 0.18);
   --status-serious-bg: rgba(217, 119, 6, 0.18);
   --status-caution-bg: rgba(202, 138, 4, 0.18);
   --status-nominal-bg: rgba(101, 163, 13, 0.16);
-  --status-insufficient-bg: rgba(120, 85, 58, 0.20);
+  --status-insufficient-bg: rgba(194, 120, 56, 0.18);
 
   --epistemic-observation: #e08b46;
   --epistemic-claim: #eab308;
@@ -98,12 +105,16 @@
 
 [data-ob-theme="day"] {
   /* OpenBridge Parlak Köprüüstü Gündüz Modu: Güneş parlamasında yüksek kontrast */
-  --surface-canvas: #e9eef5;
-  --surface-panel: #ffffff;
-  --surface-elevated: #f3f6fb;
+  --bg-canvas: #e9eef5;
+  --bg-surface-1: #ffffff;
+  --bg-surface-2: #f3f6fb;
+  --border-subtle: #cbd5e1;
+  --border-strong: #94a3b8;
+  --surface-canvas: var(--bg-canvas);
+  --surface-panel: var(--bg-surface-1);
+  --surface-elevated: var(--bg-surface-2);
   --surface-inset: #e2e8f0;
-  --border-subtle: rgba(15, 23, 42, 0.16);
-  --border-strong: rgba(15, 23, 42, 0.32);
+
   --text-primary: #0b1324;
   --text-secondary: #334155;
   --text-muted: #475569;
@@ -112,19 +123,19 @@
   --status-serious: #b45309;
   --status-caution: #92400e;
   --status-nominal: #15803d;
-  --status-insufficient: #475569;
+  --status-insufficient: #0369a1;
 
   --status-critical-bg: rgba(200, 30, 30, 0.11);
   --status-serious-bg: rgba(180, 83, 9, 0.12);
   --status-caution-bg: rgba(245, 158, 11, 0.18);
   --status-nominal-bg: rgba(21, 128, 61, 0.12);
-  --status-insufficient-bg: rgba(71, 85, 105, 0.13);
+  --status-insufficient-bg: rgba(3, 105, 161, 0.11);
 
-  --epistemic-observation: #0369a1;
+  --epistemic-observation: #0f766e;
   --epistemic-claim: #b45309;
   --epistemic-hypothesis: #6d28d9;
 
-  --epistemic-observation-bg: rgba(3, 105, 161, 0.11);
+  --epistemic-observation-bg: rgba(15, 118, 110, 0.11);
   --epistemic-claim-bg: rgba(180, 83, 9, 0.12);
   --epistemic-hypothesis-bg: rgba(109, 40, 217, 0.11);
 
@@ -160,7 +171,16 @@ body[data-c2-cockpit="active"] {
   overflow-x: hidden;
 }
 
-body[data-c2-cockpit="active"] .workbench-shell {
+body[data-c2-cockpit="active"] .workbench-shell,
+body[data-c2-cockpit="active"] #appearance-backdrop,
+body[data-c2-cockpit="active"] #dossier-modal,
+body[data-c2-cockpit="active"] #caelus-cmd-palette-modal,
+body[data-c2-cockpit="active"] #caelus-mobile-bottom-nav,
+body[data-c2-cockpit="active"] #caelus-spatial-compass,
+body[data-c2-cockpit="active"] #caelus-stage-context-pill,
+body[data-c2-cockpit="active"] #caelus-spatial-focus-pill,
+body[data-c2-cockpit="active"] #caelus-time-lens-popover,
+body[data-c2-cockpit="active"] #caelus-provenance-drawer {
   display: none !important;
 }
 
@@ -333,8 +353,8 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
 
 .wr-verdict-banner-badge[data-verdict="KANIT_YETERSİZ"] {
   background: var(--status-insufficient-bg);
-  border-color: var(--status-insufficient);
-  color: var(--text-primary);
+  border: 1.5px dashed var(--status-insufficient);
+  color: var(--status-insufficient);
 }
 
 .wr-verdict-banner-badge[data-verdict="GEÇTİ"] {
@@ -898,4 +918,84 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
     grid-template-columns: 1fr;
   }
 }
+
+/* Canlı Yerel Vektör Harita (MapLibre GL + deck.gl + PMTiles / Cesium 3B) Adaptör Yuvası */
+.wr-live-geo-viewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 410px;
+  z-index: 2;
+  background: var(--chart-sea-deep);
+}
+
+.wr-live-geo-viewport[hidden] {
+  display: none !important;
+}
+
+.wr-live-geo-hud-note {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 8;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgba(9, 14, 21, 0.88);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  pointer-events: none;
+}
+
+/* Eylem Kartı OpenCTI Kanıt Rozetleri (evidence_refs) */
+.wr-evidence-pill-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.wr-evidence-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.67rem;
+  cursor: pointer;
+}
+
+.wr-evidence-pill[data-epistemic="OBSERVATION"] {
+  border-color: var(--epistemic-observation);
+  background: var(--epistemic-observation-bg);
+  color: var(--epistemic-observation);
+}
+
+.wr-evidence-pill[data-epistemic="CLAIM"] {
+  border-color: var(--epistemic-claim);
+  background: var(--epistemic-claim-bg);
+  color: var(--epistemic-claim);
+}
+
+.wr-evidence-pill[data-epistemic="HYPOTHESIS"] {
+  border-color: var(--epistemic-hypothesis);
+  background: var(--epistemic-hypothesis-bg);
+  color: var(--epistemic-hypothesis);
+}
+
+.wr-custom-fp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
 

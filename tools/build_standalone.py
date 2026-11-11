@@ -17,6 +17,7 @@ Derleme:
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -138,7 +139,27 @@ def main() -> int:
             "meta": json.loads(pilot_meta_path.read_text(encoding="utf-8")) if pilot_meta_path.exists() else {},
         }
 
-    build_sha = os.environ.get("GITHUB_SHA", "local")[:12]
+    content_hasher = hashlib.sha256()
+    for part in (
+        idx,
+        tokens_css,
+        compilerjs,
+        lwmjs,
+        dvejs,
+        frtjs,
+        paajs,
+        spjs,
+        airlock_mcp_js,
+        ag_ui_engine_js,
+        cockpit_js,
+        appjs,
+        json.dumps(pilot_bundle, sort_keys=True),
+    ):
+        content_hasher.update(part.encode("utf-8"))
+    content_hasher.update(wasm_bytes)
+    content_sha10 = content_hasher.hexdigest()[:10]
+    env_sha = os.environ.get("GITHUB_SHA", "").strip()[:8]
+    build_sha = f"{env_sha}-{content_sha10}" if env_sha else content_sha10
     inject = (
         "<script>\n"
         "window.CAELUS_WASM_B64=" + json.dumps(wasm_b64) + ";\n"
@@ -219,15 +240,15 @@ def main() -> int:
     write_utf8_lf(dist / "caelus_standalone.html", out)
 
     manifest = {
-        "name": "CAELUS Universal Decision Engine",
-        "short_name": "CAELUS",
-        "description": "Offline-first deterministic causal decision engine",
+        "name": "CAELUS OS — Endüstriyel Komuta Kokpiti",
+        "short_name": "CAELUS C2",
+        "description": "Air-gapped deterministic causal C2 war room & Sidecar Airlock",
         "start_url": "./",
         "scope": "./",
         "display": "standalone",
         "orientation": "any",
-        "background_color": "#040812",
-        "theme_color": "#040812",
+        "background_color": "#0b1017",
+        "theme_color": "#0b1017",
         "lang": "tr",
         "icons": [
             {

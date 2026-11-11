@@ -803,12 +803,17 @@ private:
         // Safe static asset serving for /vendor/..., /assets/..., and UI engine modules
         if ((path.rfind("/vendor/", 0) == 0 || path.rfind("/ui/vendor/", 0) == 0 ||
              path.rfind("/assets/", 0) == 0 || path.rfind("/ui/assets/", 0) == 0 ||
+             path == "/tokens.css" || path == "/ui/tokens.css" ||
+             path == "/manifest.webmanifest" || path == "/ui/manifest.webmanifest" ||
              path == "/learned_world_model.js" || path == "/ui/learned_world_model.js" ||
              path == "/living_world_model.js" || path == "/ui/living_world_model.js" ||
              path == "/discovery_value_engine.js" || path == "/ui/discovery_value_engine.js" ||
              path == "/first_real_task_engine.js" || path == "/ui/first_real_task_engine.js" ||
              path == "/personal_agent_and_advisor.js" || path == "/ui/personal_agent_and_advisor.js" ||
-             path == "/spatial_experience.js" || path == "/ui/spatial_experience.js") &&
+             path == "/spatial_experience.js" || path == "/ui/spatial_experience.js" ||
+             path == "/sidecar_airlock_mcp.js" || path == "/ui/sidecar_airlock_mcp.js" ||
+             path == "/war_room_ag_ui_engine.js" || path == "/ui/war_room_ag_ui_engine.js" ||
+             path == "/war_room_cockpit.js" || path == "/ui/war_room_cockpit.js") &&
             path.find("..") == std::string::npos &&
             path.find('\\') == std::string::npos &&
             path.find(':') == std::string::npos) {
@@ -858,6 +863,8 @@ private:
                 };
                 if (ends_ci(".js") || ends_ci(".mjs") || ends_ci(".cjs")) ctype = "application/javascript; charset=utf-8";
                 else if (ends_ci(".css")) ctype = "text/css; charset=utf-8";
+                else if (ends_ci(".webmanifest")) ctype = "application/manifest+json; charset=utf-8";
+                else if (ends_ci(".pmtiles")) ctype = "application/octet-stream";
                 else if (ends_ci(".json") || ends_ci(".geojson")) ctype = "application/json; charset=utf-8";
                 else if (ends_ci(".xml")) ctype = "application/xml; charset=utf-8";
                 else if (ends_ci(".html")) ctype = "text/html; charset=utf-8";

@@ -14,7 +14,7 @@
  */
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -198,8 +198,12 @@ test("Faz 0 & Kapı 6: A-1/A-2/A-3 mimari yasaları ve %100 Hava Boşluklu UI do
   assert.ok(tokensCss.includes('[data-ob-theme="dusk"]'));
   assert.ok(tokensCss.includes('[data-ob-theme="night"]'));
   assert.ok(tokensCss.includes('[data-ob-theme="day"]'));
+  assert.ok(tokensCss.includes("--bg-canvas: #0b1017"));
   assert.ok(tokensCss.includes("--status-critical: #ff3b30"));
-  assert.ok(tokensCss.includes("--epistemic-observation: #38bdf8"));
+  assert.ok(tokensCss.includes("--status-insufficient: #64d2ff"));
+  assert.ok(tokensCss.includes("--epistemic-observation: #2dd4bf"));
+  assert.ok(tokensCss.includes("--epistemic-claim: #f59e0b"));
+  assert.ok(tokensCss.includes("--epistemic-hypothesis: #a78bfa"));
   assert.ok(tokensCss.includes("tabular-nums"));
   assert.ok(!/transition\s*:\s*all\b/i.test(tokensCss), "tokens.css içinde transition: all yasaktır");
 });
@@ -434,3 +438,159 @@ test("Kapı 5 & 6: Canlı AG-UI WebSocket Akışı, > 2^53 - 1 Kayıpsız String
     fs.rmSync(tmpAuditDir, { recursive: true, force: true });
   }
 });
+
+test("Kapı 7: Tüm Giriş Noktaları (ws_emitter.h, ui_payload.h, dist/index.html, dist/sw.js) War Room Kokpit Bütünlüğü", () => {
+  const wsEmitterH = fs.readFileSync(path.join(ROOT, "include", "ws_emitter.h"), "utf8");
+  for (const allowedAsset of [
+    "/tokens.css",
+    "/sidecar_airlock_mcp.js",
+    "/war_room_ag_ui_engine.js",
+    "/war_room_cockpit.js",
+  ]) {
+    assert.ok(
+      wsEmitterH.includes(`"${allowedAsset}"`),
+      `include/ws_emitter.h statik HTTP izin listesinde ${allowedAsset} bulunmalı`
+    );
+  }
+
+  const cockpitSrc = fs.readFileSync(path.join(ROOT, "ui", "war_room_cockpit.js"), "utf8");
+  assert.ok(cockpitSrc.includes("state_blake3:"));
+  assert.ok(cockpitSrc.includes("audit_head:"));
+  assert.ok(cockpitSrc.includes('data-replay-speed="1"'));
+  assert.ok(cockpitSrc.includes('data-replay-speed="10"'));
+  assert.ok(cockpitSrc.includes('data-focus-evidence='));
+  assert.ok(cockpitSrc.includes("Δ Emniyet/Risk:"));
+  assert.ok(cockpitSrc.includes('data-map-engine="MAPLIBRE_DECK"'));
+  assert.ok(cockpitSrc.includes('data-map-engine="CESIUM_3D"'));
+
+  const distIndexPath = path.join(ROOT, "dist", "index.html");
+  if (fs.existsSync(distIndexPath)) {
+    const distHtml = fs.readFileSync(distIndexPath, "utf8");
+    assert.ok(distHtml.includes('id="caelus-war-room-cockpit-shell"'));
+    assert.ok(distHtml.includes("mountWarRoomCockpitDom"));
+    assert.ok(distHtml.includes("CAELUS_AIRLOCK_PILOT_BUNDLE"));
+  }
+  const distSwPath = path.join(ROOT, "dist", "sw.js");
+  if (fs.existsSync(distSwPath)) {
+    const swJs = fs.readFileSync(distSwPath, "utf8");
+    assert.ok(!swJs.includes('"caelus-local"'), "dist/sw.js sabit caelus-local önbellek adı kullanmamalı");
+  }
+});
+
+test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/caelus_ui.html) Uçtan Uca War Room Doğrulaması", async () => {
+  // 8A) AG-UI HTTP + WS sunucusu canlı HTTP varlık servisi & legacy REPL probe toleransı
+  const agSrv = await startWarRoomAgUiServer({ port: 0, mode: "offline" });
+  let agWs = null;
+  try {
+    for (const relUrl of [
+      "/",
+      "/tokens.css",
+      "/sidecar_airlock_mcp.js",
+      "/war_room_ag_ui_engine.js",
+      "/war_room_cockpit.js",
+      "/api/health",
+    ]) {
+      const r = await fetch(`${agSrv.httpUrl}${relUrl}`);
+      assert.equal(r.status, 200, `AG-UI sunucusu ${relUrl} için 200 OK dönmeli`);
+      const body = await r.text();
+      assert.ok(body.length > 20);
+    }
+
+    agWs = await connectWsTestClient(agSrv.port);
+    await agWs.waitFor((m) => m.msg_type === "SLICE_STATE_SYNC");
+    agWs.sendText("load_world");
+    agWs.sendText("status");
+    agWs.sendText(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: warRoomCockpit.T2_CUTOFF_MS }));
+    await agWs.waitFor(
+      (m, all) =>
+        all.filter((x) => x.msg_type === "SLICE_STATE_SYNC").length >= 2
+    );
+    const boundaryErrs = agWs.messages.filter((m) => m.msg_type === "PROTOCOL_BOUNDARY_ERROR");
+    assert.equal(boundaryErrs.length, 0, "Eski REPL düz metin yoklamaları PROTOCOL_BOUNDARY_ERROR üretmemeli");
+  } finally {
+    if (agWs) agWs.close();
+    await agSrv.close();
+  }
+
+  // 8B) Derlenmiş C++ tek-ikili (dist/caelus_os[.exe]) canlı HTTP rotaları + %TEMP%/caelus_ui.html gömülü kokpit testi
+  const exeName = process.platform === "win32" ? "caelus_os.exe" : "caelus_os";
+  const exePath = path.join(ROOT, "dist", exeName);
+  if (!fs.existsSync(exePath)) return;
+
+  const freePort = await new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.listen(0, "127.0.0.1", () => {
+      const p = s.address().port;
+      s.close(() => resolve(p));
+    });
+    s.on("error", reject);
+  });
+
+  const tmpUiDir = fs.mkdtempSync(path.join(os.tmpdir(), "caelus-cpp-ui-e2e-"));
+  const tmpAuditFile = path.join(tmpUiDir, "cpp_e2e_audit.log");
+  const child = spawn(exePath, ["--scenario", "BS-01_SAHTE_UFUK", "--repl"], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      CAELUS_WS_PORT: String(freePort),
+      CAELUS_AUDIT_PATH: tmpAuditFile,
+      TEMP: tmpUiDir,
+      TMP: tmpUiDir,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+  });
+
+  try {
+    let rootHtml = "";
+    for (let attempt = 0; attempt < 40; attempt++) {
+      try {
+        const r = await fetch(`http://127.0.0.1:${freePort}/`);
+        if (r.status === 200) {
+          rootHtml = await r.text();
+          break;
+        }
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(rootHtml.includes('id="caelus-war-room-cockpit-shell"'), "C++ / rotası War Room kokpit kabuğunu içermeli");
+    assert.ok(rootHtml.includes("mountWarRoomCockpitDom"), "C++ / rotası gömülü war_room_cockpit.js içermeli");
+    assert.ok(rootHtml.includes("CAELUS_AIRLOCK_PILOT_BUNDLE"), "C++ / rotası gömülü pilot verisini içermeli");
+
+    for (const assetPath of [
+      "/tokens.css",
+      "/sidecar_airlock_mcp.js",
+      "/war_room_ag_ui_engine.js",
+      "/war_room_cockpit.js",
+    ]) {
+      const res = await fetch(`http://127.0.0.1:${freePort}${assetPath}`);
+      assert.equal(res.status, 200, `C++ ws_emitter.h ${assetPath} için 200 OK dönmeli (404 olmamalı)`);
+    }
+
+    const extractedHtmlPath = path.join(tmpUiDir, "caelus_ui.html");
+    if (fs.existsSync(extractedHtmlPath)) {
+      const extractedHtml = fs.readFileSync(extractedHtmlPath, "utf8");
+      assert.ok(extractedHtml.includes("mountWarRoomCockpitDom"), "%TEMP%/caelus_ui.html gömülü kokpiti içermeli");
+    }
+  } finally {
+    try {
+      child.stdin.write("quit\n");
+      child.stdin.end();
+    } catch (_) {}
+    await new Promise((resolve) => {
+      const killTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch (_) {}
+        resolve();
+      }, 3000);
+      child.once("exit", () => {
+        clearTimeout(killTimer);
+        resolve();
+      });
+    });
+    fs.rmSync(tmpUiDir, { recursive: true, force: true });
+  }
+});
+
+

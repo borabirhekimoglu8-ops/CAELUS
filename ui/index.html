@@ -4,11 +4,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#040812">
+  <meta name="theme-color" content="#0b1017">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="CAELUS">
-  <title>CAELUS — Yaşayan Dijital Evren ve Karar Platformu</title>
+  <meta name="apple-mobile-web-app-title" content="CAELUS C2">
+  <title>CAELUS OS — Endüstriyel Komuta Kokpiti ve Karar Platformu</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/svg+xml" href="./assets/caelus-symbol.svg">
   <link rel="apple-touch-icon" href="./assets/caelus-logo.png">
@@ -6445,6 +6445,16 @@ body.theme-light .linear-setting-row {
       }
     }
 
+      body[data-c2-cockpit="active"] > .workbench-shell,
+      body[data-c2-cockpit="active"] > #appearance-backdrop,
+      body[data-c2-cockpit="active"] > #dossier-modal,
+      body[data-c2-cockpit="active"] > #caelus-cmd-palette-modal,
+      body[data-c2-cockpit="active"] > #caelus-mobile-bottom-nav {
+        display: none !important;
+      }
+      body:not([data-c2-cockpit="active"]) > #caelus-war-room-cockpit-shell {
+        display: none !important;
+      }
   </style>
   <link rel="stylesheet" href="./tokens.css">
 </head>

@@ -437,6 +437,7 @@
     if (!window.__caelusSpatialKeyBound) {
       window.__caelusSpatialKeyBound = true;
       window.addEventListener('keydown', (e) => {
+        if (document.body && document.body.getAttribute('data-c2-cockpit') === 'active') return;
         if (e.altKey && (e.key === 'k' || e.key === 'K')) {
           e.preventDefault();
           const trigger = document.getElementById('caelus-compass-trigger');

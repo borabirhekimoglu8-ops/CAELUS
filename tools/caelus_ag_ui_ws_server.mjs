@@ -365,6 +365,16 @@ export async function startWarRoomAgUiServer(options = {}) {
   }
 
   function handleClientCommand(client, rawText) {
+    const trimmedRaw = String(rawText || "").trim();
+    if (
+      trimmedRaw === "load_world" ||
+      trimmedRaw === "status" ||
+      trimmedRaw === "list levers" ||
+      trimmedRaw.startsWith("scenario ") ||
+      trimmedRaw.startsWith("load_json ")
+    ) {
+      return;
+    }
     const rawViol = sidecarAirlock.detectUnquoted64BitViolationInRawJson(rawText);
     if (rawViol) {
       enqueueEnvelope(client, {

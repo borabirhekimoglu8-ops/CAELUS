@@ -306,8 +306,11 @@
     const state = {
       theme: options.initialTheme || "dusk", // "day" | "dusk" | "night"
       stageMode: options.initialStageMode || "MAP", // "MAP" | "GRAPH"
+      mapEngine: "SVG", // "SVG" | "MAPLIBRE_DECK" | "CESIUM_3D"
       playbackMode: "REPLAY", // "REPLAY" | "LIVE"
-      transportMode: "AIRGAPPED_LOCAL", // "AIRGAPPED_LOCAL" | "WS_LIVE"
+      replaySpeed: 1, // 1 | 10
+      transportMode: "AIRGAPPED_LOCAL", // "AIRGAPPED_LOCAL" | "WS_LIVE" | "WS_CPP_ENGINE"
+      serverAirlockMode: "OFFLINE_REPLAY", // "OFFLINE_REPLAY" | "LIVE_AIRLOCK"
       cutoffLearnedAtMs: String(options.initialCutoffMs || T2_CUTOFF_MS),
       epistemicFilter: "ALL", // "ALL" | "OBSERVATION" | "CLAIM" | "HYPOTHESIS" | "REJECTED"
       selectedEventId: "ev_106",
@@ -322,6 +325,8 @@
         airspace: true,
         berth: true,
       },
+      customStressMode: "BERTH_02", // "BERTH_02" | "ROUTE_SHELTER_01" | "CUSTOM_FP"
+      customOverrideFp: "16000000",
       customStressDeltaMin: "-18",
       lastCounterfactualPreview: null,
       sealedCards: {}, // card_id -> { operator_pubkey, operator_sig, audit_chain_head, approved_at_ms }
@@ -704,11 +709,37 @@
     const model = createWarRoomCockpitModel(options);
     const st = model.state;
     let wsClient = null;
+    let agUiHandshakeConfirmed = false;
     let liveReplayTimer = null;
     let virtualScrollTop = 0;
+    let liveMapInstance = null;
+    let liveDeckOverlay = null;
+    let liveCesiumViewer = null;
+    let pmtilesProtocolBound = false;
+
+    function destroyLiveGeoAdapters() {
+      if (liveDeckOverlay && liveMapInstance) {
+        try {
+          liveMapInstance.removeControl(liveDeckOverlay);
+        } catch (_) {}
+      }
+      liveDeckOverlay = null;
+      if (liveMapInstance) {
+        try {
+          liveMapInstance.remove();
+        } catch (_) {}
+        liveMapInstance = null;
+      }
+      if (liveCesiumViewer) {
+        try {
+          liveCesiumViewer.destroy();
+        } catch (_) {}
+        liveCesiumViewer = null;
+      }
+    }
 
     function sendWsOrFallback(wsPayload, localFallbackFn) {
-      if (wsClient && wsClient.readyState === 1) {
+      if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
         wsClient.send(JSON.stringify(wsPayload));
         return true;
       }
@@ -824,7 +855,17 @@
       const slice = (st.sliceSync && st.sliceSync.slice) || {};
       const verdict = slice.verdict || "KANIT_YETERSİZ";
       const stateHash = String(slice.state_blake3 || "");
+      const auditHash = String(st.auditChainHead || stateHash || "");
       const stalenessItems = model.computeSourceStalenessStrip();
+
+      const airlockModeLabel =
+        st.transportMode === "WS_LIVE"
+          ? st.serverAirlockMode === "LIVE_AIRLOCK"
+            ? "● LIVE AIRLOCK (:47809)"
+            : "● OFFLINE REPLAY (:47809)"
+          : st.transportMode === "WS_CPP_ENGINE"
+            ? "● C++ ENGINE (:47809) · OFFLINE REPLAY"
+            : "◆ OFFLINE REPLAY · HAVA BOŞLUKLU";
 
       const stalenessHtml = stalenessItems
         .map(
@@ -847,10 +888,11 @@
             </svg>
             <span>CAELUS OS // WAR ROOM</span>
           </span>
+          <span class="wr-mode-pill" title="A-1 Deterministik Sabit Nokta Çekirdek Modu">DET-MODE</span>
           <span class="wr-mode-pill" data-transport="${st.transportMode}" id="wr-transport-badge">
-            ${st.transportMode === "WS_LIVE" ? "● LIVE AIRLOCK (:47809)" : "◆ DET-MODE · HAVA BOŞLUKLU"}
+            ${airlockModeLabel}
           </span>
-          <span class="wr-mode-pill">AEGEAN_FERRY_01 · MARITIME_SAFETY_V2</span>
+          <span class="wr-mode-pill" title="Aktif Senaryo ve Politika Kimliği">policy_id: MARITIME_SAFETY_V2</span>
           <span class="wr-verdict-banner-badge" data-verdict="${escapeHtml(verdict)}" id="wr-active-verdict-badge">
             ${severityIconSvg(verdict)}
             <span>HÜKÜM: ${escapeHtml(verdict)}</span>
@@ -862,9 +904,12 @@
         </div>
 
         <div class="wr-controls-cluster">
-          <button type="button" class="wr-hash-trigger hash-badge" id="wr-btn-open-seal-modal" title="state_blake3, Manifest v2.0 imzası ve denetim zinciri mühürlerini incele">
-            <span>BLAKE3:</span>
-            <strong>${escapeHtml(stateHash ? stateHash.slice(0, 12) + "…" : "—")}</strong>
+          <button type="button" class="wr-hash-trigger hash-badge" id="wr-btn-open-seal-modal" title="state_blake3, audit_head_blake3, Manifest v2.0 imzası ve denetim zinciri mühürlerini incele">
+            <span>state_blake3:</span>
+            <strong>${escapeHtml(stateHash ? stateHash.slice(0, 10) + "…" : "—")}</strong>
+            <span style="opacity:0.55;">|</span>
+            <span>audit_head:</span>
+            <strong>${escapeHtml(auditHash ? auditHash.slice(0, 10) + "…" : "—")}</strong>
           </button>
 
           <div role="group" aria-label="OpenBridge Köprüüstü Aydınlatma Teması" style="display:inline-flex; gap:4px;">
@@ -874,7 +919,7 @@
           </div>
 
           <button type="button" class="wr-btn" id="wr-btn-open-cmdk" title="Hızlı Varlık, Kural ve Olay Arama Paleti (Ctrl+K / Cmd+K)">⌕ Ara (Ctrl+K)</button>
-          <button type="button" class="wr-btn" id="wr-btn-switch-studio" title="3B Evrensel Küre ve Senaryo Stüdyosu Görünümüne Geç">3B Stüdyo</button>
+          <button type="button" class="wr-btn" id="wr-btn-switch-studio" title="Klasik 3B Evrensel Küre ve Senaryo Stüdyosu Görünümüne Geç">Klasik Stüdyo</button>
         </div>
       `;
     }
@@ -990,13 +1035,13 @@
         `
           : "";
 
-      const vendoredEnginesReady =
-        typeof window !== "undefined" &&
-        Boolean(window.maplibregl || window.deck || window.Cesium);
+      const hasMapLibre = typeof window !== "undefined" && Boolean(window.maplibregl);
+      const hasDeck = typeof window !== "undefined" && Boolean(window.deck);
+      const hasCesium = typeof window !== "undefined" && Boolean(window.Cesium);
 
       return `
         <div class="wr-map-container">
-          <div class="wr-map-layer-bar" role="toolbar" aria-label="Taktik Harita Katman Denetimleri">
+          <div class="wr-map-layer-bar" role="toolbar" aria-label="Taktik Harita Katman ve Motor Denetimleri">
             <div style="display:flex; gap:5px; flex-wrap:wrap;">
               <button type="button" class="wr-layer-chip" data-toggle-layer="ais" aria-pressed="${st.mapLayers.ais}">● AIS Gemi</button>
               <button type="button" class="wr-layer-chip" data-toggle-layer="route" aria-pressed="${st.mapLayers.route}">━ Rota Koridoru</button>
@@ -1004,12 +1049,17 @@
               <button type="button" class="wr-layer-chip" data-toggle-layer="airspace" aria-pressed="${st.mapLayers.airspace}">▲ Hava Sahası (ADS-B)</button>
               <button type="button" class="wr-layer-chip" data-toggle-layer="berth" aria-pressed="${st.mapLayers.berth}">■ Liman Rıhtım</button>
             </div>
-            <span class="metric-value" style="font-size:0.69rem; color:var(--text-secondary);">
-              Yerel Vektör Harita (${vendoredEnginesReady ? "MapLibre/Deck/Cesium Yerel Paket Hazır" : "Yerel SVG Vektör"}) · 0 Dış Tile
-            </span>
+            <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;" role="group" aria-label="Hava Boşluklu Harita Motoru Seçici">
+              <button type="button" class="wr-layer-chip" data-map-engine="SVG" aria-pressed="${st.mapEngine === "SVG"}">SVG Vektör (0ms)</button>
+              <button type="button" class="wr-layer-chip" data-map-engine="MAPLIBRE_DECK" aria-pressed="${st.mapEngine === "MAPLIBRE_DECK"}" title="Yerel MapLibre GL + deck.gl + PMTiles Vektör Adaptörü">${hasMapLibre ? "MapLibre + deck.gl" : "MapLibre (SVG Yedek)"}</button>
+              <button type="button" class="wr-layer-chip" data-map-engine="CESIUM_3D" aria-pressed="${st.mapEngine === "CESIUM_3D"}" title="Yerel Hava Boşluklu Cesium 3B Koridor Görünümü">${hasCesium ? "Cesium 3B" : "Cesium 3B (Yedek)"}</button>
+              <span class="metric-value" style="font-size:0.68rem; color:var(--text-secondary); margin-left:4px;">0 Dış Tile${hasDeck ? " · deck.gl Hazır" : ""}</span>
+            </div>
           </div>
 
-          <svg class="wr-tactical-svg" viewBox="0 0 720 350" role="img" aria-label="Ege Denizi Sığacık - Sisam Vathi Taktik Deniz Koridoru Haritası">
+          <div class="wr-stage-canvas-stack" style="position:relative; flex:1; min-height:360px; display:flex; flex-direction:column;">
+            <div id="wr-live-geo-mount" class="wr-live-geo-viewport" ${st.mapEngine === "SVG" ? "hidden" : ""}></div>
+            <svg class="wr-tactical-svg" ${st.mapEngine !== "SVG" ? 'style="opacity:0.16; pointer-events:none;"' : ""} viewBox="0 0 720 350" role="img" aria-label="Ege Denizi Sığacık - Sisam Vathi Taktik Deniz Koridoru Haritası">
             <defs>
               <pattern id="wr-grid-pat" width="60" height="60" patternUnits="userSpaceOnUse">
                 <path d="M 60 0 L 0 0 0 60" fill="none" stroke="var(--chart-grid)" stroke-width="1"/>
@@ -1047,6 +1097,7 @@
             ${airspaceSvg}
             ${aisSvg}
           </svg>
+          </div>
 
           <div class="wr-map-hud-overlay">
             <div class="wr-map-hud-card metric-value">
@@ -1186,9 +1237,14 @@
             <div style="display:flex; flex-direction:column; gap:5px; padding-top:4px; border-top:1px solid var(--border-subtle);">
               <label for="wr-stress-delta-select" style="font-size:0.74rem; font-weight:700;">Müdahale / Parametre Değişikliği Seçin:</label>
               <select id="wr-stress-delta-select" class="wr-input" style="width:100%;">
-                <option value="BERTH_02" ${st.customStressDeltaMin === "-18" ? "selected" : ""}>BERTH_02 Yedek Rampa Tahsisi (-18.0 dk Kuyruk Sönümleme)</option>
-                <option value="ROUTE_SHELTER_01" ${st.customStressDeltaMin === "-7" ? "selected" : ""}>ROUTE_SHELTER_01 Güney Sisam Korunaklı Rota (16.0 dk Tavan)</option>
+                <option value="BERTH_02" ${st.customStressMode === "BERTH_02" ? "selected" : ""}>BERTH_02 Yedek Rampa Tahsisi (-18.0 dk Kuyruk Sönümleme)</option>
+                <option value="ROUTE_SHELTER_01" ${st.customStressMode === "ROUTE_SHELTER_01" ? "selected" : ""}>ROUTE_SHELTER_01 Güney Sisam Korunaklı Rota (16.0 dk Tavan)</option>
+                <option value="CUSTOM_FP" ${st.customStressMode === "CUSTOM_FP" ? "selected" : ""}>Özel Sabit Nokta Değeri (64-Bit ASCII fp_val · 1e6 Ölçek)</option>
               </select>
+              <div class="wr-custom-fp-row">
+                <label for="wr-stress-custom-fp-input" style="font-size:0.71rem; color:var(--text-secondary);">Sabit Nokta (fp_val):</label>
+                <input type="text" inputmode="numeric" id="wr-stress-custom-fp-input" class="wr-input metric-value" style="flex:1; min-width:120px;" value="${escapeHtml(st.customOverrideFp)}" aria-label="Özel 64-bit sabit nokta müdahale değeri (1e6 ölçekli)">
+              </div>
               <button type="button" class="wr-btn wr-btn-seal" id="wr-btn-run-node-counterfactual">
                 ⚡ Değeri Değiştirip Karşı-Olgu Koştur
               </button>
@@ -1209,7 +1265,236 @@
       `;
     }
 
+    function buildAirGappedAegeanGeoJson() {
+      const isT2 = BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS);
+      const features = [
+        {
+          type: "Feature",
+          properties: { kind: "land", name: "Sığacık / Seferihisar Yarımadası" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[26.62, 38.28], [27.02, 38.28], [27.05, 38.15], [26.84, 38.18], [26.76, 38.19], [26.64, 38.22], [26.62, 38.28]]],
+          },
+        },
+        {
+          type: "Feature",
+          properties: { kind: "land", name: "Sisam (Samos) Adası" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[26.66, 37.81], [27.06, 37.80], [27.08, 37.68], [26.68, 37.69], [26.66, 37.81]]],
+          },
+        },
+      ];
+      if (st.mapLayers.h3Wave) {
+        features.push({
+          type: "Feature",
+          properties: { kind: "h3_cell", risk: isT2 ? "CRITICAL" : "CAUTION", wave: isT2 ? "3.15m" : "2.45m" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[26.78, 38.05], [26.88, 38.07], [26.94, 38.00], [26.89, 37.93], [26.79, 37.92], [26.74, 37.99], [26.78, 38.05]]],
+          },
+        });
+      }
+      if (st.mapLayers.route) {
+        features.push(
+          {
+            type: "Feature",
+            properties: { kind: "route_primary" },
+            geometry: {
+              type: "LineString",
+              coordinates: [[26.784, 38.194], [26.845, 38.055], [26.915, 37.910], [26.972, 37.756]],
+            },
+          },
+          {
+            type: "Feature",
+            properties: { kind: "route_sheltered" },
+            geometry: {
+              type: "LineString",
+              coordinates: [[26.784, 38.194], [26.745, 38.010], [26.835, 37.845], [26.972, 37.756]],
+            },
+          }
+        );
+      }
+      if (st.mapLayers.ais) {
+        features.push({
+          type: "Feature",
+          properties: { kind: "vessel", label: "VESSEL_AEGEAN_01 · 14.2 kn" },
+          geometry: {
+            type: "Point",
+            coordinates: isT2 ? [26.832, 38.082] : [26.805, 38.138],
+          },
+        });
+      }
+      if (st.mapLayers.airspace && BigInt(st.cutoffLearnedAtMs) >= 1762849260000n) {
+        features.push({
+          type: "Feature",
+          properties: { kind: "aircraft", label: "SAR_HELI_AEGEAN_04 · 450m" },
+          geometry: { type: "Point", coordinates: [26.742, 37.965] },
+        });
+      }
+      return { type: "FeatureCollection", features };
+    }
+
+    function mountActiveGeoAdapterIfNeeded() {
+      destroyLiveGeoAdapters();
+      if (st.stageMode !== "MAP" || st.mapEngine === "SVG") return;
+      const mountEl = stageEl.querySelector("#wr-live-geo-mount");
+      if (!mountEl) return;
+
+      if (st.mapEngine === "MAPLIBRE_DECK" && typeof window !== "undefined" && window.maplibregl) {
+        try {
+          if (window.pmtiles && window.pmtiles.Protocol && !pmtilesProtocolBound && window.maplibregl.addProtocol) {
+            const pmtProto = new window.pmtiles.Protocol();
+            window.maplibregl.addProtocol("pmtiles", pmtProto.tile);
+            pmtilesProtocolBound = true;
+          }
+          const geoData = buildAirGappedAegeanGeoJson();
+          const seaBg = st.theme === "day" ? "#dbeafe" : st.theme === "night" ? "#050505" : "#07111f";
+          const landFill = st.theme === "day" ? "#f1f5f9" : st.theme === "night" ? "#17110d" : "#152033";
+          const landLine = st.theme === "day" ? "#475569" : st.theme === "night" ? "#d97736" : "#385175";
+          liveMapInstance = new window.maplibregl.Map({
+            container: mountEl,
+            attributionControl: false,
+            center: [26.86, 37.97],
+            zoom: 8.5,
+            pitch: 28,
+            style: {
+              version: 8,
+              sources: {
+                aegean_airgapped: { type: "geojson", data: geoData },
+              },
+              layers: [
+                { id: "bg-sea", type: "background", paint: { "background-color": seaBg } },
+                {
+                  id: "land-poly",
+                  type: "fill",
+                  source: "aegean_airgapped",
+                  filter: ["==", ["get", "kind"], "land"],
+                  paint: { "fill-color": landFill, "fill-opacity": 0.96 },
+                },
+                {
+                  id: "land-outline",
+                  type: "line",
+                  source: "aegean_airgapped",
+                  filter: ["==", ["get", "kind"], "land"],
+                  paint: { "line-color": landLine, "line-width": 1.6 },
+                },
+                {
+                  id: "h3-wave-poly",
+                  type: "fill",
+                  source: "aegean_airgapped",
+                  filter: ["==", ["get", "kind"], "h3_cell"],
+                  paint: { "fill-color": "#ff3b30", "fill-opacity": 0.24 },
+                },
+                {
+                  id: "route-primary-line",
+                  type: "line",
+                  source: "aegean_airgapped",
+                  filter: ["==", ["get", "kind"], "route_primary"],
+                  paint: { "line-color": "#ff3b30", "line-width": 3, "line-dasharray": [2, 2] },
+                },
+                {
+                  id: "route-sheltered-line",
+                  type: "line",
+                  source: "aegean_airgapped",
+                  filter: ["==", ["get", "kind"], "route_sheltered"],
+                  paint: { "line-color": "#30d158", "line-width": 2.6 },
+                },
+                {
+                  id: "vessel-circle",
+                  type: "circle",
+                  source: "aegean_airgapped",
+                  filter: ["in", ["get", "kind"], ["literal", ["vessel", "aircraft"]]],
+                  paint: { "circle-radius": 7, "circle-color": "#2dd4bf", "circle-stroke-width": 2, "circle-stroke-color": "#0b1017" },
+                },
+              ],
+            },
+          });
+          if (window.deck && window.deck.MapboxOverlay && window.deck.ScatterplotLayer) {
+            liveDeckOverlay = new window.deck.MapboxOverlay({
+              layers: [
+                new window.deck.ScatterplotLayer({
+                  id: "wr-deck-ports",
+                  data: [
+                    { coords: [26.784, 38.194], color: [255, 59, 48, 210] },
+                    { coords: [26.972, 37.756], color: [45, 212, 191, 210] },
+                  ],
+                  getPosition: (d) => d.coords,
+                  getFillColor: (d) => d.color,
+                  getRadius: 1100,
+                }),
+              ],
+            });
+            liveMapInstance.addControl(liveDeckOverlay);
+          }
+          const badge = document.createElement("div");
+          badge.className = "wr-live-geo-hud-note";
+          badge.textContent = "MAPLIBRE GL + DECK.GL + PMTILES PROTOKOLÜ AKTİF · %100 YEREL VEKTÖR (0 DIŞ TILE)";
+          mountEl.appendChild(badge);
+        } catch (_) {
+          mountEl.hidden = true;
+        }
+        return;
+      }
+
+      if (st.mapEngine === "CESIUM_3D" && typeof window !== "undefined" && window.Cesium) {
+        try {
+          const C = window.Cesium;
+          liveCesiumViewer = new C.Viewer(mountEl, {
+            imageryProvider: false,
+            baseLayer: false,
+            baseLayerPicker: false,
+            geocoder: false,
+            homeButton: false,
+            sceneModePicker: false,
+            navigationHelpButton: false,
+            animation: false,
+            timeline: false,
+            fullscreenButton: false,
+            infoBox: false,
+            selectionIndicator: false,
+            skyBox: false,
+            skyAtmosphere: false,
+          });
+          liveCesiumViewer.scene.globe.baseColor = C.Color.fromCssColorString(
+            st.theme === "night" ? "#080605" : st.theme === "day" ? "#bfdbfe" : "#07111f"
+          );
+          liveCesiumViewer.entities.add({
+            name: "Sığacık → Vathi Ana Koridor",
+            polyline: {
+              positions: C.Cartesian3.fromDegreesArray([26.784, 38.194, 26.845, 38.055, 26.972, 37.756]),
+              width: 3,
+              material: C.Color.fromCssColorString("#ff3b30"),
+            },
+          });
+          liveCesiumViewer.entities.add({
+            name: "Güney Sisam Korunaklı Koridor",
+            polyline: {
+              positions: C.Cartesian3.fromDegreesArray([26.784, 38.194, 26.745, 38.010, 26.835, 37.845, 26.972, 37.756]),
+              width: 3,
+              material: C.Color.fromCssColorString("#30d158"),
+            },
+          });
+          liveCesiumViewer.entities.add({
+            position: C.Cartesian3.fromDegrees(26.832, 38.082, 120),
+            point: { pixelSize: 10, color: C.Color.fromCssColorString("#2dd4bf") },
+          });
+          liveCesiumViewer.camera.setView({
+            destination: C.Cartesian3.fromDegrees(26.87, 37.62, 68000),
+            orientation: { heading: 0, pitch: C.Math.toRadians(-52), roll: 0 },
+          });
+          const badge = document.createElement("div");
+          badge.className = "wr-live-geo-hud-note";
+          badge.textContent = "CESIUM 3B TAKTİK KÜRE AKTİF · HAVA BOŞLUKLU YEREL ELİPSOİD (0 ION / 0 DIŞ İSTEK)";
+          mountEl.appendChild(badge);
+        } catch (_) {
+          mountEl.hidden = true;
+        }
+      }
+    }
+
     function renderStageZone() {
+      destroyLiveGeoAdapters();
       stageEl.innerHTML = `
         <div class="wr-panel-toolbar">
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;" role="tablist" aria-label="Mekansal Harita ve Nedensel Graf Görünüm Seçici">
@@ -1228,6 +1513,7 @@
           ${st.stageMode === "MAP" ? renderTacticalMapHtml() : renderCausalGraphDeskHtml()}
         </div>
       `;
+      mountActiveGeoAdapterIfNeeded();
     }
 
     function renderAgentDockZone() {
@@ -1292,8 +1578,22 @@
 
               <div class="metric-value" style="display:flex; flex-wrap:wrap; gap:8px; font-size:0.72rem; padding:6px 8px; border-radius:4px; background:var(--surface-inset);">
                 <span>Karşı-Olgu: <strong>${escapeHtml(card.base_verdict)} → ${escapeHtml(card.branch_verdict)}</strong></span>
-                <span>Δ Gecikme: <strong>${escapeHtml(formatFpScaled(String(card.counterfactual_delta && card.counterfactual_delta.delay_change_min_fp), "dk"))}</strong></span>
+                <span>Δ Süre: <strong>${escapeHtml(formatFpScaled(String((card.counterfactual_delta && card.counterfactual_delta.delay_change_min_fp) || "0"), "dk"))}</strong></span>
+                <span>Δ Emniyet/Risk: <strong>${escapeHtml(formatFpScaled(String((card.counterfactual_delta && card.counterfactual_delta.safety_margin_gain_fp) || "0"), "dk"))}</strong></span>
                 <span>Bağımsız Grup: <strong>${escapeHtml(String((card.independence_groups || []).length))}</strong></span>
+              </div>
+
+              <div class="wr-evidence-pill-row" aria-label="OpenCTI Kanıt Referansları (evidence_refs)">
+                ${(card.evidence_refs || [])
+                  .map(
+                    (ref) => `
+                  <button type="button" class="wr-evidence-pill" data-epistemic="${escapeHtml(ref.epistemic_status)}" data-focus-evidence="${escapeHtml(ref.event_id)}" title="Kanıt Olayını Telemetri Akışında Odakla: ${escapeHtml(ref.source_id)} (${escapeHtml(ref.epistemic_status)})">
+                    ${epistemicSymbol(ref.epistemic_status)}
+                    <span>${escapeHtml(ref.event_id)}</span>
+                    <span style="opacity:0.78;">· ${escapeHtml(ref.epistemic_status)}</span>
+                  </button>`
+                  )
+                  .join("")}
               </div>
 
               ${
@@ -1460,6 +1760,10 @@
           <button type="button" class="wr-btn ${st.playbackMode === "LIVE" ? "wr-btn-active" : ""}" id="wr-btn-toggle-playback" title="Boşluk (Space): Canlı Akış / Tekrar Oynatma">
             ${st.playbackMode === "LIVE" ? "⏸ LIVE" : "▶ REPLAY"} (Space)
           </button>
+          <div role="group" aria-label="Tekrar Oynatma Hızı Seçici (1x / 10x)" style="display:inline-flex; gap:4px;">
+            <button type="button" class="wr-btn ${st.replaySpeed === 1 ? "wr-btn-active" : ""}" data-replay-speed="1" aria-pressed="${st.replaySpeed === 1}" title="Gerçek Zamanlı Olay Adımı (1x)">1x</button>
+            <button type="button" class="wr-btn ${st.replaySpeed === 10 ? "wr-btn-active" : ""}" data-replay-speed="10" aria-pressed="${st.replaySpeed === 10}" title="Hızlandırılmış Tekrar Oynatma (10x)">10x</button>
+          </div>
           <button type="button" class="wr-btn" id="wr-btn-step-prev" title="Önceki Olay ([)">[ Önceki</button>
           <button type="button" class="wr-btn" id="wr-btn-step-next" title="Sonraki Olay (])">Sonraki ]</button>
           <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === T1_CUTOFF_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${T1_CUTOFF_MS}" id="wr-btn-snap-t1">
@@ -1620,7 +1924,7 @@
       if (instantKbd) document.body.setAttribute("data-kbd-instant", "1");
       const targetStr = String(nextCutoffMsStr);
       model.setCutoffMs(targetStr);
-      if (wsClient && wsClient.readyState === 1) {
+      if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
         wsClient.send(
           JSON.stringify({
             cmd: "EVALUATE_SLICE",
@@ -1631,6 +1935,36 @@
       if (instantKbd) {
         requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
       }
+    }
+
+    function startReplayInterval() {
+      if (liveReplayTimer) {
+        clearInterval(liveReplayTimer);
+        liveReplayTimer = null;
+      }
+      const intervalMs = st.replaySpeed === 10 ? 120 : 1200;
+      liveReplayTimer = setInterval(() => {
+        if (BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS)) {
+          st.playbackMode = "REPLAY";
+          clearInterval(liveReplayTimer);
+          liveReplayTimer = null;
+          renderTimeConductorZone();
+          return;
+        }
+        const nextMs = model.stepEventCursor(1);
+        if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
+          wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
+        }
+      }, intervalMs);
+    }
+
+    function setReplaySpeed(nextSpeed) {
+      const spd = Number(nextSpeed) === 10 ? 10 : 1;
+      st.replaySpeed = spd;
+      if (st.playbackMode === "LIVE") {
+        startReplayInterval();
+      }
+      renderTimeConductorZone();
     }
 
     function togglePlaybackMode(instantKbd = false) {
@@ -1646,19 +1980,7 @@
         if (BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS)) {
           model.setCutoffMs("1762848300000");
         }
-        liveReplayTimer = setInterval(() => {
-          if (BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS)) {
-            st.playbackMode = "REPLAY";
-            clearInterval(liveReplayTimer);
-            liveReplayTimer = null;
-            renderTimeConductorZone();
-            return;
-          }
-          const nextMs = model.stepEventCursor(1);
-          if (wsClient && wsClient.readyState === 1) {
-            wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
-          }
-        }, 1200);
+        startReplayInterval();
       }
       renderTimeConductorZone();
       if (instantKbd) {
@@ -1711,6 +2033,14 @@
         setStageMode(target.getAttribute("data-stage-mode"), false);
         return;
       }
+      if (target.hasAttribute("data-map-engine")) {
+        const nextEng = target.getAttribute("data-map-engine");
+        if (nextEng === "SVG" || nextEng === "MAPLIBRE_DECK" || nextEng === "CESIUM_3D") {
+          st.mapEngine = nextEng;
+          renderStageZone();
+        }
+        return;
+      }
       if (target.hasAttribute("data-toggle-layer")) {
         const layerKey = target.getAttribute("data-toggle-layer");
         st.mapLayers[layerKey] = !st.mapLayers[layerKey];
@@ -1727,6 +2057,21 @@
         renderAgentDockZone();
         return;
       }
+      if (target.hasAttribute("data-focus-evidence")) {
+        const evid = target.getAttribute("data-focus-evidence");
+        st.selectedEventId = evid;
+        st.epistemicFilter = "ALL";
+        const rows = model.getDecoratedTelemetryRows();
+        const idx = rows.findIndex((r) => r.event_id === evid);
+        if (idx >= 0) {
+          st.selectedGraphNodeId = rows[idx].source_id || st.selectedGraphNodeId;
+          virtualScrollTop = Math.max(0, idx * VIRTUAL_ROW_HEIGHT_PX - VIRTUAL_ROW_HEIGHT_PX);
+          virtualViewportEl.scrollTop = virtualScrollTop;
+        }
+        renderTimeConductorZone();
+        if (st.stageMode === "GRAPH") renderStageZone();
+        return;
+      }
       if (target.hasAttribute("data-graph-node")) {
         st.selectedGraphNodeId = target.getAttribute("data-graph-node");
         renderStageZone();
@@ -1738,20 +2083,33 @@
       }
       if (target.id === "wr-btn-run-node-counterfactual") {
         const sel = rootEl.querySelector("#wr-stress-delta-select");
-        const modeVal = sel ? sel.value : "BERTH_02";
-        const interventions =
-          modeVal === "ROUTE_SHELTER_01"
-            ? [{ target_id: "ROUTE_SHELTER_01", override_field: "route_shelter_corridor", fp_val: "16000000" }]
-            : [{ target_id: "BERTH_02", override_field: "status", fp_val: "0" }];
-        st.customStressDeltaMin = modeVal === "ROUTE_SHELTER_01" ? "-7" : "-18";
+        const fpInp = rootEl.querySelector("#wr-stress-custom-fp-input");
+        const modeVal = sel ? sel.value : st.customStressMode || "BERTH_02";
+        st.customStressMode = modeVal;
+        const rawFp = fpInp ? String(fpInp.value || "").trim() : st.customOverrideFp;
+        const safeFp = /^-?[0-9]+$/.test(rawFp) ? rawFp : "16000000";
+        st.customOverrideFp = safeFp;
+
+        let interventions;
+        if (modeVal === "ROUTE_SHELTER_01") {
+          interventions = [{ target_id: "ROUTE_SHELTER_01", override_field: "route_shelter_corridor", fp_val: "16000000" }];
+          st.customStressDeltaMin = "-7";
+        } else if (modeVal === "CUSTOM_FP") {
+          interventions = [{ target_id: "ROUTE_SHELTER_01", override_field: "route_shelter_corridor", fp_val: safeFp }];
+          st.customStressDeltaMin = "custom";
+        } else {
+          interventions = [{ target_id: "BERTH_02", override_field: "status", fp_val: "0" }];
+          st.customStressDeltaMin = "-18";
+        }
+        const branchName = `cf_${modeVal.toLowerCase()}`;
         sendWsOrFallback(
           {
             cmd: "RUN_COUNTERFACTUAL",
             base_cutoff_ms: st.cutoffLearnedAtMs,
-            branch_id: `cf_${modeVal.toLowerCase()}`,
+            branch_id: branchName,
             interventions,
           },
-          () => model.runInteractiveCounterfactual(interventions, `cf_${modeVal.toLowerCase()}`)
+          () => model.runInteractiveCounterfactual(interventions, branchName)
         );
         return;
       }
@@ -1785,7 +2143,7 @@
       if (target.hasAttribute("data-card-sign")) {
         const cid = target.getAttribute("data-card-sign");
         const localSigned = model.signAndSealActionCardLocal(cid);
-        if (localSigned.ok && wsClient && wsClient.readyState === 1) {
+        if (localSigned.ok && wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
           wsClient.send(
             JSON.stringify({
               cmd: "SIGN_ACTION_CARD",
@@ -1814,16 +2172,20 @@
         togglePlaybackMode(false);
         return;
       }
+      if (target.hasAttribute("data-replay-speed")) {
+        setReplaySpeed(target.getAttribute("data-replay-speed"));
+        return;
+      }
       if (target.id === "wr-btn-step-prev") {
         const prevMs = model.stepEventCursor(-1);
-        if (wsClient && wsClient.readyState === 1) {
+        if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
           wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: prevMs }));
         }
         return;
       }
       if (target.id === "wr-btn-step-next") {
         const nextMs = model.stepEventCursor(1);
-        if (wsClient && wsClient.readyState === 1) {
+        if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
           wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
         }
         return;
@@ -1847,11 +2209,19 @@
       }
     });
 
+    rootEl.addEventListener("change", (ev) => {
+      if (ev.target && ev.target.id === "wr-stress-delta-select") {
+        st.customStressMode = ev.target.value;
+      }
+    });
+
     rootEl.addEventListener("input", (ev) => {
       if (ev.target && ev.target.id === "wr-cutoff-slider") {
         triggerCutoffChange(ev.target.value, false);
       } else if (ev.target && ev.target.id === "wr-cmdk-input") {
         renderCmdkResults(ev.target.value);
+      } else if (ev.target && ev.target.id === "wr-stress-custom-fp-input") {
+        st.customOverrideFp = ev.target.value;
       }
     });
 
@@ -1928,7 +2298,7 @@
           ev.preventDefault();
           document.body.setAttribute("data-kbd-instant", "1");
           const prevMs = model.stepEventCursor(-1);
-          if (wsClient && wsClient.readyState === 1) {
+          if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
             wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: prevMs }));
           }
           requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
@@ -1936,7 +2306,7 @@
           ev.preventDefault();
           document.body.setAttribute("data-kbd-instant", "1");
           const nextMs = model.stepEventCursor(1);
-          if (wsClient && wsClient.readyState === 1) {
+          if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
             wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
           }
           requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
@@ -1958,12 +2328,28 @@
         location.hostname === "127.0.0.1" || location.hostname === "localhost";
       if (!explicitWsUrl && !isLocalLoopback) return;
 
-      const wsUrl = explicitWsUrl || "ws://127.0.0.1:47809/ws";
+      if (isLocalLoopback && typeof fetch === "function" && location.protocol.startsWith("http")) {
+        fetch("/api/health", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((info) => {
+            if (info && info.protocol === "CAELUS_AG_UI_V1") {
+              st.serverAirlockMode = info.mode === "live" ? "LIVE_AIRLOCK" : "OFFLINE_REPLAY";
+              renderTopBar();
+            }
+          })
+          .catch(() => {});
+      }
+
+      const defaultLoopbackWs =
+        location.protocol.startsWith("http") && location.host
+          ? `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`
+          : "ws://127.0.0.1:47809/ws";
+      const wsUrl = explicitWsUrl || defaultLoopbackWs;
       try {
         const sock = new WebSocket(wsUrl);
         sock.addEventListener("open", () => {
           wsClient = sock;
-          st.transportMode = "WS_LIVE";
+          st.transportMode = "WS_CPP_ENGINE";
           renderTopBar();
           sock.send(
             JSON.stringify({
@@ -1976,6 +2362,10 @@
           try {
             const parsed = JSON.parse(String(msgEv.data || ""));
             if (parsed && parsed.protocol === "CAELUS_AG_UI_V1") {
+              if (!agUiHandshakeConfirmed) {
+                agUiHandshakeConfirmed = true;
+                st.transportMode = "WS_LIVE";
+              }
               model.applyAgUiEnvelopes([parsed]);
             }
           } catch (_) {
@@ -1984,6 +2374,7 @@
         });
         sock.addEventListener("close", () => {
           if (wsClient === sock) wsClient = null;
+          agUiHandshakeConfirmed = false;
           st.transportMode = "AIRGAPPED_LOCAL";
           renderTopBar();
         });

@@ -80,6 +80,11 @@ if "!VERIFY_ONLY!"=="1" (
 )
 
 echo [4/4] Starting AG-UI 4-Agent WebSocket and Cockpit Server ^(127.0.0.1:!PORT!^)...
+tasklist /FI "IMAGENAME eq caelus_os.exe" 2>nul | find /I "caelus_os.exe" >nul
+if not errorlevel 1 (
+    echo [INFO] Stopping background caelus_os.exe holding port !PORT!...
+    taskkill /F /IM caelus_os.exe >nul 2>&1
+)
 echo       Open in browser: http://127.0.0.1:!PORT!
 node "%ROOT%\tools\caelus_ag_ui_ws_server.mjs" !MODE! --port !PORT!
 set "EC=!errorlevel!"
