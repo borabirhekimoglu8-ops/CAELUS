@@ -224,6 +224,8 @@ log "Sidecar Airlock PR-1 isolation, Aegean ferry pilot & MCP 64-bit string gate
 "${PYTHON_CMD[@]}" -W error "$(host_path "$ROOT/tests/test_airlock_ferry_pilot.py")"
 
 if command -v node >/dev/null 2>&1; then
+    log "War Room i18n parity, Plain Mode & Web Interface Guidelines gate"
+    node --test "$(host_path "$ROOT/tests/test_i18n_and_plain_mode_parity.mjs")"
     log "War Room 4-Agent AG-UI & Air-Gapped Cockpit master gates"
     node --test "$(host_path "$ROOT/tests/test_war_room_master_gates.mjs")"
 fi

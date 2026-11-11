@@ -92,6 +92,8 @@ def main() -> int:
     paajs = paajs_path.read_text(encoding="utf-8") if paajs_path.exists() else ""
     spjs_path = ROOT / "ui/spatial_experience.js"
     spjs = spjs_path.read_text(encoding="utf-8") if spjs_path.exists() else ""
+    i18n_js_path = ROOT / "ui/war_room_i18n.js"
+    i18n_js = i18n_js_path.read_text(encoding="utf-8") if i18n_js_path.exists() else ""
     airlock_mcp_path = ROOT / "ui/sidecar_airlock_mcp.js"
     airlock_mcp_js = airlock_mcp_path.read_text(encoding="utf-8") if airlock_mcp_path.exists() else ""
     ag_ui_engine_path = ROOT / "ui/war_room_ag_ui_engine.js"
@@ -149,6 +151,7 @@ def main() -> int:
         frtjs,
         paajs,
         spjs,
+        i18n_js,
         airlock_mcp_js,
         ag_ui_engine_js,
         cockpit_js,
@@ -197,6 +200,7 @@ def main() -> int:
             + ("<script>\n" + frtjs + "\n</script>\n" if frtjs else "")
             + ("<script>\n" + paajs + "\n</script>\n" if paajs else "")
             + ("<script>\n" + spjs + "\n</script>\n" if spjs else "")
+            + ("<script>\n" + i18n_js + "\n</script>\n" if i18n_js else "")
             + ("<script>\n" + airlock_mcp_js + "\n</script>\n" if airlock_mcp_js else "")
             + ("<script>\n" + ag_ui_engine_js + "\n</script>\n" if ag_ui_engine_js else "")
             + ("<script>\n" + cockpit_js + "\n</script>\n" if cockpit_js else "")
@@ -232,6 +236,9 @@ def main() -> int:
     ui_vendor_dir = ROOT / "ui/vendor"
     if ui_vendor_dir.is_dir():
         shutil.copytree(ui_vendor_dir, dist / "vendor", dirs_exist_ok=True)
+    locales_dir = ROOT / "locales"
+    if locales_dir.is_dir():
+        shutil.copytree(locales_dir, dist / "locales", dirs_exist_ok=True)
 
     target = dist / "index.html"
     write_utf8_lf(target, out)

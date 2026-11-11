@@ -1,29 +1,37 @@
 /**
  * CAELUS OS — 4-Bölgeli Endüstriyel Komuta Kokpiti Denetleyicisi (`war_room_cockpit.js`)
  *
- * Katman 3 (Master Spesifikasyon §4.1, §4.2, §4.3):
- * - Bölge 1: `TopCommandBar` (Sistem modu, canlı veri bayatlama rozetleri, Blake3 mühür denetçisi, OpenBridge Day/Dusk/Night)
- * - Bölge 2: `SpatialAndCausalStage` (Mod 1: %100 Çevrimdışı Ege Taktik Haritası + H3 Dalga Izgarası; Mod 2: Yönlü Nedensel Graf + Karşı-Olgu "What-If" Masası)
- * - Bölge 3: `BiTemporalTimeConductor` (`observed_at_ms` + `cutoff_learned_at_ms` T1 ↔ T2 Zaman Gezgini) & Sanallaştırılmış `TelemetryStreamGrid` (`CLS = 0`, `> 2^53 - 1` kayıpsız `seq_no` string)
- * - Bölge 4: `FourAgentCommandDock` (`SENTINEL`, `RED_TEAM`, `STRATEGIST`, `AUDITOR`, Karşılaştırmalı Action Card'lar, Operatör Ed25519 İmzası ve Kanıt-Bağlı Komuta Asistanı)
+ * Katman 1 & Katman 4 (Master Spesifikasyon §2.1, §2.2, §5.1, §5.2, §5.3):
+ * - Çift Eksenli Dil ve Bilişsel Ergonomi: `locale` ("tr" | "en") × `register` ("plain" | "technical").
+ * - Varsayılan Açılış Modu: `locale = "tr"`, `register = "plain"` (Sade Operatör Görünümü).
+ * - Bölge 1: `TopCommandBar` (Sistem durumu, kaynak sağlık ışıkları, `[TR|EN]`, `[Sade|Teknik]`, birim/saat seçici, Day/Dusk/Night, Denetim Mührü)
+ * - Bölge 2: `SpatialAndCausalStage` (Sekme 1: Hava Boşluklu Taktik Harita; Sekme 2: Nedensel Akış ve "Ya Şöyle Olursa?" Masası)
+ * - Bölge 3: `BiTemporalTimeConductor` (Olay Anı vs. Sistemin Öğrendiği An) & Sanallaştırılmış `EventStreamTable` (`CLS = 0`)
+ * - Bölge 4: `FourAgentCommandDock` (Gözcü, Stres Testi, Stratejist, Denetçi + `[Teknik Kanıtı Gör]` + Çok Dilli Proaktif Asistan)
  *
- * A-1 / A-2 / A-3 Garantileri:
- * - Sıfır harici CDN / Google Fonts / çevrimiçi harita karo isteği.
+ * A-1 / A-2 / A-3 / A-4 Garantileri:
+ * - Sıfır harici CDN / Google Fonts / çevrimiçi çeviri API'si / harita sunucusu isteği.
  * - Tüm 64-bit tam sayılar (`seq_no`, `fp_val`, `observed_at_ms`, `learned_at_ms`) ondalık ASCII `string` olarak işlenir.
- * - `ws://127.0.0.1:47809` mevcutsa canlı AG-UI akışına bağlanır; çevrimdışı (air-gapped / `file://`) modda yerel deterministik motorla birebir aynı `state_blake3` özetlerini üretir.
+ * - Dil (`L`) veya görünüm (`S`) değiştiğinde `state_blake3` 0 bit değişir; ekranın %100'ü anında seçili dil ve sadelik seviyesinde çizilir.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
     const sidecarAirlock = require("./sidecar_airlock_mcp.js");
     const agUiEngine = require("./war_room_ag_ui_engine.js");
-    module.exports = factory(sidecarAirlock, agUiEngine);
+    const warRoomI18n = require("./war_room_i18n.js");
+    module.exports = factory(sidecarAirlock, agUiEngine, warRoomI18n);
   } else {
     root.CaelusWarRoomCockpit = factory(
       root.CaelusSidecarAirlockMcp,
-      root.CaelusWarRoomAgUiEngine
+      root.CaelusWarRoomAgUiEngine,
+      root.CaelusWarRoomI18n
     );
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (sidecarAirlock, agUiEngine) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (
+  sidecarAirlock,
+  agUiEngine,
+  warRoomI18n
+) {
   "use strict";
 
   const T1_CUTOFF_MS = "1762848600000"; // 2025-11-11T08:10:00Z -> KANIT_YETERSİZ
@@ -33,7 +41,7 @@
   const TIMELINE_MAX_MS = 1762849560000n;
   const VIRTUAL_ROW_HEIGHT_PX = 36;
 
-  // Deterministik Operatör Ed25519 Test/Komuta Anahtar Tohumu (Yerel Hava Boşluklu İmzalama için)
+  // Deterministik Operatör Ed25519 Komuta Anahtar Tohumu (Yerel Hava Boşluklu İmzalama için)
   const DEFAULT_OPERATOR_SEED_HEX =
     "7172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f90";
 
@@ -128,56 +136,61 @@
       .replace(/'/g, "&#39;");
   }
 
-  function formatUtcClockFromMsStr(msDecStr) {
-    try {
-      const ms = Number(BigInt(String(msDecStr)));
-      const d = new Date(ms);
-      const hh = String(d.getUTCHours()).padStart(2, "0");
-      const mm = String(d.getUTCMinutes()).padStart(2, "0");
-      const ss = String(d.getUTCSeconds()).padStart(2, "0");
-      return `${hh}:${mm}:${ss} UTC`;
-    } catch (_) {
-      return `${msDecStr} ms`;
-    }
+  function getI18nCtx(st) {
+    return {
+      locale: st && st.locale ? st.locale : "tr",
+      register: st && st.register ? st.register : "plain",
+      speedUnit: st && st.speedUnit ? st.speedUnit : "kn",
+      distanceUnit: st && st.distanceUnit ? st.distanceUnit : "nm",
+      clockMode: st && st.clockMode ? st.clockMode : "UTC",
+    };
   }
 
-  function formatFpScaled(fpDecStr, unitSuffix, decimals = 1) {
-    if (typeof fpDecStr !== "string" || fpDecStr.length === 0) return `0.0 ${unitSuffix}`;
-    try {
-      const v = BigInt(fpDecStr);
-      const neg = v < 0n;
-      const abs = neg ? -v : v;
-      const whole = abs / 1000000n;
-      const rem = abs % 1000000n;
-      if (decimals === 2) {
-        const frac2 = String((rem + 5000n) / 10000n).padStart(2, "0").slice(0, 2);
-        return `${neg ? "-" : ""}${whole.toString()}.${frac2} ${unitSuffix}`;
-      }
-      const frac1 = ((rem + 50000n) / 100000n).toString().slice(0, 1);
-      return `${neg ? "-" : "+"}${whole.toString()}.${frac1} ${unitSuffix}`;
-    } catch (_) {
-      return `${fpDecStr} ${unitSuffix}`;
+  function trOrKey(key, params, st) {
+    if (warRoomI18n && warRoomI18n.t) {
+      return warRoomI18n.t(key, params || {}, getI18nCtx(st));
     }
+    return key;
   }
 
-  /**
-   * Astro UXDS kuralı: Ciddiyet asla sadece renkle anlatılmaz; geometrik SVG şekil + etiket zorunludur.
-   */
+  function formatClockForState(msDecStr, st) {
+    if (warRoomI18n && warRoomI18n.formatClockMs) {
+      return warRoomI18n.formatClockMs(msDecStr, getI18nCtx(st));
+    }
+    return `${msDecStr} ms`;
+  }
+
+  function formatFpMinutesForState(fpDecStr, st, signed = true) {
+    if (warRoomI18n && warRoomI18n.formatFpMinutes) {
+      return warRoomI18n.formatFpMinutes(fpDecStr, {
+        ...getI18nCtx(st),
+        signed,
+      });
+    }
+    return `${fpDecStr} fp`;
+  }
+
+  function formatFpMetersForState(fpDecStr, st, decimals = 2) {
+    if (warRoomI18n && warRoomI18n.formatFpMeters) {
+      return warRoomI18n.formatFpMeters(fpDecStr, {
+        ...getI18nCtx(st),
+        decimals,
+      });
+    }
+    return `${fpDecStr} fp`;
+  }
+
   function severityIconSvg(severityOrVerdict) {
     const key = String(severityOrVerdict || "").toUpperCase();
     if (key === "CRITICAL" || key === "KURAL_İHLALİ") {
-      // Altıgen / Sekizgen Durdurma İkonu
       return '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><polygon points="5,1 11,1 15,5 15,11 11,15 5,15 1,11 1,5" fill="currentColor"/></svg>';
     }
     if (key === "SERIOUS" || key === "CAUTION" || key === "STALE") {
-      // Uyarı Üçgeni
       return '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,1.5 15,14.5 1,14.5" fill="currentColor"/></svg>';
     }
     if (key === "NOMINAL" || key === "GEÇTİ" || key === "FRESH") {
-      // Dolu Daire
       return '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>';
     }
-    // KANIT_YETERSİZ / INSUFFICIENT: İçi Boş Eşkenar Dörtgen (Fail-Closed Kilit)
     return '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,1.5 14.5,8 8,14.5 1.5,8" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
   }
 
@@ -187,10 +200,6 @@
     return "▲";
   }
 
-  /**
-   * Ham `.airlock.ndjson` metninden tüm zaman çizelgesi satırlarını (gelecek kesiti ve reddedilenler dahil)
-   * 64-bit string hassasiyetini koruyarak ayrıştırır.
-   */
   function parseTimelineCatalogFromBatch(batchNdjson, manifestJson) {
     let manifestSources = {};
     try {
@@ -261,7 +270,7 @@
           event_kind: eventKind,
           event_id: eventId,
           seq_no: seqNoStr,
-           exceeds_ieee754_safe_int: (() => {
+          exceeds_ieee754_safe_int: (() => {
             try {
               return BigInt(seqNoStr) > 9007199254740991n;
             } catch (_) {
@@ -286,6 +295,7 @@
 
   /**
    * Hem tarayıcıda hem de Node.js testlerinde çalışabilen deterministik Kokpit Durum Makinesi.
+   * Varsayılan açılış modu (§2.2): `locale = "tr"`, `register = "plain"` (Sade Operatör Görünümü).
    */
   function createWarRoomCockpitModel(options = {}) {
     const initialBundle =
@@ -304,6 +314,14 @@
     });
 
     const state = {
+      locale: warRoomI18n ? warRoomI18n.normalizeLocale(options.initialLocale || "tr") : "tr",
+      register: warRoomI18n
+        ? warRoomI18n.normalizeRegister(options.initialRegister || "plain")
+        : "plain",
+      speedUnit: options.initialSpeedUnit === "kmh" ? "kmh" : "kn",
+      distanceUnit: options.initialDistanceUnit === "km" ? "km" : "nm",
+      clockMode: options.initialClockMode === "LOCAL" ? "LOCAL" : "UTC",
+      expandedProofCardIds: new Set(),
       theme: options.initialTheme || "dusk", // "day" | "dusk" | "night"
       stageMode: options.initialStageMode || "MAP", // "MAP" | "GRAPH"
       mapEngine: "SVG", // "SVG" | "MAPLIBRE_DECK" | "CESIUM_3D"
@@ -329,7 +347,7 @@
       customOverrideFp: "16000000",
       customStressDeltaMin: "-18",
       lastCounterfactualPreview: null,
-      sealedCards: {}, // card_id -> { operator_pubkey, operator_sig, audit_chain_head, approved_at_ms }
+      sealedCards: {},
       catalogRows: parseTimelineCatalogFromBatch(batchNdjson, manifestJson),
       sliceSync: null,
       sentinelAlert: null,
@@ -344,9 +362,7 @@
       for (const fn of listeners) {
         try {
           fn(state);
-        } catch (_) {
-          // Dinleyici hatası kokpiti durdurmaz
-        }
+        } catch (_) {}
       }
     }
 
@@ -365,7 +381,6 @@
           } else if (env.slice && env.slice.state_blake3 && !state.auditChainHead) {
             state.auditChainHead = String(env.slice.state_blake3);
           }
-          // Yeni kesitte kart listesi sıfırlanır; eğer yeni kesitte kart yoksa boş kalır
           sawCardsInBatch = true;
         } else if (env.msg_type === "EVENT_ANOMALY_FLAGGED") {
           state.sentinelAlert = env;
@@ -418,6 +433,9 @@
         cutoff_learned_at_ms: targetCutoff,
         scenario_id: "AEGEAN_FERRY_01",
         policy_id: "MARITIME_SAFETY_V2",
+        locale: state.locale,
+        register: state.register,
+        clockMode: state.clockMode,
       });
       if (res.ok) {
         applyAgUiEnvelopes(res.envelopes);
@@ -425,8 +443,83 @@
       return res;
     }
 
+    function refreshLocalizedEnvelopesWithoutMutatingCore() {
+      const prevReplies = state.assistantReplies.slice();
+      evaluateAtCutoffLocal(state.cutoffLearnedAtMs);
+      if (prevReplies.length > 0 && prevReplies[0] && prevReplies[0].query) {
+        const refreshed = localOrchestrator.answerEvidenceBoundQuery({
+          batch_ndjson: batchNdjson,
+          manifest_json: manifestJson,
+          cutoff_learned_at_ms: state.cutoffLearnedAtMs,
+          scenario_id: "AEGEAN_FERRY_01",
+          policy_id: "MARITIME_SAFETY_V2",
+          locale: state.locale,
+          register: state.register,
+          clockMode: state.clockMode,
+          query: prevReplies[0].query,
+        });
+        if (refreshed.ok && refreshed.envelope) {
+          state.assistantReplies = [refreshed.envelope];
+          notify();
+        }
+      }
+    }
+
+    function setLocale(nextLocale) {
+      const norm = warRoomI18n ? warRoomI18n.normalizeLocale(nextLocale) : nextLocale === "en" ? "en" : "tr";
+      if (state.locale === norm) return state.locale;
+      state.locale = norm;
+      refreshLocalizedEnvelopesWithoutMutatingCore();
+      return state.locale;
+    }
+
+    function toggleLocale() {
+      return setLocale(state.locale === "tr" ? "en" : "tr");
+    }
+
+    function setRegister(nextRegister) {
+      const norm = warRoomI18n
+        ? warRoomI18n.normalizeRegister(nextRegister)
+        : nextRegister === "technical"
+          ? "technical"
+          : "plain";
+      if (state.register === norm) return state.register;
+      state.register = norm;
+      refreshLocalizedEnvelopesWithoutMutatingCore();
+      return state.register;
+    }
+
+    function toggleRegister() {
+      return setRegister(state.register === "plain" ? "technical" : "plain");
+    }
+
+    function setUnits(unitPatch = {}) {
+      if (unitPatch.speedUnit === "kn" || unitPatch.speedUnit === "kmh") {
+        state.speedUnit = unitPatch.speedUnit;
+      }
+      if (unitPatch.distanceUnit === "nm" || unitPatch.distanceUnit === "km") {
+        state.distanceUnit = unitPatch.distanceUnit;
+      }
+      if (unitPatch.clockMode === "UTC" || unitPatch.clockMode === "LOCAL") {
+        state.clockMode = unitPatch.clockMode;
+      }
+      notify();
+    }
+
+    function toggleCardProof(cardId) {
+      const id = String(cardId || "");
+      if (!id) return;
+      if (state.expandedProofCardIds.has(id)) {
+        state.expandedProofCardIds.delete(id);
+      } else {
+        state.expandedProofCardIds.add(id);
+      }
+      notify();
+    }
+
     function computeSourceStalenessStrip() {
       const cutoffBig = BigInt(state.cutoffLearnedAtMs);
+      const ctx = getI18nCtx(state);
       const tracked = [
         { code: "AIS", source_id: "ais_terrestrial_aegean", max_ms: 120000n },
         { code: "PORT", source_id: "port_berth_sensor_sigacik", max_ms: 180000n },
@@ -440,7 +533,16 @@
         )
       );
 
+      const secSuffix = trOrKey("freshness.seconds_suffix", {}, state);
+
       return tracked.map((item) => {
+        const displayName =
+          ctx.register === "technical"
+            ? item.code
+            : warRoomI18n
+              ? warRoomI18n.formatSourceName(item.source_id, { locale: ctx.locale, register: "plain" })
+              : item.code;
+
         const learnedRows = state.catalogRows.filter(
           (r) =>
             r.source_id === item.source_id &&
@@ -448,24 +550,32 @@
             BigInt(r.learned_at_ms) <= cutoffBig
         );
         if (learnedRows.length === 0) {
+          const pendingLabel = trOrKey("freshness.pending", {}, state);
           return {
             code: item.code,
+            display_name: displayName,
             source_id: item.source_id,
             freshness: "PENDING",
             age_sec_str: "—",
-            label_tr: "Veri Bekleniyor",
+            status_label: pendingLabel,
+            label_tr: pendingLabel,
           };
         }
         const latest = learnedRows[learnedRows.length - 1];
         const ageMs = cutoffBig - BigInt(latest.observed_at_ms);
         const ageSec = ageMs >= 0n ? ageMs / 1000n : 0n;
         const isStale = ageMs > item.max_ms;
+        const statusLabel = isStale
+          ? trOrKey("freshness.stale", {}, state)
+          : trOrKey("freshness.fresh", {}, state);
         return {
           code: item.code,
+          display_name: displayName,
           source_id: item.source_id,
           freshness: isStale ? "STALE" : "FRESH",
-          age_sec_str: `${ageSec.toString()}sn`,
-          label_tr: isStale ? "ESKİMİŞ" : "TAZE",
+          age_sec_str: `${ageSec.toString()} ${secSuffix}`,
+          status_label: statusLabel,
+          label_tr: statusLabel,
         };
       });
     }
@@ -486,18 +596,29 @@
         .map((r) => {
           const isFuture = BigInt(r.learned_at_ms) > cutoffBig;
           const rejInfo = rejectedMap.get(r.event_id) || null;
-          let temporalStatus = "KESİTTE AKTİF";
+          let legacyStatusTr = "KESİTTE AKTİF";
+          let localizedStatus = trOrKey("table.status_active", {}, state);
           if (isFuture) {
-            temporalStatus = "Henüz Öğrenilmedi (Gelecek Kesiti)";
+            legacyStatusTr = "Henüz Öğrenilmedi (Gelecek Kesiti)";
+            localizedStatus = trOrKey("table.status_future", {}, state);
           } else if (rejInfo) {
-            temporalStatus = `KARANTİNA · ${rejInfo.error_code} (0-Bit)`;
+            legacyStatusTr = `KARANTİNA · ${rejInfo.error_code} (0-Bit)`;
+            localizedStatus =
+              rejInfo.error_code === "ERR_SOURCE_EQUIVOCATION" && state.register === "plain"
+                ? trOrKey("security.ERR_SOURCE_EQUIVOCATION", {}, state)
+                : trOrKey(
+                    "table.status_quarantined",
+                    { error_code: rejInfo.error_code },
+                    state
+                  );
           }
           return {
             ...r,
             is_future: isFuture,
             is_rejected: Boolean(rejInfo && !isFuture),
             rejection_info: rejInfo,
-            temporal_status_tr: temporalStatus,
+            temporal_status_tr: legacyStatusTr,
+            temporal_status_label: localizedStatus,
           };
         })
         .filter((r) => {
@@ -592,7 +713,6 @@
         (state.sliceSync && state.sliceSync.slice && state.sliceSync.slice.verdict) ||
         card.verdict_context;
 
-      // A-2 Fail-Closed Yasası: KANIT_YETERSİZ durumunda AUDITOR operatör mührünü kilitler
       if (
         currentVerdict === "KANIT_YETERSİZ" ||
         (card.auditor_check && !card.auditor_check.observation_corroborated)
@@ -600,8 +720,7 @@
         return {
           ok: false,
           errorCode: "ERR_AUDITOR_FAIL_CLOSED_INSUFFICIENT_EVIDENCE",
-          messageTr:
-            "AUDITOR Kilidi: Bağımsız OBSERVATION kanıtı yetersizken (KANIT_YETERSİZ) operasyonel eylem imzalanamaz.",
+          messageTr: trOrKey("card.auditor_lock_banner", {}, state),
         };
       }
 
@@ -653,6 +772,9 @@
         cutoff_learned_at_ms: state.cutoffLearnedAtMs,
         scenario_id: "AEGEAN_FERRY_01",
         policy_id: "MARITIME_SAFETY_V2",
+        locale: state.locale,
+        register: state.register,
+        clockMode: state.clockMode,
         query: queryText,
       });
       if (ans.ok && ans.envelope) {
@@ -668,7 +790,6 @@
       return evaluateAtCutoffLocal(state.cutoffLearnedAtMs);
     }
 
-    // İlk yüklemede T2 (08:25) kesitini deterministik olarak hazırla
     evaluateAtCutoffLocal(state.cutoffLearnedAtMs);
 
     return {
@@ -681,6 +802,12 @@
         return () => listeners.delete(fn);
       },
       setCutoffMs: evaluateAtCutoffLocal,
+      setLocale,
+      toggleLocale,
+      setRegister,
+      toggleRegister,
+      setUnits,
+      toggleCardProof,
       stepEventCursor,
       applyAgUiEnvelopes,
       computeSourceStalenessStrip,
@@ -701,1716 +828,2130 @@
   }
 
   /**
-   * Tarayıcı DOM Bağlayıcısı: 4-Bölgeli Endüstriyel Komuta Kokpitini `#caelus-war-room-cockpit-shell` içine çizer.
+   * 4 Bölgenin saf (side-effect-free) HTML anlık görüntüsünü seçili `{ locale, register }`
+   * ve birim/saat tercihlerinde üretir. Hem DOM denetleyicisi hem de kapı testleri kullanır.
    */
-  function mountWarRoomCockpitDom(rootEl, options = {}) {
-    if (!rootEl || typeof document === "undefined") return null;
-
-    const model = createWarRoomCockpitModel(options);
+  function renderCockpitZonesSnapshot(model, opts = {}) {
     const st = model.state;
-    let wsClient = null;
-    let agUiHandshakeConfirmed = false;
-    let liveReplayTimer = null;
-    let virtualScrollTop = 0;
-    let liveMapInstance = null;
-    let liveDeckOverlay = null;
-    let liveCesiumViewer = null;
-    let pmtilesProtocolBound = false;
+    const ctx = getI18nCtx(st);
+    const isTech = ctx.register === "technical";
+    const slice = (st.sliceSync && st.sliceSync.slice) || {};
+    const verdict = slice.verdict || "KANIT_YETERSİZ";
+    const appliedRuleId = slice.applied_rule_id || "RULE_SLA_BREACH_CORROBORATED";
+    const missingGroups =
+      slice.missing_corroborations || slice.missing_evidence || ["OBSERVATION"];
+    const stateBlake3 = String(slice.state_blake3 || "");
+    const stateHashShort = stateBlake3 ? stateBlake3.slice(0, 12) : "—";
+    const auditHeadShort = st.auditChainHead ? st.auditChainHead.slice(0, 12) : stateHashShort;
+    const stalenessStrip = model.computeSourceStalenessStrip();
+    const decoratedRows = model.getDecoratedTelemetryRows();
 
-    function destroyLiveGeoAdapters() {
-      if (liveDeckOverlay && liveMapInstance) {
-        try {
-          liveMapInstance.removeControl(liveDeckOverlay);
-        } catch (_) {}
-      }
-      liveDeckOverlay = null;
-      if (liveMapInstance) {
-        try {
-          liveMapInstance.remove();
-        } catch (_) {}
-        liveMapInstance = null;
-      }
-      if (liveCesiumViewer) {
-        try {
-          liveCesiumViewer.destroy();
-        } catch (_) {}
-        liveCesiumViewer = null;
-      }
-    }
+    const transportKey =
+      st.transportMode === "WS_LIVE"
+        ? st.serverAirlockMode === "LIVE_AIRLOCK"
+          ? "topbar.transport_live_airlock"
+          : "topbar.transport_ws_replay"
+        : st.transportMode === "WS_CPP_ENGINE"
+          ? "topbar.transport_cpp_engine"
+          : "topbar.transport_airgapped";
 
-    function sendWsOrFallback(wsPayload, localFallbackFn) {
-      if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-        wsClient.send(JSON.stringify(wsPayload));
-        return true;
-      }
-      if (typeof localFallbackFn === "function") {
-        localFallbackFn();
-      }
-      return false;
-    }
+    const alarmBadgeText = warRoomI18n
+      ? warRoomI18n.formatAlarmBadge(verdict, ctx)
+      : verdict;
+    const verdictText = warRoomI18n
+      ? warRoomI18n.formatVerdict(
+          verdict,
+          {
+            policy_id: "MARITIME_SAFETY_V2",
+            rule_id: appliedRuleId,
+            missing_groups: missingGroups,
+          },
+          ctx
+        )
+      : verdict;
 
-    function setTheme(themeName, instantKbd = false) {
-      if (!["day", "dusk", "night"].includes(themeName)) return;
-      if (instantKbd) document.body.setAttribute("data-kbd-instant", "1");
-      st.theme = themeName;
-      document.documentElement.setAttribute("data-ob-theme", themeName);
-      document.body.setAttribute("data-ob-theme", themeName);
-      renderAll();
-      if (instantKbd) {
-        requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
-      }
-    }
+    const policyTooltip = isTech
+      ? "policy_id: MARITIME_SAFETY_V2"
+      : trOrKey(
+          "stage.active_rule_label",
+          { rule_id: appliedRuleId, max_allowed_fp: "20000000" },
+          st
+        );
 
-    function setStageMode(mode, instantKbd = false) {
-      if (mode !== "MAP" && mode !== "GRAPH") return;
-      if (instantKbd) document.body.setAttribute("data-kbd-instant", "1");
-      st.stageMode = mode;
-      renderStageZone();
-      if (instantKbd) {
-        requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
-      }
-    }
+    const speedUnitDisplay =
+      st.speedUnit === "kmh"
+        ? `${trOrKey("unit.kmh_short", {}, st)} · ${trOrKey("unit.km_short", {}, st)}`
+        : `${trOrKey("unit.kn_short", {}, st)} · ${trOrKey("unit.nm_short", {}, st)}`;
+    const clockModeDisplay =
+      st.clockMode === "LOCAL"
+        ? trOrKey("topbar.clock_local", {}, st)
+        : trOrKey("topbar.clock_utc", {}, st);
 
-    function toggleCockpitShellVisibility(active) {
-      if (active) {
-        document.body.setAttribute("data-c2-cockpit", "active");
-      } else {
-        document.body.removeAttribute("data-c2-cockpit");
-      }
-    }
+    const sealBadgeInnerHtml = isTech
+      ? `<span class="hash-badge" translate="no">🔒 state_blake3: ${escapeHtml(stateHashShort)}… | audit_head: ${escapeHtml(auditHeadShort)}…</span>`
+      : `<span>${escapeHtml(trOrKey("topbar.seal_badge_label", {}, st))}</span>`;
 
-    // İskelet DOM kurulumu (Sabit bölgeler: CLS = 0, yalnızca alt içerikler güncellenir)
-    rootEl.innerHTML = `
-      <header class="wr-top-command-bar" id="wr-zone-top-bar" role="banner"></header>
-
-      <div class="wr-main-workspace">
-        <section class="wr-stage-panel" id="wr-zone-spatial-causal" aria-label="Mekansal Taktik Harita ve Nedensel Graf Sahnesi"></section>
-        <aside class="wr-agent-dock-panel" id="wr-zone-agent-dock" aria-label="4 Uzman Ajan ve Eylem Onay Komuta İskelesi"></aside>
+    const topBarHtml = `
+      <a class="wr-skip-link" href="#wr-stage-region">${escapeHtml(trOrKey("app.skip_to_main", {}, st))}</a>
+      <div class="wr-brand-cluster">
+        <h1 class="wr-system-title" style="margin:0;">
+          <span aria-hidden="true">⚓</span>
+          <span>${escapeHtml(trOrKey("app.brand_title", {}, st))}</span>
+        </h1>
+        <span class="wr-mode-pill" ${isTech ? 'translate="no"' : ""}>${escapeHtml(trOrKey("topbar.system_mode_badge", {}, st))}</span>
+        <span class="wr-mode-pill" title="${escapeHtml(policyTooltip)}" ${isTech ? 'translate="no"' : ""}>${escapeHtml(trOrKey("topbar.policy_badge", {}, st))}</span>
+        <span class="wr-mode-pill" data-transport="${escapeHtml(st.transportMode)}" ${isTech ? 'translate="no"' : ""}>${escapeHtml(trOrKey(transportKey, {}, st))}</span>
       </div>
 
-      <section class="wr-bottom-conductor-zone" id="wr-zone-time-conductor" aria-label="Çift-Zamanlı İletken ve Sanallaştırılmış Telemetri Akışı">
-        <div class="wr-conductor-card" id="wr-bitemporal-box"></div>
-        <div class="wr-telemetry-card" id="wr-telemetry-box">
-          <div id="wr-telemetry-toolbar"></div>
-          <div class="wr-virtual-grid-header" role="row">
-            <span>seq_no (64-Bit String)</span>
-            <span>event_id</span>
-            <span>Kaynak / Grup</span>
-            <span>Epistemik</span>
-            <span>Gözlem UTC</span>
-            <span>Öğrenilme UTC</span>
-            <span>Sabit Nokta (1e6)</span>
-            <span>Kesit Durumu</span>
+      <div class="wr-staleness-cluster" role="group" aria-label="${escapeHtml(trOrKey("topbar.aria_sources", {}, st))}">
+        ${stalenessStrip
+          .map(
+            (p) => `
+          <span class="wr-staleness-pill" data-freshness="${escapeHtml(p.freshness)}" title="${escapeHtml(p.display_name)} (${escapeHtml(p.age_sec_str)})">
+            ${severityIconSvg(p.freshness)}
+            <span>${escapeHtml(p.display_name)}:</span>
+            <strong>${escapeHtml(p.status_label)}</strong>
+            <span>(${escapeHtml(p.age_sec_str)})</span>
+          </span>`
+          )
+          .join("")}
+        <span class="wr-verdict-banner-badge" data-verdict="${escapeHtml(verdict)}" role="status" aria-live="polite">
+          <span>${escapeHtml(alarmBadgeText)}</span>
+          <span>·</span>
+          <span>${escapeHtml(trOrKey("topbar.verdict_prefix", {}, st))} ${escapeHtml(verdictText)}</span>
+        </span>
+      </div>
+
+      <div class="wr-controls-cluster">
+        <div class="wr-segmented-group" role="group" aria-label="${escapeHtml(trOrKey("topbar.aria_locale", {}, st))}">
+          <button type="button" class="wr-seg-btn" data-set-locale="tr" aria-pressed="${st.locale === "tr"}" translate="no">TR</button>
+          <button type="button" class="wr-seg-btn" data-set-locale="en" aria-pressed="${st.locale === "en"}" translate="no">EN</button>
+        </div>
+
+        <div class="wr-segmented-group" role="group" aria-label="${escapeHtml(trOrKey("topbar.aria_register", {}, st))}">
+          <button type="button" class="wr-seg-btn" data-set-register="plain" aria-pressed="${st.register === "plain"}" title="${escapeHtml(trOrKey("topbar.register_plain_hint", {}, st))}">${escapeHtml(trOrKey("topbar.register_plain", {}, st))}</button>
+          <button type="button" class="wr-seg-btn" data-set-register="technical" aria-pressed="${st.register === "technical"}" title="${escapeHtml(trOrKey("topbar.register_technical_hint", {}, st))}">${escapeHtml(trOrKey("topbar.register_technical", {}, st))}</button>
+        </div>
+
+        <div class="wr-segmented-group" role="group" aria-label="${escapeHtml(trOrKey("topbar.aria_units", {}, st))}">
+          <button type="button" class="wr-seg-btn" data-toggle-speed-unit="1" aria-pressed="${st.speedUnit === "kmh"}" title="${escapeHtml(trOrKey("topbar.aria_units", {}, st))}">${escapeHtml(speedUnitDisplay)}</button>
+          <button type="button" class="wr-seg-btn" data-toggle-clock-mode="1" aria-pressed="${st.clockMode === "LOCAL"}" title="${escapeHtml(trOrKey("topbar.aria_units", {}, st))}">${escapeHtml(clockModeDisplay)}</button>
+        </div>
+
+        <button type="button" class="wr-hash-trigger" id="wr-btn-open-seal-modal" title="${escapeHtml(trOrKey("topbar.seal_badge_title", {}, st))}">
+          ${sealBadgeInnerHtml}
+        </button>
+
+        <div class="wr-segmented-group" role="group" aria-label="${escapeHtml(trOrKey("topbar.aria_theme", {}, st))}">
+          <button type="button" class="wr-seg-btn" data-set-theme="day" aria-pressed="${st.theme === "day"}" title="${escapeHtml(trOrKey("topbar.theme_day_hint", {}, st))}">${escapeHtml(trOrKey("topbar.theme_day", {}, st))}</button>
+          <button type="button" class="wr-seg-btn" data-set-theme="dusk" aria-pressed="${st.theme === "dusk"}" title="${escapeHtml(trOrKey("topbar.theme_dusk_hint", {}, st))}">${escapeHtml(trOrKey("topbar.theme_dusk", {}, st))}</button>
+          <button type="button" class="wr-seg-btn" data-set-theme="night" aria-pressed="${st.theme === "night"}" title="${escapeHtml(trOrKey("topbar.theme_night_hint", {}, st))}">${escapeHtml(trOrKey("topbar.theme_night", {}, st))}</button>
+        </div>
+
+        <button type="button" class="wr-btn" id="wr-btn-open-cmdk" title="${escapeHtml(trOrKey("topbar.search_hint", {}, st))}">${escapeHtml(trOrKey("topbar.search_btn", {}, st))}</button>
+        <button type="button" class="wr-btn" id="wr-btn-switch-studio" title="${escapeHtml(trOrKey("app.switch_to_studio_title", {}, st))}">${escapeHtml(trOrKey("app.switch_to_studio", {}, st))}</button>
+      </div>
+    `;
+
+    const cutoffBig = BigInt(st.cutoffLearnedAtMs);
+    const vesselAtT2 = cutoffBig >= BigInt(T2_CUTOFF_MS);
+    const heliSeen = cutoffBig >= 1762849260000n;
+    const adsbStale = stalenessStrip.some((s) => s.code === "ADS-B" && s.freshness === "STALE");
+    const vesselX = vesselAtT2 ? 430 : 352;
+    const vesselY = vesselAtT2 ? 174 : 206;
+
+    const vesselSpeedStr = warRoomI18n
+      ? warRoomI18n.formatFpSpeedKn("14200000", ctx)
+      : "14.2 kn";
+    const corridorDistStr = warRoomI18n
+      ? warRoomI18n.formatFpDistanceNm("5000000", ctx)
+      : "5.0 NM";
+
+    const world12Band = slice.world_12_risk_band_fp || { p50: "0", p95: "0" };
+    const hudP50Str = formatFpMinutesForState(String(world12Band.p50 || "0"), st, true);
+    const hudP95Str = formatFpMinutesForState(String(world12Band.p95 || "0"), st, true);
+
+    const mapHtml = `
+      <div class="wr-map-container">
+        <div class="wr-map-layer-bar" role="toolbar" aria-label="${escapeHtml(trOrKey("map.aria_toolbar", {}, st))}">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button type="button" class="wr-layer-chip" data-toggle-layer="ais" aria-pressed="${st.mapLayers.ais}">${escapeHtml(trOrKey("map.layer_ais", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-toggle-layer="route" aria-pressed="${st.mapLayers.route}">${escapeHtml(trOrKey("map.layer_route", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-toggle-layer="h3Wave" aria-pressed="${st.mapLayers.h3Wave}">${escapeHtml(trOrKey("map.layer_h3", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-toggle-layer="airspace" aria-pressed="${st.mapLayers.airspace}">${escapeHtml(trOrKey("map.layer_airspace", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-toggle-layer="berth" aria-pressed="${st.mapLayers.berth}">${escapeHtml(trOrKey("map.layer_berth", {}, st))}</button>
           </div>
-          <div class="wr-virtual-viewport" id="wr-virtual-viewport" tabindex="0" role="grid" aria-label="Sanallaştırılmış Telemetri Olay Akışı">
-            <div class="wr-virtual-spacer" id="wr-virtual-spacer"></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div class="wr-segmented-group" role="group" aria-label="${escapeHtml(trOrKey("map.aria_engine", {}, st))}">
+              <button type="button" class="wr-seg-btn" data-map-engine="SVG" aria-pressed="${st.mapEngine === "SVG"}">${escapeHtml(trOrKey("map.engine_svg", {}, st))}</button>
+              <button type="button" class="wr-seg-btn" data-map-engine="MAPLIBRE_DECK" aria-pressed="${st.mapEngine === "MAPLIBRE_DECK"}">${escapeHtml(trOrKey("map.engine_maplibre", {}, st))}</button>
+              <button type="button" class="wr-seg-btn" data-map-engine="CESIUM_3D" aria-pressed="${st.mapEngine === "CESIUM_3D"}">${escapeHtml(trOrKey("map.engine_cesium", {}, st))}</button>
+            </div>
+            <span style="font-size:0.70rem;color:var(--text-muted);">${escapeHtml(trOrKey("map.zero_external_tiles", {}, st))}</span>
           </div>
         </div>
-      </section>
 
-      <!-- Kriptografik Mühür & Manifest v2.0 Denetçi Modalı -->
-      <div class="wr-modal-backdrop" id="wr-seal-inspector-modal" hidden role="dialog" aria-modal="true" aria-label="Kriptografik Mühür ve Denetim Zinciri Denetçisi">
-        <div class="wr-modal-dialog" id="wr-seal-inspector-content"></div>
-      </div>
-
-      <!-- Cmd/Ctrl+K Hızlı Varlık, Kural ve Olay Arama Paleti -->
-      <div class="wr-modal-backdrop" id="wr-cmdk-modal" hidden role="dialog" aria-modal="true" aria-label="Hızlı Varlık, Senaryo ve Kural Arama Paleti">
-        <div class="wr-modal-dialog">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
-            <strong>Hızlı Komuta Arama Paleti (Varlık · Olay · seq_no · Kural · Kesit)</strong>
-            <button type="button" class="wr-btn" id="wr-btn-close-cmdk" aria-label="Arama paletini kapat">Kapat (ESC)</button>
+        <div style="position:relative;flex:1;display:flex;min-height:380px;">
+          <div id="wr-live-maplibre-deck-host" class="wr-live-geo-viewport" ${st.mapEngine === "MAPLIBRE_DECK" ? "" : "hidden"}>
+            <div class="wr-live-geo-hud-note">${escapeHtml(trOrKey("map.hud_maplibre_note", {}, st))}</div>
           </div>
-          <input type="search" class="wr-input" id="wr-cmdk-input" style="width:100%; margin-bottom:8px;" placeholder="Örn: 9007199254740993, VESSEL_AEGEAN_01, T1, T2, BERTH_02, KURAL_İHLALİ..." autocomplete="off">
-          <div id="wr-cmdk-results" style="display:flex; flex-direction:column; gap:5px; max-height:320px; overflow-y:auto;"></div>
+          <div id="wr-live-cesium-3d-host" class="wr-live-geo-viewport" ${st.mapEngine === "CESIUM_3D" ? "" : "hidden"}>
+            <div class="wr-live-geo-hud-note">${escapeHtml(trOrKey("map.hud_cesium_note", {}, st))}</div>
+          </div>
+
+          <svg class="wr-tactical-svg" viewBox="0 0 860 390" role="img" aria-label="${escapeHtml(trOrKey("map.aria_canvas", {}, st))}" ${st.mapEngine === "SVG" ? "" : 'style="opacity:0.01;pointer-events:none;"'}>
+            <defs>
+              <pattern id="wrChartGrid" width="44" height="44" patternUnits="userSpaceOnUse">
+                <path d="M 44 0 L 0 0 0 44" fill="none" stroke="var(--chart-grid)" stroke-width="1"/>
+              </pattern>
+            </defs>
+            <rect width="860" height="390" fill="url(#wrChartGrid)"/>
+
+            <path d="M 520,18 L 845,18 L 845,255 L 705,245 L 615,198 L 548,142 L 505,86 Z" fill="var(--chart-land)" stroke="var(--chart-land-stroke)" stroke-width="2"/>
+            <text x="585" y="64" fill="var(--text-secondary)" font-size="11" font-weight="700">${escapeHtml(trOrKey("map.port_sigacik", {}, st))}</text>
+
+            <path d="M 48,225 L 265,208 L 312,246 L 285,320 L 118,336 L 42,292 Z" fill="var(--chart-land)" stroke="var(--chart-land-stroke)" stroke-width="2"/>
+            <text x="92" y="276" fill="var(--text-secondary)" font-size="11" font-weight="700">${escapeHtml(trOrKey("map.port_vathi", {}, st))}</text>
+
+            <text x="18" y="24" fill="var(--text-muted)" font-size="10" font-family="var(--font-mono)">${escapeHtml(trOrKey("map.corridor_coords", {}, st))} · ${escapeHtml(corridorDistStr)}</text>
+
+            ${
+              st.mapLayers.h3Wave
+                ? `
+            <g aria-label="${escapeHtml(trOrKey("map.layer_h3", {}, st))}">
+              <polygon points="310,165 342,148 374,165 374,198 342,215 310,198" fill="rgba(167,139,250,0.16)" stroke="var(--epistemic-hypothesis)" stroke-width="1.4"/>
+              <text x="320" y="185" fill="var(--epistemic-hypothesis)" font-size="9.5" font-family="var(--font-mono)">3.15 m</text>
+              <polygon points="376,148 408,131 440,148 440,181 408,198 376,181" fill="rgba(255,149,0,0.15)" stroke="var(--status-serious)" stroke-width="1.4"/>
+              <text x="387" y="168" fill="var(--status-serious)" font-size="9.5" font-family="var(--font-mono)">${escapeHtml(vesselSpeedStr)}</text>
+            </g>`
+                : ""
+            }
+
+            ${
+              st.mapLayers.route
+                ? `
+            <g>
+              <path d="M 255,228 C 335,210 415,182 518,132" fill="none" stroke="${st.highlightedCorridor === "PRIMARY_NORTH" ? "var(--status-critical)" : "var(--border-strong)"}" stroke-width="${st.highlightedCorridor === "PRIMARY_NORTH" ? "3" : "1.8"}" stroke-dasharray="8 5"/>
+              <path d="M 255,236 C 350,278 448,248 536,154" fill="none" stroke="${st.highlightedCorridor === "SOUTH_SAMOS_SHELTERED" ? "var(--status-nominal)" : "var(--epistemic-observation)"}" stroke-width="${st.highlightedCorridor === "SOUTH_SAMOS_SHELTERED" ? "3.2" : "1.8"}"/>
+              <text x="322" y="268" fill="var(--epistemic-observation)" font-size="10" font-weight="700">${escapeHtml(trOrKey("map.sheltered_corridor", {}, st))}</text>
+            </g>`
+                : ""
+            }
+
+            ${
+              st.mapLayers.berth
+                ? `
+            <g>
+              <rect x="515" y="114" width="112" height="24" rx="4" fill="var(--status-critical-bg)" stroke="var(--status-critical)" stroke-width="1.6"/>
+              <text x="522" y="130" fill="var(--status-critical)" font-size="9.5" font-weight="700">${escapeHtml(trOrKey(vesselAtT2 ? "map.berth_a_locked" : "map.berth_a_watch", {}, st))}</text>
+              <rect x="534" y="144" width="112" height="24" rx="4" fill="var(--status-nominal-bg)" stroke="var(--status-nominal)" stroke-width="1.8"/>
+              <text x="541" y="160" fill="var(--status-nominal)" font-size="9.5" font-weight="700">${escapeHtml(trOrKey("map.berth_b_backup", {}, st))}</text>
+            </g>`
+                : ""
+            }
+
+            ${
+              st.mapLayers.ais
+                ? `
+            <g style="transform-box:fill-box;transform-origin:center;">
+              <circle cx="${vesselX}" cy="${vesselY}" r="18" fill="none" stroke="var(--epistemic-observation)" stroke-width="1.4" stroke-dasharray="4 3"/>
+              <polygon points="${vesselX},${vesselY - 10} ${vesselX + 12},${vesselY + 8} ${vesselX - 12},${vesselY + 8}" fill="var(--epistemic-observation)" stroke="#06101d" stroke-width="1.5"/>
+              <rect x="${vesselX - 118}" y="${vesselY - 46}" width="265" height="30" rx="4" fill="var(--surface-panel)" stroke="var(--border-strong)"/>
+              <text x="${vesselX - 110}" y="${vesselY - 33}" fill="var(--text-primary)" font-size="10" font-weight="700">${escapeHtml(trOrKey("map.vessel_name", {}, st))} (${escapeHtml(vesselSpeedStr)})</text>
+              <text x="${vesselX - 110}" y="${vesselY - 21}" fill="${vesselAtT2 ? "var(--status-critical)" : "var(--epistemic-claim)"}" font-size="9.2">${escapeHtml(trOrKey(vesselAtT2 ? "map.vessel_conflict_sub" : "map.vessel_single_sub", {}, st))}</text>
+            </g>`
+                : ""
+            }
+
+            ${
+              st.mapLayers.airspace && heliSeen
+                ? `
+            <g>
+              <polygon points="282,92 293,112 271,112" fill="${adsbStale ? "var(--status-caution)" : "var(--epistemic-observation)"}"/>
+              <text x="300" y="102" fill="${adsbStale ? "var(--status-caution)" : "var(--text-primary)"}" font-size="10" font-weight="700">${escapeHtml(trOrKey("map.heli_name", {}, st))} · 450 m</text>
+              <text x="300" y="115" fill="${adsbStale ? "var(--status-caution)" : "var(--text-muted)"}" font-size="9.2">${escapeHtml(trOrKey(adsbStale ? "map.adsb_stale" : "map.adsb_fresh", {}, st))}</text>
+            </g>`
+                : ""
+            }
+          </svg>
+        </div>
+
+        <div class="wr-map-hud-overlay">
+          <div class="wr-map-hud-card">
+            <strong>${escapeHtml(
+              trOrKey(
+                "map.hud_slice_summary",
+                {
+                  clock: formatClockForState(st.cutoffLearnedAtMs, st),
+                  p50: hudP50Str,
+                  p95: hudP95Str,
+                },
+                st
+              )
+            )}</strong>
+          </div>
+          <div class="wr-map-hud-card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span class="wr-epistemic-badge" data-epistemic="OBSERVATION">${escapeHtml(trOrKey("map.legend_obs", {}, st))}</span>
+            <span class="wr-epistemic-badge" data-epistemic="CLAIM">${escapeHtml(trOrKey("map.legend_claim", {}, st))}</span>
+            <span class="wr-epistemic-badge" data-epistemic="HYPOTHESIS">${escapeHtml(trOrKey("map.legend_hyp", {}, st))}</span>
+            <span style="color:var(--text-muted);">${escapeHtml(trOrKey("map.legend_shortcut", {}, st))} <kbd translate="no">G</kbd> ${escapeHtml(trOrKey("map.legend_graph", {}, st))}</span>
+          </div>
         </div>
       </div>
     `;
 
-    // Evrensel 3B Stüdyodan geri dönüş kapsülü
-    let returnPill = document.getElementById("wr-return-to-cockpit-pill");
-    if (!returnPill) {
-      returnPill = document.createElement("button");
-      returnPill.type = "button";
-      returnPill.id = "wr-return-to-cockpit-pill";
-      returnPill.className = "wr-return-floating-pill";
-      returnPill.innerHTML = "⚔ KOMUTA KOKPİTİNE DÖN (WAR ROOM)";
-      returnPill.addEventListener("click", () => toggleCockpitShellVisibility(true));
-      document.body.appendChild(returnPill);
-    }
+    const graphSources = [
+      {
+        id: "open_meteo_marine_ensemble",
+        y: 52,
+        epistemic: "HYPOTHESIS",
+        valKey: "graph.node_val_meteo",
+      },
+      {
+        id: "ferry_operator_dispatch",
+        y: 122,
+        epistemic: "CLAIM",
+        valKey: "graph.node_val_ops",
+      },
+      {
+        id: "ais_terrestrial_aegean",
+        y: 196,
+        epistemic: "OBSERVATION",
+        valKey: "graph.node_val_ais",
+        futureAtT1: !vesselAtT2,
+      },
+      {
+        id: "port_berth_sensor_sigacik",
+        y: 268,
+        epistemic: "OBSERVATION",
+        valKey: "graph.node_val_port",
+        futureAtT1: !vesselAtT2,
+      },
+      {
+        id: "opensky_aegean_adsb",
+        y: 334,
+        epistemic: "OBSERVATION",
+        valKey: "graph.node_val_adsb",
+        futureAtT1: !heliSeen,
+      },
+    ];
 
-    const topBarEl = rootEl.querySelector("#wr-zone-top-bar");
-    const stageEl = rootEl.querySelector("#wr-zone-spatial-causal");
-    const agentDockEl = rootEl.querySelector("#wr-zone-agent-dock");
-    const bitemporalBoxEl = rootEl.querySelector("#wr-bitemporal-box");
-    const telemetryToolbarEl = rootEl.querySelector("#wr-telemetry-toolbar");
-    const virtualViewportEl = rootEl.querySelector("#wr-virtual-viewport");
-    const virtualSpacerEl = rootEl.querySelector("#wr-virtual-spacer");
-    const sealModalEl = rootEl.querySelector("#wr-seal-inspector-modal");
-    const sealContentEl = rootEl.querySelector("#wr-seal-inspector-content");
-    const cmdkModalEl = rootEl.querySelector("#wr-cmdk-modal");
-    const cmdkInputEl = rootEl.querySelector("#wr-cmdk-input");
-    const cmdkResultsEl = rootEl.querySelector("#wr-cmdk-results");
+    const selectedSourceRow =
+      st.catalogRows
+        .slice()
+        .reverse()
+        .find((r) => r.source_id === st.selectedGraphNodeId) || st.catalogRows[0];
+    const cfPreview = st.lastCounterfactualPreview;
+    const isNodeDisabled = st.disabledSourceIds.has(st.selectedGraphNodeId);
 
-    function renderTopBar() {
-      const slice = (st.sliceSync && st.sliceSync.slice) || {};
-      const verdict = slice.verdict || "KANIT_YETERSİZ";
-      const stateHash = String(slice.state_blake3 || "");
-      const auditHash = String(st.auditChainHead || stateHash || "");
-      const stalenessItems = model.computeSourceStalenessStrip();
+    const selectedNodeDisplayName = warRoomI18n
+      ? warRoomI18n.formatSourceName(st.selectedGraphNodeId, ctx)
+      : st.selectedGraphNodeId;
+    const selectedGroupDisplay = selectedSourceRow
+      ? isTech
+        ? selectedSourceRow.independence_group
+        : warRoomI18n
+          ? warRoomI18n.formatEpistemic(selectedSourceRow.epistemic_status, ctx)
+          : selectedSourceRow.epistemic_status
+      : "—";
+    const selectedSeqDisplay = selectedSourceRow
+      ? isTech
+        ? `${selectedSourceRow.seq_no}${selectedSourceRow.exceeds_ieee754_safe_int ? " (>2^53-1 64-BIT STRING)" : ""}`
+        : `#${selectedSourceRow.seq_no}`
+      : "—";
+    const selectedValDisplay = selectedSourceRow
+      ? isTech
+        ? `${selectedSourceRow.primary_metric_key} = "${selectedSourceRow.primary_fp_val}"`
+        : selectedSourceRow.primary_metric_key === "delay_min_fp"
+          ? formatFpMinutesForState(selectedSourceRow.primary_fp_val, st, true)
+          : selectedSourceRow.primary_metric_key === "wave_m_fp"
+            ? formatFpMetersForState(selectedSourceRow.primary_fp_val, st, 2)
+            : selectedSourceRow.primary_metric_key === "baro_alt_m_fp"
+              ? formatFpMetersForState(selectedSourceRow.primary_fp_val, st, 1)
+              : selectedSourceRow.primary_fp_val
+      : "—";
 
-      const airlockModeLabel =
-        st.transportMode === "WS_LIVE"
-          ? st.serverAirlockMode === "LIVE_AIRLOCK"
-            ? "● LIVE AIRLOCK (:47809)"
-            : "● OFFLINE REPLAY (:47809)"
-          : st.transportMode === "WS_CPP_ENGINE"
-            ? "● C++ ENGINE (:47809) · OFFLINE REPLAY"
-            : "◆ OFFLINE REPLAY · HAVA BOŞLUKLU";
+    const gateVerdictLabel = isTech
+      ? verdict
+      : warRoomI18n
+        ? warRoomI18n.formatAlarmBadge(verdict, ctx)
+        : verdict;
 
-      const stalenessHtml = stalenessItems
-        .map(
-          (item) => `
-          <span class="wr-staleness-pill" data-freshness="${item.freshness}" title="${escapeHtml(item.source_id)} · Durum: ${item.label_tr}">
-            ${severityIconSvg(item.freshness)}
-            <span>${escapeHtml(item.code)}:</span>
-            <strong class="metric-value">${escapeHtml(item.age_sec_str)}</strong>
-            <span>(${escapeHtml(item.label_tr)})</span>
-          </span>`
-        )
-        .join("");
+    const cfTransitionText =
+      cfPreview && cfPreview.ok
+        ? trOrKey(
+            "graph.cf_result_transition",
+            {
+              base_verdict: isTech
+                ? cfPreview.base_verdict
+                : warRoomI18n
+                  ? warRoomI18n.formatVerdict(cfPreview.base_verdict, {}, ctx)
+                  : cfPreview.base_verdict,
+              branch_verdict: isTech
+                ? cfPreview.branch_verdict
+                : warRoomI18n
+                  ? warRoomI18n.formatVerdict(cfPreview.branch_verdict, {}, ctx)
+                  : cfPreview.branch_verdict,
+            },
+            st
+          )
+        : "";
+    const cfSealText =
+      cfPreview && cfPreview.ok
+        ? trOrKey(
+            "graph.cf_result_seal",
+            {
+              branch_hash: String(cfPreview.branch_state_blake3 || "").slice(0, 18) + "…",
+            },
+            st
+          )
+        : "";
 
-      topBarEl.innerHTML = `
-        <div class="wr-brand-cluster">
-          <span class="wr-system-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.8"/>
-              <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5"/>
-            </svg>
-            <span>CAELUS OS // WAR ROOM</span>
-          </span>
-          <span class="wr-mode-pill" title="A-1 Deterministik Sabit Nokta Çekirdek Modu">DET-MODE</span>
-          <span class="wr-mode-pill" data-transport="${st.transportMode}" id="wr-transport-badge">
-            ${airlockModeLabel}
-          </span>
-          <span class="wr-mode-pill" title="Aktif Senaryo ve Politika Kimliği">policy_id: MARITIME_SAFETY_V2</span>
-          <span class="wr-verdict-banner-badge" data-verdict="${escapeHtml(verdict)}" id="wr-active-verdict-badge">
-            ${severityIconSvg(verdict)}
-            <span>HÜKÜM: ${escapeHtml(verdict)}</span>
-          </span>
+    const graphHtml = `
+      <div class="wr-causal-chain-banner">
+        <span>${escapeHtml(trOrKey("graph.chain_banner", {}, st))}</span>
+        <span class="wr-mode-pill">${escapeHtml(trOrKey("counterfactual.branch_title", {}, st))}</span>
+      </div>
+      <div class="wr-graph-desk-split">
+        <div class="wr-causal-svg-wrap">
+          <svg class="wr-causal-svg" viewBox="0 0 540 380" role="img" aria-label="${escapeHtml(trOrKey("graph.aria_svg", {}, st))}">
+            <rect x="332" y="138" width="188" height="92" rx="6" fill="var(--surface-elevated)" stroke="${verdict === "KURAL_İHLALİ" ? "var(--status-critical)" : verdict === "KANIT_YETERSİZ" ? "var(--status-insufficient)" : "var(--status-nominal)"}" stroke-width="2"/>
+            <text x="344" y="160" fill="var(--text-primary)" font-size="10.5" font-weight="800">${escapeHtml(trOrKey("graph.gate_title", {}, st))}</text>
+            <text x="344" y="178" fill="var(--text-secondary)" font-size="9.5">${escapeHtml(gateVerdictLabel)}</text>
+            <text x="344" y="196" fill="var(--text-muted)" font-size="9">${escapeHtml(trOrKey("graph.gate_corroborated", { count: (slice.corroborated_groups || []).length }, st))}</text>
+            <text x="344" y="213" fill="var(--epistemic-observation)" font-size="8.8">${escapeHtml(trOrKey("graph.gate_threshold", {}, st))}</text>
+
+            ${
+              vesselAtT2
+                ? `
+            <path d="M 244,126 C 288,142 288,180 244,196" fill="none" class="wr-conflict-dash-line"/>
+            <text x="248" y="166" fill="var(--status-critical)" font-size="9" font-weight="700">${escapeHtml(trOrKey("graph.conflict_edge", {}, st))}</text>`
+                : ""
+            }
+
+            ${graphSources
+              .map((n) => {
+                const disabled = st.disabledSourceIds.has(n.id);
+                const selected = st.selectedGraphNodeId === n.id;
+                const nodeTitle = warRoomI18n
+                  ? warRoomI18n.formatSourceName(n.id, ctx)
+                  : n.id;
+                const nodeVal = trOrKey(n.valKey, {}, st);
+                const epShort = warRoomI18n
+                  ? warRoomI18n.formatEpistemicShort(n.epistemic, ctx)
+                  : n.epistemic;
+                const strokeColor = disabled
+                  ? "var(--border-subtle)"
+                  : selected
+                    ? "var(--epistemic-observation)"
+                    : n.epistemic === "OBSERVATION"
+                      ? "var(--epistemic-observation)"
+                      : n.epistemic === "CLAIM"
+                        ? "var(--epistemic-claim)"
+                        : "var(--epistemic-hypothesis)";
+                const stateSuffix = disabled
+                  ? " " + trOrKey("graph.node_disabled_tag", {}, st)
+                  : n.futureAtT1
+                    ? " " + trOrKey("graph.node_future_tag", {}, st)
+                    : "";
+                return `
+              <g data-graph-source="${escapeHtml(n.id)}" role="button" tabindex="0" aria-label="${escapeHtml(nodeTitle + " — " + nodeVal)}" style="cursor:pointer;opacity:${disabled || n.futureAtT1 ? "0.45" : "1"}">
+                <line x1="242" y1="${n.y}" x2="332" y2="184" stroke="${strokeColor}" stroke-width="${selected ? "2.2" : "1.3"}" ${disabled || n.futureAtT1 ? 'stroke-dasharray="4 4"' : ""}/>
+                <rect x="16" y="${n.y - 24}" width="226" height="46" rx="5" fill="var(--surface-panel)" stroke="${strokeColor}" stroke-width="${selected ? "2.2" : "1.3"}"/>
+                <text x="26" y="${n.y - 6}" fill="var(--text-primary)" font-size="9.8" font-weight="700" ${isTech ? 'translate="no"' : ""}>${escapeHtml(nodeTitle)}${escapeHtml(stateSuffix)}</text>
+                <text x="26" y="${n.y + 11}" fill="var(--text-secondary)" font-size="8.9">${escapeHtml(epShort)} · ${escapeHtml(nodeVal)}</text>
+              </g>`;
+              })
+              .join("")}
+
+            ${
+              cutoffBig >= BigInt(TAMPER_CHECK_MS)
+                ? `
+            <g>
+              <rect x="332" y="268" width="188" height="58" rx="5" fill="var(--status-critical-bg)" stroke="var(--status-critical)" stroke-width="1.5" stroke-dasharray="5 3"/>
+              <text x="341" y="287" fill="var(--status-critical)" font-size="9.4" font-weight="800">${escapeHtml(trOrKey("graph.quarantine_title", {}, st))}</text>
+              <text x="341" y="303" fill="var(--text-secondary)" font-size="8.6">${escapeHtml(trOrKey("graph.quarantine_sub", {}, st))}</text>
+            </g>`
+                : ""
+            }
+          </svg>
         </div>
 
-        <div class="wr-staleness-cluster" aria-label="Canlı Sensör Tazelik Göstergeleri">
-          ${stalenessHtml}
-        </div>
+        <div class="wr-stress-desk-inspector">
+          <h2 style="margin:0;font-weight:800;font-size:0.79rem;">${escapeHtml(trOrKey("counterfactual.branch_title", {}, st))}</h2>
+          <div style="padding:8px;border-radius:5px;background:var(--surface-inset);border:1px solid var(--border-subtle);font-size:0.73rem;">
+            <div>${escapeHtml(trOrKey("graph.desk_selected_node", {}, st))} <strong ${isTech ? 'translate="no"' : ""}>${escapeHtml(selectedNodeDisplayName)}</strong></div>
+            <div>${escapeHtml(trOrKey("graph.desk_group", {}, st))} <strong>${escapeHtml(selectedGroupDisplay)}</strong></div>
+            <div class="metric-value">${escapeHtml(trOrKey("graph.desk_seq", {}, st))} <span translate="no">${escapeHtml(selectedSeqDisplay)}</span></div>
+            <div class="metric-value">${escapeHtml(trOrKey("graph.desk_value", {}, st))} <strong>${escapeHtml(selectedValDisplay)}</strong></div>
+          </div>
 
-        <div class="wr-controls-cluster">
-          <button type="button" class="wr-hash-trigger hash-badge" id="wr-btn-open-seal-modal" title="state_blake3, audit_head_blake3, Manifest v2.0 imzası ve denetim zinciri mühürlerini incele">
-            <span>state_blake3:</span>
-            <strong>${escapeHtml(stateHash ? stateHash.slice(0, 10) + "…" : "—")}</strong>
-            <span style="opacity:0.55;">|</span>
-            <span>audit_head:</span>
-            <strong>${escapeHtml(auditHash ? auditHash.slice(0, 10) + "…" : "—")}</strong>
+          <button type="button" class="wr-btn ${isNodeDisabled ? "wr-btn-warn" : ""}" id="wr-btn-toggle-graph-node" data-source-id="${escapeHtml(st.selectedGraphNodeId)}">
+            ${escapeHtml(trOrKey(isNodeDisabled ? "graph.btn_enable_node" : "graph.btn_disable_node", {}, st))}
           </button>
 
-          <div role="group" aria-label="OpenBridge Köprüüstü Aydınlatma Teması" style="display:inline-flex; gap:4px;">
-            <button type="button" class="wr-btn ${st.theme === "day" ? "wr-btn-active" : ""}" data-set-theme="day" aria-pressed="${st.theme === "day"}" title="Gündüz Köprüüstü Yüksek Kontrast (Alt+1)">Gündüz</button>
-            <button type="button" class="wr-btn ${st.theme === "dusk" ? "wr-btn-active" : ""}" data-set-theme="dusk" aria-pressed="${st.theme === "dusk"}" title="Alacakaranlık Operasyon Merkezi (Alt+2)">Dusk</button>
-            <button type="button" class="wr-btn ${st.theme === "night" ? "wr-btn-active" : ""}" data-set-theme="night" aria-pressed="${st.theme === "night"}" title="Gece Vardiyası Sıfır Mavi Işık (Alt+3)">Gece</button>
+          <label for="wr-stress-preset-select" style="font-size:0.73rem;font-weight:700;">${escapeHtml(trOrKey("graph.select_intervention_label", {}, st))}</label>
+          <select id="wr-stress-preset-select" name="stress_preset" class="wr-input">
+            <option value="BERTH_02" ${st.customStressMode === "BERTH_02" ? "selected" : ""}>${escapeHtml(trOrKey("graph.option_berth_b", {}, st))}</option>
+            <option value="ROUTE_SHELTER_01" ${st.customStressMode === "ROUTE_SHELTER_01" ? "selected" : ""}>${escapeHtml(trOrKey("graph.option_sheltered_route", {}, st))}</option>
+            <option value="CUSTOM_FP" ${st.customStressMode === "CUSTOM_FP" ? "selected" : ""}>${escapeHtml(trOrKey("graph.option_custom_fp", {}, st))}</option>
+          </select>
+
+          <div class="wr-custom-fp-row">
+            <label for="wr-custom-fp-input" style="font-size:0.71rem;color:var(--text-secondary);">${escapeHtml(trOrKey("graph.custom_value_label", {}, st))}</label>
+            <input id="wr-custom-fp-input" name="custom_fp_val" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" class="wr-input metric-value" style="flex:1;min-width:130px;" value="${escapeHtml(st.customOverrideFp)}" aria-label="${escapeHtml(trOrKey("graph.custom_value_aria", {}, st))}" />
           </div>
 
-          <button type="button" class="wr-btn" id="wr-btn-open-cmdk" title="Hızlı Varlık, Kural ve Olay Arama Paleti (Ctrl+K / Cmd+K)">⌕ Ara (Ctrl+K)</button>
-          <button type="button" class="wr-btn" id="wr-btn-switch-studio" title="Klasik 3B Evrensel Küre ve Senaryo Stüdyosu Görünümüne Geç">Klasik Stüdyo</button>
+          <button type="button" class="wr-btn wr-btn-active" id="wr-btn-run-whatif">
+            ${escapeHtml(trOrKey("graph.btn_run_whatif", {}, st))}
+          </button>
+
+          ${
+            cfPreview && cfPreview.ok
+              ? `
+          <div role="status" aria-live="polite" style="padding:8px;border-radius:5px;border:1px solid var(--epistemic-observation);background:var(--epistemic-observation-bg);font-size:0.72rem;">
+            <div style="font-weight:800;">${escapeHtml(trOrKey("graph.cf_result_title", { branch_id: cfPreview.branch_id || "cf" }, st))}</div>
+            <div><strong>${escapeHtml(cfTransitionText)}</strong></div>
+            <div class="hash-badge" ${isTech ? 'translate="no"' : ""}>${escapeHtml(cfSealText)}</div>
+          </div>`
+              : ""
+          }
         </div>
-      `;
-    }
+      </div>
+    `;
+    const sentinel = st.sentinelAlert || { anomaly_count: 0, severity: "NOMINAL", summary: "" };
+    const redTeam = st.redTeamAlert || {
+      projected_breach_rules: [],
+      severity: "NOMINAL",
+      summary: "",
+    };
+    const auditorLocked = verdict === "KANIT_YETERSİZ";
+    const activeConflicts = slice.active_conflicts || [];
+    const activeAssertions = slice.active_assertions || [];
+    const latestReply = st.assistantReplies[0] || null;
 
-    function renderTacticalMapHtml() {
-      const slice = (st.sliceSync && st.sliceSync.slice) || {};
-      const verdict = slice.verdict || "KANIT_YETERSİZ";
-      const cutoffBig = BigInt(st.cutoffLearnedAtMs);
-      const isT2OrLater = cutoffBig >= BigInt(T2_CUTOFF_MS);
-      const adsbLearned = cutoffBig >= 1762849260000n;
-      const adsbStale = cutoffBig - 1762849115000n > 120000n;
+    const stageRuleBanner = trOrKey(
+      "stage.active_rule_label",
+      {
+        rule_id: appliedRuleId,
+        max_allowed_fp: "20000000",
+      },
+      st
+    );
 
-      const primaryStroke =
-        verdict === "KURAL_İHLALİ"
-          ? "var(--status-critical)"
-          : verdict === "GEÇTİ"
-            ? "var(--status-nominal)"
-            : "var(--epistemic-observation)";
+    const dockHtml = `
+      <div class="wr-panel-toolbar">
+        <h2 style="margin:0;font-weight:800;font-size:0.80rem;">${escapeHtml(trOrKey("dock.header_title", {}, st))}</h2>
+        <span class="wr-mode-pill" ${isTech ? 'translate="no"' : ""}>${escapeHtml(trOrKey("dock.header_badge", {}, st))}</span>
+      </div>
 
-      const h3Cells = [
-        { cx: 295, cy: 170, code: "861e268f", wave: isT2OrLater ? "2.45m" : "1.85m", risk: isT2OrLater ? "SERIOUS" : "CAUTION" },
-        { cx: 360, cy: 195, code: "861e268d", wave: isT2OrLater ? "3.15m p95" : "2.45m", risk: isT2OrLater ? "CRITICAL" : "CAUTION" },
-        { cx: 430, cy: 215, code: "861e2693", wave: isT2OrLater ? "2.95m" : "2.10m", risk: isT2OrLater ? "SERIOUS" : "CAUTION" },
-        { cx: 345, cy: 255, code: "861e269b", wave: "1.55m", risk: "NOMINAL" },
-        { cx: 420, cy: 272, code: "861e2699", wave: "1.40m", risk: "NOMINAL" },
-      ];
+      <div class="wr-agent-roster-strip" role="list" aria-label="${escapeHtml(trOrKey("dock.aria_roster", {}, st))}">
+        <div class="wr-agent-pill" role="listitem" data-agent-state="${sentinel.anomaly_count > 0 ? "ALERT" : "READY"}">
+          <strong>${escapeHtml(trOrKey("dock.agent_sentinel_name", {}, st))}</strong>
+          <span>${escapeHtml(trOrKey("dock.sentinel_meta", { count: sentinel.anomaly_count || 0 }, st))}</span>
+        </div>
+        <div class="wr-agent-pill" role="listitem" data-agent-state="${(redTeam.projected_breach_rules || []).length > 0 ? "ALERT" : "READY"}">
+          <strong>${escapeHtml(trOrKey("dock.agent_redteam_name", {}, st))}</strong>
+          <span>${escapeHtml(trOrKey("dock.redteam_meta", { count: (redTeam.projected_breach_rules || []).length }, st))}</span>
+        </div>
+        <div class="wr-agent-pill" role="listitem" data-agent-state="READY">
+          <strong>${escapeHtml(trOrKey("dock.agent_strategist_name", {}, st))}</strong>
+          <span>${escapeHtml(trOrKey("dock.strategist_meta", { count: st.actionCards.length }, st))}</span>
+        </div>
+        <div class="wr-agent-pill" role="listitem" data-agent-state="${auditorLocked ? "LOCKED" : "READY"}">
+          <strong>${escapeHtml(trOrKey("dock.agent_auditor_name", {}, st))}</strong>
+          <span>${escapeHtml(trOrKey(auditorLocked ? "dock.auditor_locked" : "dock.auditor_ready", {}, st))}</span>
+        </div>
+      </div>
 
-      function hexPoints(cx, cy, r) {
-        const pts = [];
-        for (let i = 0; i < 6; i++) {
-          const ang = ((60 * i - 30) * Math.PI) / 180;
-          pts.push(`${(cx + r * Math.cos(ang)).toFixed(1)},${(cy + r * Math.sin(ang)).toFixed(1)}`);
+      <div class="wr-agent-scroll-body">
+        <div style="padding:7px 9px;border-radius:5px;background:var(--surface-inset);border:1px solid var(--border-subtle);font-size:0.72rem;">
+          <div><strong>${escapeHtml(trOrKey("dock.agent_sentinel_name", {}, st))}:</strong> ${escapeHtml(sentinel.summary || sentinel.summary_tr || "")}</div>
+          <div style="margin-top:3px;"><strong>${escapeHtml(trOrKey("dock.agent_redteam_name", {}, st))}:</strong> ${escapeHtml(redTeam.summary || redTeam.summary_tr || "")}</div>
+        </div>
+
+        ${
+          activeConflicts.length > 0
+            ? activeConflicts
+                .map((cf) => {
+                  const pair = activeAssertions.filter((a) =>
+                    (cf.event_ids || []).includes(a.event_id)
+                  );
+                  const conflictSub = trOrKey(
+                    "conflict.box_subtitle",
+                    {
+                      subject_id: cf.subject_id,
+                      metric_key: cf.metric_key,
+                    },
+                    st
+                  );
+                  return `
+              <div class="wr-conflict-matrix-box" role="region" aria-label="${escapeHtml(trOrKey("conflict.box_title", {}, st))}">
+                <div style="font-weight:800;font-size:0.74rem;color:var(--status-caution);">
+                  ⚡ ${escapeHtml(trOrKey("conflict.box_title", {}, st))}
+                </div>
+                <div style="font-size:0.70rem;color:var(--text-secondary);" ${isTech ? 'translate="no"' : ""}>
+                  ${escapeHtml(conflictSub)}
+                </div>
+                <div class="wr-conflict-pair-grid">
+                  ${pair
+                    .map((a) => {
+                      const srcLabel = warRoomI18n
+                        ? warRoomI18n.formatSourceName(a.source_id, ctx)
+                        : a.source_id;
+                      const epLabel = warRoomI18n
+                        ? warRoomI18n.formatEpistemicShort(a.epistemic_status, ctx)
+                        : a.epistemic_status;
+                      const valFormatted = formatFpMinutesForState(a.fp_val, st, true);
+                      return `
+                    <div class="wr-conflict-source-cell">
+                      <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap;">
+                        <strong style="font-size:0.71rem;" ${isTech ? 'translate="no"' : ""}>${escapeHtml(srcLabel)}</strong>
+                        <span class="wr-epistemic-badge" data-epistemic="${escapeHtml(a.epistemic_status)}">${epistemicSymbol(a.epistemic_status)} ${escapeHtml(epLabel)}</span>
+                      </div>
+                      <div class="metric-value" style="margin-top:4px;font-size:0.79rem;font-weight:800;">
+                        ${escapeHtml(valFormatted)}${isTech ? ` <span translate="no">(${escapeHtml(a.fp_val)} fp · ${escapeHtml(a.event_id)})</span>` : ""}
+                      </div>
+                    </div>`;
+                    })
+                    .join("")}
+                </div>
+              </div>`;
+                })
+                .join("")
+            : ""
         }
-        return pts.join(" ");
-      }
 
-      const h3Svg = st.mapLayers.h3Wave
-        ? h3Cells
-            .map((cell) => {
-              const fill =
-                cell.risk === "CRITICAL"
-                  ? "rgba(255,59,48,0.20)"
-                  : cell.risk === "SERIOUS"
-                    ? "rgba(255,149,0,0.17)"
-                    : cell.risk === "CAUTION"
-                      ? "rgba(255,204,0,0.13)"
-                      : "rgba(48,209,88,0.12)";
-              const stroke =
-                cell.risk === "CRITICAL"
-                  ? "var(--status-critical)"
-                  : cell.risk === "SERIOUS"
-                    ? "var(--status-serious)"
-                    : cell.risk === "CAUTION"
-                      ? "var(--status-caution)"
-                      : "var(--status-nominal)";
-              return `
-                <g>
-                  <polygon points="${hexPoints(cell.cx, cell.cy, 34)}" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/>
-                  <text x="${cell.cx}" y="${cell.cy - 3}" text-anchor="middle" fill="var(--text-primary)" font-family="var(--font-mono)" font-size="9.5" font-weight="700">${cell.wave}</text>
-                  <text x="${cell.cx}" y="${cell.cy + 10}" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8">${cell.code}</text>
-                </g>`;
-            })
-            .join("")
-        : "";
+        ${st.actionCards
+          .map((card) => {
+            const seal = st.sealedCards[card.card_id] || null;
+            const canSign = Boolean(
+              card.auditor_check && card.auditor_check.observation_corroborated && !auditorLocked
+            );
+            const delta = card.counterfactual_delta || {};
+            const isProofOpen = isTech || st.expandedProofCardIds.has(card.card_id);
+            const cardAlarmText = warRoomI18n
+              ? warRoomI18n.formatAlarmBadge(card.severity, ctx)
+              : card.severity;
+            const safetyDeltaLabel = warRoomI18n
+              ? trOrKey("card.delta_safety_label", {}, st)
+              : "Δ Emniyet/Risk:";
+            const expectedOutcomeText = isTech
+              ? `${card.base_verdict} → ${card.branch_verdict}`
+              : `${warRoomI18n ? warRoomI18n.formatVerdict(card.base_verdict, {}, ctx) : card.base_verdict} → ${warRoomI18n ? warRoomI18n.formatVerdict(card.branch_verdict, {}, ctx) : card.branch_verdict}`;
+            const groupsSummary = isTech
+              ? (card.independence_groups || []).join(", ") || "—"
+              : String((card.independence_groups || []).length);
 
-      const routeSvg = st.mapLayers.route
-        ? `
-          <!-- Ana Kuzey Sığacık → Vathi Koridoru -->
-          <path d="M 238 118 L 308 166 L 385 204 L 478 242" fill="none" stroke="${primaryStroke}" stroke-width="${st.highlightedCorridor === "PRIMARY_NORTH" ? "3.6" : "2.2"}" stroke-dasharray="${verdict === "KURAL_İHLALİ" ? "8 5" : "none"}"/>
-          <!-- Karşı-Olgu Güney Sisam Dalga Korunaklı Koridor -->
-          <path d="M 238 118 L 285 215 L 365 268 L 478 242" fill="none" stroke="var(--status-nominal)" stroke-width="${st.highlightedCorridor === "SOUTH_SAMOS_SHELTERED" ? "3.6" : "1.8"}" stroke-dasharray="5 4" opacity="${st.highlightedCorridor === "SOUTH_SAMOS_SHELTERED" ? "1" : "0.72"}"/>
-          <text x="366" y="290" text-anchor="middle" fill="var(--status-nominal)" font-family="var(--font-mono)" font-size="9.5" font-weight="700">KARŞI-OLGU: GÜNEY SİSAM KORUNAKLI KORİDOR</text>
-        `
-        : "";
-
-      const berthSvg = st.mapLayers.berth
-        ? `
-          <g transform="translate(222, 92)" style="cursor:pointer;" data-map-select-event="ev_106">
-            <rect x="0" y="0" width="94" height="22" rx="4" fill="var(--surface-panel)" stroke="${isT2OrLater ? "var(--status-critical)" : "var(--border-strong)"}" stroke-width="1.4"/>
-            <text x="47" y="14" text-anchor="middle" fill="${isT2OrLater ? "var(--status-critical)" : "var(--text-primary)"}" font-family="var(--font-mono)" font-size="9.5" font-weight="700">BERTH-A ${isT2OrLater ? "(+35dk KİLİT)" : "(İZLEME)"}</text>
-          </g>
-          <g transform="translate(120, 114)" style="cursor:pointer;" data-map-focus-card="coa-20261111-01">
-            <rect x="0" y="0" width="96" height="22" rx="4" fill="var(--surface-panel)" stroke="var(--status-nominal)" stroke-width="1.4"/>
-            <text x="48" y="14" text-anchor="middle" fill="var(--status-nominal)" font-family="var(--font-mono)" font-size="9.5" font-weight="700">BERTH-B (YEDEK)</text>
-          </g>
-        `
-        : "";
-
-      const vesselX = isT2OrLater ? 268 : 252;
-      const vesselY = isT2OrLater ? 140 : 128;
-      const aisSvg = st.mapLayers.ais
-        ? `
-          <g transform="translate(${vesselX}, ${vesselY})" style="cursor:pointer;" data-map-select-event="${isT2OrLater ? "ev_104" : "ev_103"}">
-            <circle cx="0" cy="0" r="17" fill="none" stroke="${primaryStroke}" stroke-width="1.3" stroke-dasharray="3 3"/>
-            <line x1="0" y1="0" x2="28" y2="19" stroke="${primaryStroke}" stroke-width="2"/>
-            <polygon points="-8,-6 10,0 -8,6 -4,0" transform="rotate(34)" fill="${primaryStroke}"/>
-            <rect x="14" y="-24" width="174" height="32" rx="4" fill="var(--surface-panel)" stroke="${primaryStroke}" stroke-width="1.2"/>
-            <text x="20" y="-11" fill="var(--text-primary)" font-family="var(--font-mono)" font-size="9.5" font-weight="700">VESSEL_AEGEAN_01 · 14.2 kn</text>
-            <text x="20" y="2" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.8">${isT2OrLater ? "AIS:+35.0dk (OBS) ≠ OPS:+15.0dk (CLAIM)" : "OPS:+15.0dk (CLAIM · Tek Kaynak)"}</text>
-          </g>
-        `
-        : "";
-
-      const airspaceSvg =
-        st.mapLayers.airspace && adsbLearned
-          ? `
-          <g transform="translate(196, 206)" style="cursor:pointer;" data-map-select-event="ev_102">
-            <polygon points="0,-8 7,7 0,3 -7,7" fill="${adsbStale ? "var(--status-caution)" : "var(--epistemic-observation)"}"/>
-            <rect x="-12" y="11" width="154" height="28" rx="4" fill="var(--surface-panel)" stroke="${adsbStale ? "var(--status-caution)" : "var(--epistemic-observation)"}" stroke-width="1.2"/>
-            <text x="-6" y="23" fill="var(--text-primary)" font-family="var(--font-mono)" font-size="9" font-weight="700">SAR_HELI_AEGEAN_04 · 450m</text>
-            <text x="-6" y="34" fill="${adsbStale ? "var(--status-caution)" : "var(--text-secondary)"}" font-family="var(--font-mono)" font-size="8.3">${adsbStale ? "▲ ADS-B ESKİMİŞ (>120sn)" : "● ADS-B TAZE GÖZLEM"}</text>
-          </g>
-        `
-          : "";
-
-      const hasMapLibre = typeof window !== "undefined" && Boolean(window.maplibregl);
-      const hasDeck = typeof window !== "undefined" && Boolean(window.deck);
-      const hasCesium = typeof window !== "undefined" && Boolean(window.Cesium);
-
-      return `
-        <div class="wr-map-container">
-          <div class="wr-map-layer-bar" role="toolbar" aria-label="Taktik Harita Katman ve Motor Denetimleri">
-            <div style="display:flex; gap:5px; flex-wrap:wrap;">
-              <button type="button" class="wr-layer-chip" data-toggle-layer="ais" aria-pressed="${st.mapLayers.ais}">● AIS Gemi</button>
-              <button type="button" class="wr-layer-chip" data-toggle-layer="route" aria-pressed="${st.mapLayers.route}">━ Rota Koridoru</button>
-              <button type="button" class="wr-layer-chip" data-toggle-layer="h3Wave" aria-pressed="${st.mapLayers.h3Wave}">⬡ H3 Dalga Riski</button>
-              <button type="button" class="wr-layer-chip" data-toggle-layer="airspace" aria-pressed="${st.mapLayers.airspace}">▲ Hava Sahası (ADS-B)</button>
-              <button type="button" class="wr-layer-chip" data-toggle-layer="berth" aria-pressed="${st.mapLayers.berth}">■ Liman Rıhtım</button>
-            </div>
-            <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;" role="group" aria-label="Hava Boşluklu Harita Motoru Seçici">
-              <button type="button" class="wr-layer-chip" data-map-engine="SVG" aria-pressed="${st.mapEngine === "SVG"}">SVG Vektör (0ms)</button>
-              <button type="button" class="wr-layer-chip" data-map-engine="MAPLIBRE_DECK" aria-pressed="${st.mapEngine === "MAPLIBRE_DECK"}" title="Yerel MapLibre GL + deck.gl + PMTiles Vektör Adaptörü">${hasMapLibre ? "MapLibre + deck.gl" : "MapLibre (SVG Yedek)"}</button>
-              <button type="button" class="wr-layer-chip" data-map-engine="CESIUM_3D" aria-pressed="${st.mapEngine === "CESIUM_3D"}" title="Yerel Hava Boşluklu Cesium 3B Koridor Görünümü">${hasCesium ? "Cesium 3B" : "Cesium 3B (Yedek)"}</button>
-              <span class="metric-value" style="font-size:0.68rem; color:var(--text-secondary); margin-left:4px;">0 Dış Tile${hasDeck ? " · deck.gl Hazır" : ""}</span>
-            </div>
-          </div>
-
-          <div class="wr-stage-canvas-stack" style="position:relative; flex:1; min-height:360px; display:flex; flex-direction:column;">
-            <div id="wr-live-geo-mount" class="wr-live-geo-viewport" ${st.mapEngine === "SVG" ? "hidden" : ""}></div>
-            <svg class="wr-tactical-svg" ${st.mapEngine !== "SVG" ? 'style="opacity:0.16; pointer-events:none;"' : ""} viewBox="0 0 720 350" role="img" aria-label="Ege Denizi Sığacık - Sisam Vathi Taktik Deniz Koridoru Haritası">
-            <defs>
-              <pattern id="wr-grid-pat" width="60" height="60" patternUnits="userSpaceOnUse">
-                <path d="M 60 0 L 0 0 0 60" fill="none" stroke="var(--chart-grid)" stroke-width="1"/>
-              </pattern>
-            </defs>
-            <rect width="720" height="350" fill="url(#wr-grid-pat)"/>
-
-            <!-- Kuzeydoğu Anadolu Kıyısı: Çeşme / Seferihisar / Sığacık / Kuşadası -->
-            <path d="M 40 0 L 385 0 L 410 55 L 352 95 L 265 112 L 236 118 L 195 96 L 132 108 L 82 78 L 40 42 Z"
-                  fill="var(--chart-land)" stroke="var(--chart-land-stroke)" stroke-width="1.6"/>
-            <text x="232" y="68" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5" font-weight="700">SEFERİHİSAR / SIĞACIK LİMANI</text>
-
-            <!-- Doğu Kuşadası Körfezi Kıyısı -->
-            <path d="M 565 72 L 720 45 L 720 350 L 635 350 L 602 252 L 585 162 Z"
-                  fill="var(--chart-land)" stroke="var(--chart-land-stroke)" stroke-width="1.6"/>
-
-            <!-- Sisam (Samos) Adası ve Vathi Limanı -->
-            <path d="M 382 246 L 448 228 L 534 232 L 568 258 L 542 292 L 456 296 L 392 278 Z"
-                  fill="var(--chart-land)" stroke="var(--chart-land-stroke)" stroke-width="1.8"/>
-            <circle cx="482" cy="244" r="4.5" fill="var(--epistemic-observation)"/>
-            <text x="482" y="266" text-anchor="middle" fill="var(--text-primary)" font-family="var(--font-mono)" font-size="10" font-weight="700">SİSAM / VATHI LİMANI</text>
-
-            <!-- Koordinat Etiketleri & Deniz Mili Ölçeği -->
-            <text x="14" y="20" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="9">38°15'N · 26°45'E (EGE KORİDORU)</text>
-            <g transform="translate(18, 324)">
-              <line x1="0" y1="0" x2="72" y2="0" stroke="var(--text-secondary)" stroke-width="2"/>
-              <line x1="0" y1="-4" x2="0" y2="4" stroke="var(--text-secondary)" stroke-width="1.5"/>
-              <line x1="72" y1="-4" x2="72" y2="4" stroke="var(--text-secondary)" stroke-width="1.5"/>
-              <text x="36" y="-5" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.5">5.0 NM</text>
-            </g>
-
-            ${h3Svg}
-            ${routeSvg}
-            ${berthSvg}
-            ${airspaceSvg}
-            ${aisSvg}
-          </svg>
-          </div>
-
-          <div class="wr-map-hud-overlay">
-            <div class="wr-map-hud-card metric-value">
-              Kesit: <strong>${escapeHtml(formatUtcClockFromMsStr(st.cutoffLearnedAtMs))}</strong> ·
-              12-Dünya Risk Bandı p50/p95:
-              <strong>${escapeHtml(formatFpScaled(String((slice.world_12_risk_band_fp && slice.world_12_risk_band_fp.p50) || "0"), "dk"))}</strong> /
-              <strong>${escapeHtml(formatFpScaled(String((slice.world_12_risk_band_fp && slice.world_12_risk_band_fp.p95) || "0"), "dk"))}</strong>
-            </div>
-            <div class="wr-map-hud-card">
-              ● Gözlem &nbsp; ◆ İddia &nbsp; ▲ Hipotez &nbsp; | &nbsp; Kısayol: <kbd>G</kbd> Nedensel Graf
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderCausalGraphDeskHtml() {
-      const slice = (st.sliceSync && st.sliceSync.slice) || {};
-      const verdict = slice.verdict || "KANIT_YETERSİZ";
-      const hasConflict =
-        Array.isArray(slice.active_conflicts) && slice.active_conflicts.length > 0;
-      const cutoffBig = BigInt(st.cutoffLearnedAtMs);
-
-      const sourceNodes = [
-        { id: "open_meteo_marine_ensemble", label: "open_meteo_marine", ep: "HYPOTHESIS", val: "Dalga p95 3.15m", y: 42, minMs: 1762848300000n },
-        { id: "ferry_operator_dispatch", label: "ferry_operator_dispatch", ep: "CLAIM", val: "+15.0 dk Beyan", y: 98, minMs: 1762848600000n },
-        { id: "ais_terrestrial_aegean", label: "ais_terrestrial_aegean", ep: "OBSERVATION", val: "+35.0 dk AIS", y: 162, minMs: 1762849380000n },
-        { id: "port_berth_sensor_sigacik", label: "port_berth_sensor", ep: "OBSERVATION", val: "+35.0 dk PLC (seq>2^53)", y: 222, minMs: 1762849500000n },
-        { id: "opensky_aegean_adsb", label: "opensky_aegean_adsb", ep: "OBSERVATION", val: "450m SAR ADS-B", y: 280, minMs: 1762849260000n },
-      ];
-
-      const nodesSvg = sourceNodes
-        .map((n) => {
-          const isLearned = cutoffBig >= n.minMs;
-          const isDisabled = st.disabledSourceIds.has(n.id);
-          const isSelected = st.selectedGraphNodeId === n.id;
-          const stroke =
-            n.ep === "OBSERVATION"
-              ? "var(--epistemic-observation)"
-              : n.ep === "CLAIM"
-                ? "var(--epistemic-claim)"
-                : "var(--epistemic-hypothesis)";
-          const opacity = !isLearned || isDisabled ? "0.42" : "1";
-          return `
-            <g transform="translate(18, ${n.y})" opacity="${opacity}" style="cursor:pointer;" data-graph-node="${n.id}">
-              <line x1="176" y1="20" x2="258" y2="148" stroke="${stroke}" stroke-width="${isSelected ? "2.2" : "1.2"}" stroke-dasharray="${n.ep === "OBSERVATION" ? "none" : "4 3"}"/>
-              <rect x="0" y="0" width="176" height="40" rx="5" fill="var(--surface-panel)" stroke="${isSelected ? "var(--text-primary)" : stroke}" stroke-width="${isSelected ? "2.2" : "1.4"}"/>
-              <text x="8" y="15" fill="var(--text-primary)" font-family="var(--font-mono)" font-size="9.3" font-weight="700">${epistemicSymbol(n.ep)} ${escapeHtml(n.label)}</text>
-              <text x="8" y="30" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.8">${escapeHtml(n.val)} ${isDisabled ? "[DEVRE DIŞI]" : !isLearned ? "[GELECEK]" : ""}</text>
-            </g>`;
-        })
-        .join("");
-
-      const conflictEdgeSvg = hasConflict
-        ? `
-          <g>
-            <path d="M 106 138 C 68 146, 68 154, 106 162" fill="none" class="wr-conflict-dash-line"/>
-            <rect x="198" y="114" width="132" height="20" rx="4" fill="var(--status-critical-bg)" stroke="var(--status-critical)" stroke-width="1.2"/>
-            <text x="264" y="127" text-anchor="middle" fill="var(--status-critical)" font-family="var(--font-mono)" font-size="8.8" font-weight="800">⚡ CONFLICT (Δ 20.0 dk)</text>
-          </g>
-        `
-        : "";
-
-      const tamperVisible = cutoffBig >= BigInt(TAMPER_CHECK_MS);
-      const quarantineSvg = tamperVisible
-        ? `
-          <g transform="translate(18, 332)">
-            <rect x="0" y="0" width="248" height="32" rx="4" fill="var(--status-critical-bg)" stroke="var(--status-critical)" stroke-width="1.2" stroke-dasharray="4 3"/>
-            <text x="8" y="13" fill="var(--status-critical)" font-family="var(--font-mono)" font-size="8.8" font-weight="700">⛔ ev_103_equivocation (KARANTİNA)</text>
-            <text x="8" y="25" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.2">SOURCE_EQUIVOCATION · 0-Bit State Etkisi</text>
-          </g>
-        `
-        : "";
-
-      const verdictColor =
-        verdict === "KURAL_İHLALİ"
-          ? "var(--status-critical)"
-          : verdict === "GEÇTİ"
-            ? "var(--status-nominal)"
-            : "var(--status-insufficient)";
-
-      const selectedSourceRows = st.catalogRows.filter(
-        (r) => r.source_id === st.selectedGraphNodeId
-      );
-      const selectedLatest =
-        selectedSourceRows[selectedSourceRows.length - 1] || st.catalogRows[0];
-      const isNodeDisabled = st.disabledSourceIds.has(st.selectedGraphNodeId);
-      const cf = st.lastCounterfactualPreview;
-
-      return `
-        <div class="wr-graph-desk-split">
-          <div class="wr-causal-svg-wrap">
-            <svg class="wr-causal-svg" viewBox="0 0 600 374" role="img" aria-label="Yönlü Nedensel Graf ve Kaynak Çatışma Ağı">
-              <!-- Epistemik & Bağımsızlık Kapısı -->
-              <g transform="translate(258, 122)">
-                <line x1="124" y1="26" x2="174" y2="26" stroke="var(--border-strong)" stroke-width="1.8"/>
-                <rect x="0" y="0" width="124" height="54" rx="6" fill="var(--surface-elevated)" stroke="var(--epistemic-observation)" stroke-width="1.6"/>
-                <text x="62" y="20" text-anchor="middle" fill="var(--text-primary)" font-family="var(--font-mono)" font-size="9.5" font-weight="700">A-2 EPİSTEMİK KAPI</text>
-                <text x="62" y="34" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.4">Grup Teyidi: ${(slice.corroborated_groups || []).length}</text>
-                <text x="62" y="46" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.2">Eşik: ≥2 Gözlem/Grup</text>
-              </g>
-
-              <!-- Politika ve Deterministik Hüküm Düğümü -->
-              <g transform="translate(432, 114)">
-                <rect x="0" y="0" width="152" height="70" rx="6" fill="var(--surface-elevated)" stroke="${verdictColor}" stroke-width="2"/>
-                <text x="76" y="19" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.5">MARITIME_SAFETY_V2</text>
-                <text x="76" y="38" text-anchor="middle" fill="${verdictColor}" font-family="var(--font-mono)" font-size="11" font-weight="800">${escapeHtml(verdict)}</text>
-                <text x="76" y="55" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="8.2">blake3:${escapeHtml(String(slice.state_blake3 || "").slice(0, 10))}…</text>
-              </g>
-
-              ${nodesSvg}
-              ${conflictEdgeSvg}
-              ${quarantineSvg}
-            </svg>
-          </div>
-
-          <div class="wr-stress-desk-inspector">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-              <strong>Karşı-Olgu ("What-If") Stres Masası</strong>
-              <span class="wr-epistemic-badge" data-epistemic="${escapeHtml(selectedLatest ? selectedLatest.epistemic_status : "OBSERVATION")}">
-                ${epistemicSymbol(selectedLatest ? selectedLatest.epistemic_status : "OBSERVATION")}
-                ${escapeHtml(selectedLatest ? selectedLatest.epistemic_status : "OBSERVATION")}
+            return `
+          <article class="wr-action-card" data-card-id="${escapeHtml(card.card_id)}" data-focused="${st.focusedActionCardId === card.card_id}" data-sealed="${Boolean(seal)}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+              <span style="display:inline-flex;align-items:center;gap:5px;font-weight:800;font-size:0.75rem;color:${card.severity === "SERIOUS" ? "var(--status-serious)" : "var(--status-caution)"};">
+                ${severityIconSvg(card.severity)} ${escapeHtml(cardAlarmText)}
               </span>
-            </div>
-
-            <div class="metric-value" style="font-size:0.74rem; padding:7px 8px; border-radius:4px; background:var(--surface-inset); border:1px solid var(--border-subtle);">
-              <div>Seçili Düğüm: <strong>${escapeHtml(st.selectedGraphNodeId)}</strong></div>
-              <div>Bağımsızlık Grubu: <strong>${escapeHtml(selectedLatest ? selectedLatest.independence_group : "—")}</strong></div>
-              <div>Son seq_no (String): <strong>${escapeHtml(selectedLatest ? selectedLatest.seq_no : "0")}</strong></div>
-              <div>Sabit Nokta Değeri: <strong>${escapeHtml(selectedLatest ? selectedLatest.primary_fp_val : "0")} fp</strong></div>
-            </div>
-
-            <button type="button" class="wr-btn ${isNodeDisabled ? "wr-btn-warn" : ""}" id="wr-btn-toggle-disable-node">
-              ${isNodeDisabled ? "↺ Düğümü Yeniden Etkinleştir" : "⊘ Düğümü Devre Dışı Bırak (What-If)"}
-            </button>
-
-            <div style="display:flex; flex-direction:column; gap:5px; padding-top:4px; border-top:1px solid var(--border-subtle);">
-              <label for="wr-stress-delta-select" style="font-size:0.74rem; font-weight:700;">Müdahale / Parametre Değişikliği Seçin:</label>
-              <select id="wr-stress-delta-select" class="wr-input" style="width:100%;">
-                <option value="BERTH_02" ${st.customStressMode === "BERTH_02" ? "selected" : ""}>BERTH_02 Yedek Rampa Tahsisi (-18.0 dk Kuyruk Sönümleme)</option>
-                <option value="ROUTE_SHELTER_01" ${st.customStressMode === "ROUTE_SHELTER_01" ? "selected" : ""}>ROUTE_SHELTER_01 Güney Sisam Korunaklı Rota (16.0 dk Tavan)</option>
-                <option value="CUSTOM_FP" ${st.customStressMode === "CUSTOM_FP" ? "selected" : ""}>Özel Sabit Nokta Değeri (64-Bit ASCII fp_val · 1e6 Ölçek)</option>
-              </select>
-              <div class="wr-custom-fp-row">
-                <label for="wr-stress-custom-fp-input" style="font-size:0.71rem; color:var(--text-secondary);">Sabit Nokta (fp_val):</label>
-                <input type="text" inputmode="numeric" id="wr-stress-custom-fp-input" class="wr-input metric-value" style="flex:1; min-width:120px;" value="${escapeHtml(st.customOverrideFp)}" aria-label="Özel 64-bit sabit nokta müdahale değeri (1e6 ölçekli)">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span class="metric-value" style="font-size:0.69rem;color:var(--text-muted);">${escapeHtml(trOrKey("dock.confidence_label", {}, st))}: ${escapeHtml(card.opencti_confidence)}%</span>
+                ${
+                  !isTech
+                    ? `<button type="button" class="wr-proof-toggle-btn" data-toggle-card-proof="${escapeHtml(card.card_id)}" aria-expanded="${isProofOpen}">
+                        ${escapeHtml(trOrKey(isProofOpen ? "dock.toggle_proof_open" : "dock.toggle_proof_closed", {}, st))}
+                      </button>`
+                    : ""
+                }
               </div>
-              <button type="button" class="wr-btn wr-btn-seal" id="wr-btn-run-node-counterfactual">
-                ⚡ Değeri Değiştirip Karşı-Olgu Koştur
-              </button>
+            </div>
+
+            <h3 style="margin:0;font-weight:800;font-size:0.80rem;">${escapeHtml(card.title)}</h3>
+            <div style="font-size:0.73rem;color:var(--text-secondary);">${escapeHtml(card.rationale || card.rationale_tr || "")}</div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 8px;border-radius:4px;background:var(--surface-inset);font-size:0.71rem;">
+              <span>${escapeHtml(trOrKey("card.delta_verdict_label", {}, st))} <strong>${escapeHtml(expectedOutcomeText)}</strong></span>
+              <span>· ${escapeHtml(trOrKey("card.delta_time_label", {}, st))} <strong class="metric-value">${escapeHtml(formatFpMinutesForState(delta.delay_change_min_fp, st, true))}</strong></span>
+              <span>· ${escapeHtml(safetyDeltaLabel)} <strong class="metric-value">${escapeHtml(formatFpMinutesForState(delta.safety_margin_gain_fp, st, true))}</strong></span>
+              <span>· ${escapeHtml(trOrKey("card.delta_groups_label", {}, st))} <strong>${escapeHtml(groupsSummary)}</strong></span>
             </div>
 
             ${
-              cf && cf.ok
+              isProofOpen
                 ? `
-              <div class="metric-value" style="padding:8px; border-radius:5px; background:var(--status-nominal-bg); border:1px solid var(--status-nominal); font-size:0.73rem;">
-                <div><strong>Karşı-Olgu Dalı (${escapeHtml(cf.branch_id)}):</strong></div>
-                <div>Hüküm Geçişi: <strong>${escapeHtml(cf.base_verdict)} → ${escapeHtml(cf.branch_verdict)}</strong></div>
-                <div>Dal Mühürü: <strong>${escapeHtml(String(cf.branch_state_blake3 || "").slice(0, 16))}…</strong></div>
-              </div>`
+            <div class="wr-tech-proof-drawer" translate="no">
+              <div>card_id: ${escapeHtml(card.card_id)} · branch_id: ${escapeHtml(card.branch_id)}</div>
+              <div>state_blake3: ${escapeHtml(card.state_blake3 || stateBlake3)}</div>
+              <div>branch_state_blake3: ${escapeHtml(delta.branch_state_blake3 || "")}</div>
+              <div>delay_change_min_fp="${escapeHtml(delta.delay_change_min_fp || "0")}" · safety_margin_gain_fp="${escapeHtml(delta.safety_margin_gain_fp || "0")}"</div>
+              <div>triggered_rules: ${escapeHtml(((card.auditor_check && card.auditor_check.triggered_rules) || []).join(", "))}</div>
+            </div>`
                 : ""
             }
+
+            <div class="wr-evidence-pill-row">
+              ${(card.evidence_refs || [])
+                .map((evRef) => {
+                  const pillText = isTech
+                    ? `${epistemicSymbol(evRef.epistemic_status)} ${evRef.event_id} · ${evRef.epistemic_status}`
+                    : `${epistemicSymbol(evRef.epistemic_status)} ${warRoomI18n ? warRoomI18n.formatSourceName(evRef.source_id, ctx) : evRef.source_id} · ${warRoomI18n ? warRoomI18n.formatEpistemicShort(evRef.epistemic_status, ctx) : evRef.epistemic_status}`;
+                  return `<button type="button" class="wr-evidence-pill" data-epistemic="${escapeHtml(evRef.epistemic_status)}" data-focus-evidence="${escapeHtml(evRef.event_id)}" ${isTech ? 'translate="no"' : ""}>${escapeHtml(pillText)}</button>`;
+                })
+                .join("")}
+            </div>
+
+            ${
+              seal
+                ? `
+            <div style="padding:7px 9px;border-radius:4px;background:var(--status-nominal-bg);border:1px solid var(--status-nominal);color:var(--status-nominal);font-size:0.71rem;" class="hash-badge">
+              ${escapeHtml(
+                trOrKey(
+                  "card.sealed_banner",
+                  {
+                    pubkey: String(seal.operator_pubkey || "").slice(0, 16),
+                    sig: String(seal.operator_sig || "").slice(0, 20),
+                  },
+                  st
+                )
+              )}
+            </div>`
+                : !canSign
+                  ? `
+            <div style="padding:6px 8px;border-radius:4px;background:var(--status-caution-bg);border:1px dashed var(--status-caution);color:var(--status-caution);font-size:0.71rem;">
+              ${escapeHtml(trOrKey("card.auditor_lock_banner", {}, st))}
+            </div>`
+                  : ""
+            }
+
+            <div class="wr-action-btn-row">
+              <button type="button" class="wr-btn" data-card-focus="${escapeHtml(card.card_id)}">${escapeHtml(trOrKey("dock.btn_show_on_map", {}, st))}</button>
+              <button type="button" class="wr-btn" data-card-stress="${escapeHtml(card.card_id)}">${escapeHtml(trOrKey("dock.btn_simulate", {}, st))}</button>
+              <button type="button" class="wr-btn wr-btn-seal" data-card-sign="${escapeHtml(card.card_id)}" ${canSign && !seal ? "" : "disabled"}>
+                ${escapeHtml(trOrKey(seal ? "dock.btn_approved_done" : "dock.btn_approve_sign", {}, st))}
+              </button>
+            </div>
+          </article>`;
+          })
+          .join("")}
+      </div>
+
+      <details class="wr-assistant-drawer" open>
+        <summary class="wr-assistant-summary">
+          <span>💬 ${escapeHtml(trOrKey("assistant.drawer_title", {}, st))}</span>
+          <span class="wr-mode-pill">${escapeHtml(trOrKey("assistant.drawer_badge", {}, st))}</span>
+        </summary>
+        <div class="wr-assistant-body">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button type="button" class="wr-layer-chip" data-assistant-preset="${escapeHtml(trOrKey("dock.assistant_preset_explain", {}, st))}">${escapeHtml(trOrKey("dock.assistant_preset_explain", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-assistant-preset="${escapeHtml(trOrKey("dock.assistant_preset_berth", {}, st))}">${escapeHtml(trOrKey("dock.assistant_preset_berth", {}, st))}</button>
           </div>
+          <form id="wr-assistant-form" style="display:flex;gap:6px;">
+            <input id="wr-assistant-input" name="assistant_query" type="text" autocomplete="off" spellcheck="false" class="wr-input" style="flex:1;min-width:0;" placeholder="${escapeHtml(trOrKey("dock.assistant_placeholder", {}, st))}" aria-label="${escapeHtml(trOrKey("dock.assistant_input_aria", {}, st))}" />
+            <button type="submit" class="wr-btn wr-btn-active">${escapeHtml(trOrKey("dock.assistant_ask_btn", {}, st))}</button>
+          </form>
+          ${
+            latestReply
+              ? `
+          <div role="status" aria-live="polite" style="padding:7px 9px;border-radius:4px;background:var(--surface-panel);border:1px solid var(--border-subtle);font-size:0.72rem;">
+            ${
+              isTech
+                ? `<div class="hash-badge" translate="no" style="color:var(--epistemic-observation);margin-bottom:3px;">
+                    ${escapeHtml(trOrKey("assistant.tools_label", {}, st))} ${escapeHtml((latestReply.mcp_tools_invoked || []).join(" → "))}
+                  </div>`
+                : ""
+            }
+            <div>${escapeHtml(latestReply.structured_answer || latestReply.structured_answer_tr || "")}</div>
+            ${
+              Array.isArray(latestReply.focus_chips) && latestReply.focus_chips.length > 0
+                ? `<div class="wr-focus-chip-row">
+                    ${latestReply.focus_chips
+                      .map(
+                        (chip) =>
+                          `<button type="button" class="wr-evidence-pill" data-epistemic="OBSERVATION" data-assistant-focus-chip="${escapeHtml(chip.chip_kind)}" data-chip-event="${escapeHtml(chip.event_id || "")}" data-chip-card="${escapeHtml(chip.card_id || "")}">${escapeHtml(chip.label)}</button>`
+                      )
+                      .join("")}
+                  </div>`
+                : ""
+            }
+          </div>`
+              : ""
+          }
         </div>
-      `;
+      </details>
+    `;
+
+    function toTrackX(msStr) {
+      const v = BigInt(msStr);
+      const span = TIMELINE_MAX_MS - TIMELINE_MIN_MS;
+      const clamped = v < TIMELINE_MIN_MS ? TIMELINE_MIN_MS : v > TIMELINE_MAX_MS ? TIMELINE_MAX_MS : v;
+      const num = Number(((clamped - TIMELINE_MIN_MS) * 620n) / span);
+      return 88 + num;
     }
 
-    function buildAirGappedAegeanGeoJson() {
-      const isT2 = BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS);
-      const features = [
-        {
-          type: "Feature",
-          properties: { kind: "land", name: "Sığacık / Seferihisar Yarımadası" },
-          geometry: {
-            type: "Polygon",
-            coordinates: [[[26.62, 38.28], [27.02, 38.28], [27.05, 38.15], [26.84, 38.18], [26.76, 38.19], [26.64, 38.22], [26.62, 38.28]]],
-          },
-        },
-        {
-          type: "Feature",
-          properties: { kind: "land", name: "Sisam (Samos) Adası" },
-          geometry: {
-            type: "Polygon",
-            coordinates: [[[26.66, 37.81], [27.06, 37.80], [27.08, 37.68], [26.68, 37.69], [26.66, 37.81]]],
-          },
-        },
-      ];
-      if (st.mapLayers.h3Wave) {
-        features.push({
-          type: "Feature",
-          properties: { kind: "h3_cell", risk: isT2 ? "CRITICAL" : "CAUTION", wave: isT2 ? "3.15m" : "2.45m" },
-          geometry: {
-            type: "Polygon",
-            coordinates: [[[26.78, 38.05], [26.88, 38.07], [26.94, 38.00], [26.89, 37.93], [26.79, 37.92], [26.74, 37.99], [26.78, 38.05]]],
-          },
-        });
+    const needleX = toTrackX(st.cutoffLearnedAtMs);
+    const scrollTopPx = Number(opts.scrollTopPx || 0);
+    const viewportHeightPx = 180;
+    const startIdx = Math.max(0, Math.floor(scrollTopPx / VIRTUAL_ROW_HEIGHT_PX) - 2);
+    const endIdx = Math.min(
+      decoratedRows.length,
+      startIdx + Math.ceil(viewportHeightPx / VIRTUAL_ROW_HEIGHT_PX) + 5
+    );
+
+    function formatRowValue(r) {
+      if (isTech) return r.primary_fp_val;
+      if (r.primary_metric_key === "delay_min_fp") {
+        return formatFpMinutesForState(r.primary_fp_val, st, true);
       }
+      if (r.primary_metric_key === "wave_m_fp") {
+        return formatFpMetersForState(r.primary_fp_val, st, 2);
+      }
+      if (r.primary_metric_key === "baro_alt_m_fp") {
+        return formatFpMetersForState(r.primary_fp_val, st, 1);
+      }
+      if (r.primary_metric_key === "wind_speed_mps_fp") {
+        const mStr = formatFpMetersForState(r.primary_fp_val, st, 1);
+        return mStr.replace(/\s+m$/, " " + trOrKey("unit.mps_short", {}, st));
+      }
+      return r.primary_fp_val;
+    }
+
+    function renderVirtualRowsHtml(rowsSlice, offsetIndex) {
+      return rowsSlice
+        .map((r, i) => {
+          const absIdx = offsetIndex + i;
+          const topPx = absIdx * VIRTUAL_ROW_HEIGHT_PX;
+          const seqCellText = isTech
+            ? `${r.seq_no}${r.exceeds_ieee754_safe_int ? " (>2^53)" : ""}`
+            : `#${r.seq_no}`;
+          const evIdCellText = isTech ? r.event_id : `#${r.row_index + 1}`;
+          const srcCellText = warRoomI18n
+            ? warRoomI18n.formatSourceName(r.source_id, ctx)
+            : r.source_id;
+          const epCellText = warRoomI18n
+            ? warRoomI18n.formatEpistemicShort(r.epistemic_status, ctx)
+            : r.epistemic_status;
+          const valCellText = formatRowValue(r);
+
+          return `
+            <div class="wr-virtual-grid-row" role="row" tabindex="0"
+              style="top:${topPx}px;"
+              data-row-event-id="${escapeHtml(r.event_id)}"
+              data-row-learned-ms="${escapeHtml(r.learned_at_ms)}"
+              data-future="${r.is_future}"
+              data-rejected="${r.is_rejected}"
+              data-selected="${st.selectedEventId === r.event_id}">
+              <span class="metric-value wr-cell-ellipsis" translate="no" title="seq_no=${escapeHtml(r.seq_no)}">${escapeHtml(seqCellText)}</span>
+              <span class="metric-value wr-cell-ellipsis" translate="no">${escapeHtml(evIdCellText)}</span>
+              <span class="wr-cell-ellipsis" ${isTech ? 'translate="no"' : ""} title="${escapeHtml(srcCellText)}">${escapeHtml(srcCellText)}</span>
+              <span><span class="wr-epistemic-badge" data-epistemic="${escapeHtml(r.epistemic_status)}">${epistemicSymbol(r.epistemic_status)} ${escapeHtml(epCellText)}</span></span>
+              <span class="timestamp-cell wr-cell-ellipsis">${escapeHtml(formatClockForState(r.observed_at_ms, st))}</span>
+              <span class="timestamp-cell wr-cell-ellipsis">${escapeHtml(formatClockForState(r.learned_at_ms, st))}</span>
+              <span class="metric-value wr-cell-ellipsis" ${isTech ? 'translate="no"' : ""}>${escapeHtml(valCellText)}</span>
+              <span class="wr-cell-ellipsis">${escapeHtml(r.temporal_status_label)}</span>
+            </div>`;
+        })
+        .join("");
+    }
+
+    const conductorReadoutValue = isTech
+      ? `${st.cutoffLearnedAtMs} (${formatClockForState(st.cutoffLearnedAtMs, st)})`
+      : formatClockForState(st.cutoffLearnedAtMs, st);
+
+    const conductorHtml = `
+      <section class="wr-conductor-card" aria-label="${escapeHtml(trOrKey("conductor.aria_region", {}, st))}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+          <h2 style="margin:0;font-weight:800;font-size:0.77rem;">${escapeHtml(trOrKey("conductor.title", {}, st))}</h2>
+          <span class="timestamp-cell" style="font-size:0.72rem;color:var(--epistemic-observation);">
+            ${escapeHtml(trOrKey("conductor.readout_prefix", {}, st))} <strong>${escapeHtml(conductorReadoutValue)}</strong>
+          </span>
+        </div>
+
+        <div class="wr-bitemporal-tracks">
+          <svg class="wr-track-svg" viewBox="0 0 730 54" role="img" aria-label="${escapeHtml(trOrKey("conductor.aria_tracks", {}, st))}">
+            <text x="6" y="18" fill="var(--text-muted)" font-size="9.2">${escapeHtml(trOrKey("conductor.track_upper", {}, st))}</text>
+            <line x1="88" y1="15" x2="708" y2="15" stroke="var(--border-strong)" stroke-width="1.4"/>
+            <text x="6" y="42" fill="var(--text-muted)" font-size="9.2">${escapeHtml(trOrKey("conductor.track_lower", {}, st))}</text>
+            <line x1="88" y1="39" x2="708" y2="39" stroke="var(--border-strong)" stroke-width="1.4"/>
+
+            ${st.catalogRows
+              .map((r) => {
+                const ox = toTrackX(r.observed_at_ms);
+                const lx = toTrackX(r.learned_at_ms);
+                const fut = BigInt(r.learned_at_ms) > cutoffBig;
+                const col =
+                  r.epistemic_status === "OBSERVATION"
+                    ? "var(--epistemic-observation)"
+                    : r.epistemic_status === "CLAIM"
+                      ? "var(--epistemic-claim)"
+                      : "var(--epistemic-hypothesis)";
+                return `
+              <g style="opacity:${fut ? "0.32" : "1"}">
+                <line x1="${ox}" y1="15" x2="${lx}" y2="39" stroke="${col}" stroke-width="1.1" stroke-dasharray="2 2"/>
+                <circle cx="${ox}" cy="15" r="3.6" fill="${col}"/>
+                <rect x="${lx - 3.5}" y="35.5" width="7" height="7" fill="${col}"/>
+              </g>`;
+              })
+              .join("")}
+
+            <line x1="${needleX}" y1="4" x2="${needleX}" y2="50" stroke="var(--status-critical)" stroke-width="2.2"/>
+          </svg>
+
+          <input id="wr-cutoff-range" name="cutoff_learned_at_ms" class="wr-cutoff-slider" type="range"
+            min="${TIMELINE_MIN_MS.toString()}" max="${TIMELINE_MAX_MS.toString()}" step="5000"
+            value="${escapeHtml(st.cutoffLearnedAtMs)}"
+            aria-label="${escapeHtml(trOrKey("conductor.aria_slider", {}, st))}" />
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button type="button" class="wr-btn ${st.playbackMode === "LIVE" ? "wr-btn-active" : ""}" id="wr-btn-toggle-play" title="Space">
+              ${escapeHtml(trOrKey(st.playbackMode === "LIVE" ? "conductor.btn_live" : "conductor.btn_replay", {}, st))}
+            </button>
+            <div class="wr-segmented-group" role="group" aria-label="${escapeHtml(trOrKey("conductor.aria_speed", {}, st))}">
+              <button type="button" class="wr-seg-btn" data-replay-speed="1" aria-pressed="${st.replaySpeed === 1}" translate="no">1×</button>
+              <button type="button" class="wr-seg-btn" data-replay-speed="10" aria-pressed="${st.replaySpeed === 10}" translate="no">10×</button>
+            </div>
+            <button type="button" class="wr-btn" id="wr-btn-step-prev" title="[">${escapeHtml(trOrKey("conductor.btn_prev", {}, st))}</button>
+            <button type="button" class="wr-btn" id="wr-btn-step-next" title="]">${escapeHtml(trOrKey("conductor.btn_next", {}, st))}</button>
+          </div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === T1_CUTOFF_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${T1_CUTOFF_MS}">${escapeHtml(trOrKey("conductor.snap_t1", {}, st))}</button>
+            <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === TAMPER_CHECK_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${TAMPER_CHECK_MS}">${escapeHtml(trOrKey("conductor.snap_tamper", {}, st))}</button>
+            <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === T2_CUTOFF_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${T2_CUTOFF_MS}">${escapeHtml(trOrKey("conductor.snap_t2", {}, st))}</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="wr-telemetry-card" aria-label="${escapeHtml(trOrKey("table.aria_grid", {}, st))}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+          <h2 style="margin:0;font-weight:800;font-size:0.77rem;">${escapeHtml(trOrKey("table.toolbar_title", { count: decoratedRows.length }, st))}</h2>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;" role="group" aria-label="${escapeHtml(trOrKey("table.aria_filter", {}, st))}">
+            <button type="button" class="wr-layer-chip" data-epistemic-filter="ALL" aria-pressed="${st.epistemicFilter === "ALL"}">${escapeHtml(trOrKey("table.filter_all", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-epistemic-filter="OBSERVATION" aria-pressed="${st.epistemicFilter === "OBSERVATION"}">${escapeHtml(trOrKey("map.legend_obs", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-epistemic-filter="CLAIM" aria-pressed="${st.epistemicFilter === "CLAIM"}">${escapeHtml(trOrKey("map.legend_claim", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-epistemic-filter="HYPOTHESIS" aria-pressed="${st.epistemicFilter === "HYPOTHESIS"}">${escapeHtml(trOrKey("map.legend_hyp", {}, st))}</button>
+            <button type="button" class="wr-layer-chip" data-epistemic-filter="REJECTED" aria-pressed="${st.epistemicFilter === "REJECTED"}">${escapeHtml(trOrKey("table.filter_quarantine", {}, st))}</button>
+          </div>
+        </div>
+
+        <div class="wr-virtual-grid-header" role="row">
+          <span>${escapeHtml(trOrKey("table.col_seq", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_event", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_source", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_epistemic", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_observed", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_learned", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_value", {}, st))}</span>
+          <span>${escapeHtml(trOrKey("table.col_status", {}, st))}</span>
+        </div>
+
+        <div class="wr-virtual-viewport" id="wr-virtual-viewport" role="grid" aria-rowcount="${decoratedRows.length}">
+          <div class="wr-virtual-spacer" id="wr-virtual-spacer" style="height:${decoratedRows.length * VIRTUAL_ROW_HEIGHT_PX}px;">
+            ${renderVirtualRowsHtml(decoratedRows.slice(startIdx, endIdx), startIdx)}
+          </div>
+        </div>
+      </section>
+    `;
+
+    const mfObj = model.getManifestObject();
+    const validationInfo = (st.sliceSync && st.sliceSync.validation) || {};
+    const sealedList = Object.values(st.sealedCards);
+
+    const sealModalHtml = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+        <h2 style="margin:0;font-weight:800;font-size:0.92rem;">🔒 ${escapeHtml(trOrKey("seal_modal.title", {}, st))}</h2>
+        <button type="button" class="wr-btn" id="wr-btn-close-seal-modal">${escapeHtml(trOrKey("modal.close_esc", {}, st))}</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:0.75rem;">
+        <div class="hash-badge" translate="no" style="padding:8px;border-radius:5px;background:var(--surface-inset);border:1px solid var(--border-subtle);word-break:break-all;">
+          <div><strong>state_blake3:</strong> ${escapeHtml(stateBlake3 || "—")}</div>
+          <div><strong>audit_chain_head:</strong> ${escapeHtml(st.auditChainHead || stateBlake3 || "—")}</div>
+          <div><strong>trust_anchor_pubkey:</strong> ${escapeHtml(mfObj.trust_anchor_pubkey || "—")}</div>
+          <div><strong>manifest_sig:</strong> ${escapeHtml(mfObj.manifest_sig || "—")}</div>
+        </div>
+        <div>
+          ${escapeHtml(
+            trOrKey(
+              "seal_modal.packets_summary",
+              {
+                accepted: validationInfo.accepted_count || 0,
+                rejected: validationInfo.rejected_count || 0,
+              },
+              st
+            )
+          )}
+        </div>
+        <div>
+          <strong>${escapeHtml(trOrKey("seal_modal.sealed_cards_heading", { count: sealedList.length }, st))}</strong>
+          ${
+            sealedList.length === 0
+              ? `<div style="color:var(--text-muted);margin-top:4px;">${escapeHtml(trOrKey("seal_modal.no_sealed_cards", {}, st))}</div>`
+              : sealedList
+                  .map(
+                    (s) => `
+                <div class="hash-badge" translate="no" style="margin-top:5px;padding:7px;border-radius:4px;background:var(--status-nominal-bg);border:1px solid var(--status-nominal);word-break:break-all;">
+                  <div>card_id=${escapeHtml(s.card_id)} · approved_at_ms=${escapeHtml(s.approved_at_ms)}</div>
+                  <div>operator_pubkey=${escapeHtml(s.operator_pubkey)}</div>
+                  <div>operator_sig=${escapeHtml(s.operator_sig)}</div>
+                </div>`
+                  )
+                  .join("")
+          }
+        </div>
+      </div>
+    `;
+
+    return {
+      topBarHtml,
+      stageRuleBanner,
+      stageHtml: st.stageMode === "MAP" ? mapHtml : graphHtml,
+      dockHtml,
+      conductorHtml,
+      sealModalHtml,
+      decoratedRows,
+      renderVirtualRowsHtml,
+    };
+  }
+
+  /**
+   * Canlı Tarayıcı DOM Denetleyicisi:
+   * - `index.html` açıldığında varsayılan olarak `Sade Operatör Görünümü` (`locale = "tr"`, `register = "plain"`) ile başlar.
+   * - `ws://127.0.0.1:47809` AG-UI sunucusuna otomatik bağlanır; sunucu kapalıysa veya `file://`
+   *   üzerinden açılmışsa %100 hava boşluklu yerel paketle sıfır hata ve sıfır dış ağ isteğiyle çalışır.
+   */
+  function mountWarRoomCockpitDom(mountOptions = {}) {
+    if (typeof document === "undefined") return null;
+
+    let urlLocale = null;
+    let urlRegister = null;
+    let urlTheme = null;
+    let urlStage = null;
+    try {
+      const sp = new URLSearchParams(window.location.search || "");
+      if (sp.get("lang") === "en" || sp.get("lang") === "tr") urlLocale = sp.get("lang");
+      if (sp.get("view") === "technical" || sp.get("view") === "plain") {
+        urlRegister = sp.get("view");
+      }
+      if (sp.get("theme") === "day" || sp.get("theme") === "dusk" || sp.get("theme") === "night") {
+        urlTheme = sp.get("theme");
+      }
+      if (sp.get("stage") === "MAP" || sp.get("stage") === "GRAPH") {
+        urlStage = sp.get("stage");
+      }
+    } catch (_) {}
+
+    const model = createWarRoomCockpitModel({
+      ...mountOptions,
+      initialLocale: urlLocale || mountOptions.initialLocale || "tr",
+      initialRegister: urlRegister || mountOptions.initialRegister || "plain",
+      initialTheme: urlTheme || mountOptions.initialTheme || "dusk",
+      initialStageMode: urlStage || mountOptions.initialStageMode || "MAP",
+    });
+
+    let shell = document.getElementById("caelus-war-room-cockpit-shell");
+    if (!shell) {
+      shell = document.createElement("div");
+      shell.id = "caelus-war-room-cockpit-shell";
+      shell.className = "wr-cockpit-shell";
+      document.body.insertBefore(shell, document.body.firstChild);
+    }
+
+    let returnPill = document.getElementById("wr-return-to-cockpit-pill");
+    if (!returnPill) {
+      returnPill = document.createElement("button");
+      returnPill.id = "wr-return-to-cockpit-pill";
+      returnPill.type = "button";
+      returnPill.className = "wr-return-floating-pill";
+      document.body.appendChild(returnPill);
+    }
+
+    shell.innerHTML = `
+      <header class="wr-top-command-bar" id="wr-top-bar"></header>
+      <div class="wr-main-workspace">
+        <main class="wr-stage-panel" id="wr-stage-region">
+          <div class="wr-panel-toolbar">
+            <div class="wr-segmented-group" role="tablist" id="wr-stage-tablist">
+              <button type="button" class="wr-seg-btn" role="tab" id="wr-tab-map"></button>
+              <button type="button" class="wr-seg-btn" role="tab" id="wr-tab-graph"></button>
+            </div>
+            <span id="wr-stage-rule-banner" style="font-size:0.72rem;color:var(--text-secondary);"></span>
+          </div>
+          <div class="wr-stage-viewport" id="wr-stage-viewport"></div>
+        </main>
+        <aside class="wr-agent-dock-panel" id="wr-agent-dock"></aside>
+      </div>
+      <div class="wr-bottom-conductor-zone" id="wr-bottom-conductor"></div>
+
+      <div class="wr-modal-backdrop" id="wr-seal-modal-backdrop" hidden>
+        <div class="wr-modal-dialog" role="dialog" aria-modal="true" id="wr-seal-modal-body"></div>
+      </div>
+
+      <div class="wr-modal-backdrop" id="wr-cmdk-modal-backdrop" hidden>
+        <div class="wr-modal-dialog" role="dialog" aria-modal="true" id="wr-cmdk-dialog">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+            <h2 id="wr-cmdk-heading" style="margin:0;font-weight:800;font-size:0.90rem;"></h2>
+            <button type="button" class="wr-btn" id="wr-btn-close-cmdk"></button>
+          </div>
+          <input id="wr-cmdk-input" name="cmdk_search" type="search" autocomplete="off" spellcheck="false" class="wr-input" style="width:100%;margin-bottom:8px;" />
+          <div id="wr-cmdk-results" style="display:flex;flex-direction:column;gap:5px;"></div>
+        </div>
+      </div>
+    `;
+
+    document.documentElement.setAttribute("data-c2-cockpit", "active");
+    document.body.setAttribute("data-c2-cockpit", "active");
+
+    let virtualScrollTop = 0;
+    let scrollRafPending = false;
+    let wsConn = null;
+    let livePlayInterval = null;
+    let maplibreInstance = null;
+    let deckOverlayInstance = null;
+    let cesiumViewerInstance = null;
+
+    function syncDocumentThemeAndLocaleMeta() {
+      const st = model.state;
+      document.documentElement.lang = st.locale;
+      document.documentElement.setAttribute("data-c2-register", st.register);
+      document.body.setAttribute("data-c2-register", st.register);
+      document.documentElement.setAttribute("data-ob-theme", st.theme);
+      document.body.setAttribute("data-ob-theme", st.theme);
+
+      const themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) {
+        themeMeta.setAttribute(
+          "content",
+          st.theme === "day" ? "#e9eef5" : st.theme === "night" ? "#050505" : "#0b1017"
+        );
+      }
+
+      try {
+        if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.set("lang", st.locale);
+          nextUrl.searchParams.set("view", st.register);
+          nextUrl.searchParams.set("theme", st.theme);
+          nextUrl.searchParams.set("stage", st.stageMode);
+          window.history.replaceState(null, "", nextUrl.toString());
+        }
+      } catch (_) {}
+    }
+
+    function sendWsJson(obj) {
+      if (wsConn && wsConn.readyState === 1) {
+        wsConn.send(JSON.stringify(obj));
+        return true;
+      }
+      return false;
+    }
+
+    function notifyWsLocaleRegisterChange() {
+      sendWsJson({
+        cmd: "SET_LOCALE_REGISTER",
+        cutoff_learned_at_ms: model.state.cutoffLearnedAtMs,
+        locale: model.state.locale,
+        register: model.state.register,
+      });
+    }
+
+    function buildLocalTacticalGeoJson(st) {
+      const cutoffBig = BigInt(st.cutoffLearnedAtMs);
+      const atT2 = cutoffBig >= BigInt(T2_CUTOFF_MS);
+      const ctx = getI18nCtx(st);
+      const vesselLon = atT2 ? 26.83711 : 26.8095;
+      const vesselLat = atT2 ? 38.19542 : 38.182;
+      const speedLabel = warRoomI18n
+        ? warRoomI18n.formatFpSpeedKn("14200000", ctx)
+        : "14.2 kn";
+      const features = [];
+
       if (st.mapLayers.route) {
         features.push(
           {
             type: "Feature",
-            properties: { kind: "route_primary" },
+            properties: {
+              kind: "ROUTE_PRIMARY",
+              stroke: st.highlightedCorridor === "PRIMARY_NORTH" ? "#ff3b30" : "#64748b",
+            },
             geometry: {
               type: "LineString",
-              coordinates: [[26.784, 38.194], [26.845, 38.055], [26.915, 37.910], [26.972, 37.756]],
+              coordinates: [
+                [26.976, 37.757],
+                [26.895, 37.985],
+                [26.8404, 38.1998],
+              ],
             },
           },
           {
             type: "Feature",
-            properties: { kind: "route_sheltered" },
+            properties: {
+              kind: "ROUTE_SHELTERED",
+              stroke: st.highlightedCorridor === "SOUTH_SAMOS_SHELTERED" ? "#30d158" : "#2dd4bf",
+            },
             geometry: {
               type: "LineString",
-              coordinates: [[26.784, 38.194], [26.745, 38.010], [26.835, 37.845], [26.972, 37.756]],
+              coordinates: [
+                [26.976, 37.757],
+                [26.785, 37.925],
+                [26.8422, 38.1982],
+              ],
             },
           }
         );
       }
-      if (st.mapLayers.ais) {
+
+      if (st.mapLayers.h3Wave) {
         features.push({
           type: "Feature",
-          properties: { kind: "vessel", label: "VESSEL_AEGEAN_01 · 14.2 kn" },
+          properties: { kind: "H3_WAVE_CELL", label: "3.15 m" },
           geometry: {
-            type: "Point",
-            coordinates: isT2 ? [26.832, 38.082] : [26.805, 38.138],
+            type: "Polygon",
+            coordinates: [
+              [
+                [26.8, 38.01],
+                [26.86, 38.03],
+                [26.88, 38.09],
+                [26.83, 38.13],
+                [26.77, 38.11],
+                [26.76, 38.05],
+                [26.8, 38.01],
+              ],
+            ],
           },
         });
       }
-      if (st.mapLayers.airspace && BigInt(st.cutoffLearnedAtMs) >= 1762849260000n) {
+
+      if (st.mapLayers.ais) {
         features.push({
           type: "Feature",
-          properties: { kind: "aircraft", label: "SAR_HELI_AEGEAN_04 · 450m" },
-          geometry: { type: "Point", coordinates: [26.742, 37.965] },
+          properties: {
+            kind: "VESSEL",
+            label: `${trOrKey("map.vessel_name", {}, st)} (${speedLabel})`,
+            color: atT2 ? "#ff3b30" : "#2dd4bf",
+          },
+          geometry: { type: "Point", coordinates: [vesselLon, vesselLat] },
         });
       }
+
+      if (st.mapLayers.berth) {
+        features.push(
+          {
+            type: "Feature",
+            properties: {
+              kind: "BERTH_A",
+              label: trOrKey(atT2 ? "map.berth_a_locked" : "map.berth_a_watch", {}, st),
+              color: "#ff3b30",
+            },
+            geometry: { type: "Point", coordinates: [26.84041, 38.19985] },
+          },
+          {
+            type: "Feature",
+            properties: {
+              kind: "BERTH_B",
+              label: trOrKey("map.berth_b_backup", {}, st),
+              color: "#30d158",
+            },
+            geometry: { type: "Point", coordinates: [26.8432, 38.1978] },
+          }
+        );
+      }
+
+      if (st.mapLayers.airspace && cutoffBig >= 1762849260000n) {
+        features.push({
+          type: "Feature",
+          properties: {
+            kind: "AIRCRAFT",
+            label: `${trOrKey("map.heli_name", {}, st)} · 450 m`,
+            color: "#ffcc00",
+          },
+          geometry: { type: "Point", coordinates: [26.811, 38.142] },
+        });
+      }
+
       return { type: "FeatureCollection", features };
     }
 
-    function mountActiveGeoAdapterIfNeeded() {
-      destroyLiveGeoAdapters();
-      if (st.stageMode !== "MAP" || st.mapEngine === "SVG") return;
-      const mountEl = stageEl.querySelector("#wr-live-geo-mount");
-      if (!mountEl) return;
+    function syncLiveMapLibreAndDeckGl() {
+      const st = model.state;
+      if (st.stageMode !== "MAP" || st.mapEngine !== "MAPLIBRE_DECK") return;
+      const host = document.getElementById("wr-live-maplibre-deck-host");
+      if (!host || typeof window.maplibregl === "undefined") return;
 
-      if (st.mapEngine === "MAPLIBRE_DECK" && typeof window !== "undefined" && window.maplibregl) {
-        try {
-          if (window.pmtiles && window.pmtiles.Protocol && !pmtilesProtocolBound && window.maplibregl.addProtocol) {
-            const pmtProto = new window.pmtiles.Protocol();
-            window.maplibregl.addProtocol("pmtiles", pmtProto.tile);
-            pmtilesProtocolBound = true;
+      const geoData = buildLocalTacticalGeoJson(st);
+      const seaBg =
+        st.theme === "day" ? "#dbeafe" : st.theme === "night" ? "#050505" : "#07111f";
+
+      try {
+        if (!maplibreInstance || maplibreInstance.getContainer() !== host) {
+          if (maplibreInstance) {
+            try {
+              maplibreInstance.remove();
+            } catch (_) {}
           }
-          const geoData = buildAirGappedAegeanGeoJson();
-          const seaBg = st.theme === "day" ? "#dbeafe" : st.theme === "night" ? "#050505" : "#07111f";
-          const landFill = st.theme === "day" ? "#f1f5f9" : st.theme === "night" ? "#17110d" : "#152033";
-          const landLine = st.theme === "day" ? "#475569" : st.theme === "night" ? "#d97736" : "#385175";
-          liveMapInstance = new window.maplibregl.Map({
-            container: mountEl,
+          maplibreInstance = new window.maplibregl.Map({
+            container: host,
             attributionControl: false,
-            center: [26.86, 37.97],
-            zoom: 8.5,
-            pitch: 28,
+            center: [26.855, 38.03],
+            zoom: 9.1,
+            pitch: 32,
             style: {
               version: 8,
               sources: {
-                aegean_airgapped: { type: "geojson", data: geoData },
+                "caelus-tactical": { type: "geojson", data: geoData },
               },
               layers: [
-                { id: "bg-sea", type: "background", paint: { "background-color": seaBg } },
                 {
-                  id: "land-poly",
+                  id: "sea-bg",
+                  type: "background",
+                  paint: { "background-color": seaBg },
+                },
+                {
+                  id: "h3-wave-fill",
                   type: "fill",
-                  source: "aegean_airgapped",
-                  filter: ["==", ["get", "kind"], "land"],
-                  paint: { "fill-color": landFill, "fill-opacity": 0.96 },
+                  source: "caelus-tactical",
+                  filter: ["==", ["get", "kind"], "H3_WAVE_CELL"],
+                  paint: { "fill-color": "#a78bfa", "fill-opacity": 0.24 },
                 },
                 {
-                  id: "land-outline",
+                  id: "corridor-lines",
                   type: "line",
-                  source: "aegean_airgapped",
-                  filter: ["==", ["get", "kind"], "land"],
-                  paint: { "line-color": landLine, "line-width": 1.6 },
+                  source: "caelus-tactical",
+                  filter: ["in", ["get", "kind"], ["literal", ["ROUTE_PRIMARY", "ROUTE_SHELTERED"]]],
+                  paint: {
+                    "line-color": ["coalesce", ["get", "stroke"], "#2dd4bf"],
+                    "line-width": 3,
+                  },
                 },
                 {
-                  id: "h3-wave-poly",
-                  type: "fill",
-                  source: "aegean_airgapped",
-                  filter: ["==", ["get", "kind"], "h3_cell"],
-                  paint: { "fill-color": "#ff3b30", "fill-opacity": 0.24 },
-                },
-                {
-                  id: "route-primary-line",
-                  type: "line",
-                  source: "aegean_airgapped",
-                  filter: ["==", ["get", "kind"], "route_primary"],
-                  paint: { "line-color": "#ff3b30", "line-width": 3, "line-dasharray": [2, 2] },
-                },
-                {
-                  id: "route-sheltered-line",
-                  type: "line",
-                  source: "aegean_airgapped",
-                  filter: ["==", ["get", "kind"], "route_sheltered"],
-                  paint: { "line-color": "#30d158", "line-width": 2.6 },
-                },
-                {
-                  id: "vessel-circle",
+                  id: "tactical-points",
                   type: "circle",
-                  source: "aegean_airgapped",
-                  filter: ["in", ["get", "kind"], ["literal", ["vessel", "aircraft"]]],
-                  paint: { "circle-radius": 7, "circle-color": "#2dd4bf", "circle-stroke-width": 2, "circle-stroke-color": "#0b1017" },
+                  source: "caelus-tactical",
+                  filter: ["==", ["geometry-type"], "Point"],
+                  paint: {
+                    "circle-radius": 7,
+                    "circle-color": ["coalesce", ["get", "color"], "#2dd4bf"],
+                    "circle-stroke-color": "#0b1017",
+                    "circle-stroke-width": 2,
+                  },
                 },
               ],
             },
           });
+
           if (window.deck && window.deck.MapboxOverlay && window.deck.ScatterplotLayer) {
-            liveDeckOverlay = new window.deck.MapboxOverlay({
+            deckOverlayInstance = new window.deck.MapboxOverlay({
+              interleaved: false,
               layers: [
                 new window.deck.ScatterplotLayer({
-                  id: "wr-deck-ports",
-                  data: [
-                    { coords: [26.784, 38.194], color: [255, 59, 48, 210] },
-                    { coords: [26.972, 37.756], color: [45, 212, 191, 210] },
-                  ],
-                  getPosition: (d) => d.coords,
-                  getFillColor: (d) => d.color,
+                  id: "caelus-deck-vessels",
+                  data: geoData.features.filter((f) => f.geometry.type === "Point"),
+                  getPosition: (d) => d.geometry.coordinates,
                   getRadius: 1100,
+                  getFillColor: [45, 212, 191, 160],
+                  pickable: true,
                 }),
               ],
             });
-            liveMapInstance.addControl(liveDeckOverlay);
+            maplibreInstance.addControl(deckOverlayInstance);
           }
-          const badge = document.createElement("div");
-          badge.className = "wr-live-geo-hud-note";
-          badge.textContent = "MAPLIBRE GL + DECK.GL + PMTILES PROTOKOLÜ AKTİF · %100 YEREL VEKTÖR (0 DIŞ TILE)";
-          mountEl.appendChild(badge);
-        } catch (_) {
-          mountEl.hidden = true;
+        } else {
+          const src = maplibreInstance.getSource("caelus-tactical");
+          if (src && src.setData) src.setData(geoData);
         }
-        return;
+      } catch (_) {
+        st.mapEngine = "SVG";
       }
+    }
 
-      if (st.mapEngine === "CESIUM_3D" && typeof window !== "undefined" && window.Cesium) {
-        try {
-          const C = window.Cesium;
-          liveCesiumViewer = new C.Viewer(mountEl, {
-            imageryProvider: false,
-            baseLayer: false,
+    function syncLiveCesium3D() {
+      const st = model.state;
+      if (st.stageMode !== "MAP" || st.mapEngine !== "CESIUM_3D") return;
+      const host = document.getElementById("wr-live-cesium-3d-host");
+      if (!host || typeof window.Cesium === "undefined") return;
+
+      try {
+        const Cesium = window.Cesium;
+        if (!cesiumViewerInstance || cesiumViewerInstance.container !== host) {
+          if (cesiumViewerInstance && !cesiumViewerInstance.isDestroyed()) {
+            cesiumViewerInstance.destroy();
+          }
+          cesiumViewerInstance = new Cesium.Viewer(host, {
+            animation: false,
+            timeline: false,
             baseLayerPicker: false,
             geocoder: false,
             homeButton: false,
             sceneModePicker: false,
             navigationHelpButton: false,
-            animation: false,
-            timeline: false,
-            fullscreenButton: false,
             infoBox: false,
             selectionIndicator: false,
+            imageryProvider: false,
+            baseLayer: false,
             skyBox: false,
-            skyAtmosphere: false,
           });
-          liveCesiumViewer.scene.globe.baseColor = C.Color.fromCssColorString(
-            st.theme === "night" ? "#080605" : st.theme === "day" ? "#bfdbfe" : "#07111f"
-          );
-          liveCesiumViewer.entities.add({
-            name: "Sığacık → Vathi Ana Koridor",
-            polyline: {
-              positions: C.Cartesian3.fromDegreesArray([26.784, 38.194, 26.845, 38.055, 26.972, 37.756]),
-              width: 3,
-              material: C.Color.fromCssColorString("#ff3b30"),
-            },
+          cesiumViewerInstance.scene.globe.baseColor = Cesium.Color.fromCssColorString("#07111f");
+          cesiumViewerInstance.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(26.85, 38.02, 72000),
           });
-          liveCesiumViewer.entities.add({
-            name: "Güney Sisam Korunaklı Koridor",
-            polyline: {
-              positions: C.Cartesian3.fromDegreesArray([26.784, 38.194, 26.745, 38.010, 26.835, 37.845, 26.972, 37.756]),
-              width: 3,
-              material: C.Color.fromCssColorString("#30d158"),
-            },
-          });
-          liveCesiumViewer.entities.add({
-            position: C.Cartesian3.fromDegrees(26.832, 38.082, 120),
-            point: { pixelSize: 10, color: C.Color.fromCssColorString("#2dd4bf") },
-          });
-          liveCesiumViewer.camera.setView({
-            destination: C.Cartesian3.fromDegrees(26.87, 37.62, 68000),
-            orientation: { heading: 0, pitch: C.Math.toRadians(-52), roll: 0 },
-          });
-          const badge = document.createElement("div");
-          badge.className = "wr-live-geo-hud-note";
-          badge.textContent = "CESIUM 3B TAKTİK KÜRE AKTİF · HAVA BOŞLUKLU YEREL ELİPSOİD (0 ION / 0 DIŞ İSTEK)";
-          mountEl.appendChild(badge);
-        } catch (_) {
-          mountEl.hidden = true;
         }
+        cesiumViewerInstance.entities.removeAll();
+        const atT2 = BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS);
+        cesiumViewerInstance.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(atT2 ? 26.83711 : 26.8095, atT2 ? 38.19542 : 38.182, 30),
+          point: {
+            pixelSize: 12,
+            color: atT2 ? Cesium.Color.RED : Cesium.Color.CYAN,
+          },
+          label: {
+            text: trOrKey("map.vessel_name", {}, st),
+            font: "12px sans-serif",
+            pixelOffset: new Cesium.Cartesian2(0, -18),
+          },
+        });
+      } catch (_) {
+        st.mapEngine = "SVG";
       }
     }
 
-    function renderStageZone() {
-      destroyLiveGeoAdapters();
-      stageEl.innerHTML = `
-        <div class="wr-panel-toolbar">
-          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;" role="tablist" aria-label="Mekansal Harita ve Nedensel Graf Görünüm Seçici">
-            <button type="button" class="wr-btn ${st.stageMode === "MAP" ? "wr-btn-active" : ""}" role="tab" aria-selected="${st.stageMode === "MAP"}" data-stage-mode="MAP" id="wr-tab-stage-map">
-              [M] Taktik Deniz Haritası
-            </button>
-            <button type="button" class="wr-btn ${st.stageMode === "GRAPH" ? "wr-btn-active" : ""}" role="tab" aria-selected="${st.stageMode === "GRAPH"}" data-stage-mode="GRAPH" id="wr-tab-stage-graph">
-              [G] Nedensel Graf &amp; Karşı-Olgu Masası
-            </button>
-          </div>
-          <span class="metric-value" style="font-size:0.72rem; color:var(--text-secondary);">
-            Aktif Kural: <strong>${escapeHtml((st.sliceSync && st.sliceSync.slice && st.sliceSync.slice.applied_rule_id) || "—")}</strong>
-          </span>
-        </div>
-        <div class="wr-stage-viewport">
-          ${st.stageMode === "MAP" ? renderTacticalMapHtml() : renderCausalGraphDeskHtml()}
-        </div>
-      `;
-      mountActiveGeoAdapterIfNeeded();
-    }
-
-    function renderAgentDockZone() {
-      const slice = (st.sliceSync && st.sliceSync.slice) || {};
-      const verdict = slice.verdict || "KANIT_YETERSİZ";
-      const sentinel = st.sentinelAlert || { severity: "NOMINAL", summary_tr: "Hazır", anomalies: [] };
-      const redTeam = st.redTeamAlert || { severity: "NOMINAL", summary_tr: "Hazır", projected_breach_rules: [] };
-      const auditorLocked = verdict === "KANIT_YETERSİZ";
-
-      const conflicts = slice.active_conflicts || [];
-      const activeAssertions = slice.active_assertions || [];
-      let conflictPairHtml = "";
-      if (conflicts.length > 0) {
-        const cf = conflicts[0];
-        const pair = activeAssertions.filter((a) => (cf.event_ids || []).includes(a.event_id));
-        conflictPairHtml = `
-          <div class="wr-conflict-matrix-box" id="wr-epistemic-conflict-box">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-              <strong>${severityIconSvg("CAUTION")} A-2 Epistemik Çelişki Matrisi (Yan Yana Korundu · Ortalama Alınmadı)</strong>
-              <span class="metric-value" style="font-size:0.70rem;">${escapeHtml(cf.subject_id)}.${escapeHtml(cf.metric_key)}</span>
-            </div>
-            <div class="wr-conflict-pair-grid">
-              ${pair
-                .map(
-                  (p) => `
-                <div class="wr-conflict-source-cell">
-                  <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
-                    <strong class="metric-value" style="font-size:0.72rem;">${escapeHtml(p.source_id)}</strong>
-                    <span class="wr-epistemic-badge" data-epistemic="${escapeHtml(p.epistemic_status)}">
-                      ${epistemicSymbol(p.epistemic_status)} ${escapeHtml(p.epistemic_status)}
-                    </span>
-                  </div>
-                  <div class="metric-value" style="font-size:0.86rem; font-weight:800; margin-top:3px;">
-                    ${escapeHtml(formatFpScaled(String(p.fp_val), "dk"))}
-                  </div>
-                  <div class="metric-value" style="font-size:0.68rem; color:var(--text-secondary);">event_id=${escapeHtml(p.event_id)} · seq=${escapeHtml(String(p.seq_no))}</div>
-                </div>`
-                )
-                .join("")}
-            </div>
-          </div>
-        `;
-      }
-
-      const cardsHtml = st.actionCards
-        .map((card) => {
-          const sealed = st.sealedCards[card.card_id] || null;
-          const canSign =
-            verdict !== "KANIT_YETERSİZ" &&
-            card.auditor_check &&
-            card.auditor_check.observation_corroborated;
-
-          return `
-            <article class="wr-action-card" data-card-id="${escapeHtml(card.card_id)}" data-focused="${st.focusedActionCardId === card.card_id}" data-sealed="${Boolean(sealed)}">
-              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
-                <div>
-                  <strong style="font-size:0.82rem;">${escapeHtml(card.title)}</strong>
-                  <div style="font-size:0.73rem; color:var(--text-secondary); margin-top:2px;">${escapeHtml(card.rationale_tr)}</div>
-                </div>
-                <span class="wr-mode-pill metric-value">Güven: ${escapeHtml(String(card.opencti_confidence))}/100</span>
-              </div>
-
-              <div class="metric-value" style="display:flex; flex-wrap:wrap; gap:8px; font-size:0.72rem; padding:6px 8px; border-radius:4px; background:var(--surface-inset);">
-                <span>Karşı-Olgu: <strong>${escapeHtml(card.base_verdict)} → ${escapeHtml(card.branch_verdict)}</strong></span>
-                <span>Δ Süre: <strong>${escapeHtml(formatFpScaled(String((card.counterfactual_delta && card.counterfactual_delta.delay_change_min_fp) || "0"), "dk"))}</strong></span>
-                <span>Δ Emniyet/Risk: <strong>${escapeHtml(formatFpScaled(String((card.counterfactual_delta && card.counterfactual_delta.safety_margin_gain_fp) || "0"), "dk"))}</strong></span>
-                <span>Bağımsız Grup: <strong>${escapeHtml(String((card.independence_groups || []).length))}</strong></span>
-              </div>
-
-              <div class="wr-evidence-pill-row" aria-label="OpenCTI Kanıt Referansları (evidence_refs)">
-                ${(card.evidence_refs || [])
-                  .map(
-                    (ref) => `
-                  <button type="button" class="wr-evidence-pill" data-epistemic="${escapeHtml(ref.epistemic_status)}" data-focus-evidence="${escapeHtml(ref.event_id)}" title="Kanıt Olayını Telemetri Akışında Odakla: ${escapeHtml(ref.source_id)} (${escapeHtml(ref.epistemic_status)})">
-                    ${epistemicSymbol(ref.epistemic_status)}
-                    <span>${escapeHtml(ref.event_id)}</span>
-                    <span style="opacity:0.78;">· ${escapeHtml(ref.epistemic_status)}</span>
-                  </button>`
-                  )
-                  .join("")}
-              </div>
-
-              ${
-                sealed
-                  ? `
-                <div class="metric-value" style="padding:6px 8px; border-radius:4px; background:var(--status-nominal-bg); border:1px solid var(--status-nominal); color:var(--status-nominal); font-size:0.71rem;">
-                  ✓ ED25519 İMZALANDI VE MÜHÜRLENDİ · pubkey=${escapeHtml(sealed.operator_pubkey.slice(0, 14))}… · sig=${escapeHtml(sealed.operator_sig.slice(0, 16))}…
-                </div>`
-                  : !canSign
-                    ? `
-                <div style="padding:6px 8px; border-radius:4px; background:var(--status-caution-bg); border:1px solid var(--status-caution); color:var(--status-caution); font-size:0.71rem; font-weight:700;">
-                  ${severityIconSvg("CAUTION")} AUDITOR FAIL-CLOSED KİLİDİ: Bağımsız OBSERVATION teyidi olmadan (KANIT_YETERSİZ) imza mühürlenemez.
-                </div>`
-                    : ""
-              }
-
-              <div class="wr-action-btn-row">
-                <button type="button" class="wr-btn" data-card-focus="${escapeHtml(card.card_id)}">Haritada &amp; Grafta Odakla</button>
-                <button type="button" class="wr-btn" data-card-stress="${escapeHtml(card.card_id)}">Stres Testi Koştur</button>
-                <button type="button" class="wr-btn wr-btn-seal" data-card-sign="${escapeHtml(card.card_id)}" ${!canSign || sealed ? "disabled" : ""}>
-                  ${sealed ? "✓ Mühürlendi" : "Ed25519 İmzala ve Mühürle"}
-                </button>
-              </div>
-            </article>
-          `;
-        })
-        .join("");
-
-      const latestReply = st.assistantReplies[0] || null;
-
-      agentDockEl.innerHTML = `
-        <div class="wr-panel-toolbar">
-          <strong>4 Uzman Ajan &amp; İnsan-Onaylı Eylem İskelesi</strong>
-          <span class="metric-value" style="font-size:0.70rem; color:var(--text-secondary);">CAELUS_AG_UI_V1</span>
-        </div>
-
-        <div class="wr-agent-roster-strip" role="list" aria-label="4 Uzman Ajan Durum Özeti">
-          <div class="wr-agent-pill" role="listitem" data-agent-state="${sentinel.severity === "CRITICAL" || sentinel.severity === "SERIOUS" ? "ALERT" : "READY"}">
-            <strong>1. SENTINEL</strong>
-            <span class="metric-value" style="color:var(--text-secondary);">Anomali: ${escapeHtml(String(sentinel.anomaly_count || 0))}</span>
-          </div>
-          <div class="wr-agent-pill" role="listitem" data-agent-state="${redTeam.severity === "SERIOUS" ? "CONFLICT" : "READY"}">
-            <strong>2. RED_TEAM</strong>
-            <span class="metric-value" style="color:var(--text-secondary);">İhlal: ${escapeHtml(String((redTeam.projected_breach_rules || []).length))}</span>
-          </div>
-          <div class="wr-agent-pill" role="listitem" data-agent-state="READY">
-            <strong>3. STRATEGIST</strong>
-            <span class="metric-value" style="color:var(--text-secondary);">COA: ${escapeHtml(String(st.actionCards.length))} Dal</span>
-          </div>
-          <div class="wr-agent-pill" role="listitem" data-agent-state="${auditorLocked ? "LOCKED" : "READY"}">
-            <strong>4. AUDITOR</strong>
-            <span class="metric-value" style="color:var(--text-secondary);">${auditorLocked ? "FAIL-CLOSED" : "ONAY BEKLİYOR"}</span>
-          </div>
-        </div>
-
-        <div class="wr-agent-scroll-body">
-          <div style="padding:7px 9px; border-radius:5px; background:var(--surface-inset); border:1px solid var(--border-subtle); font-size:0.73rem;">
-            <div><strong>SENTINEL:</strong> ${escapeHtml(sentinel.summary_tr || "")}</div>
-            <div style="margin-top:3px;"><strong>RED_TEAM:</strong> ${escapeHtml(redTeam.summary_tr || "")}</div>
-          </div>
-
-          ${conflictPairHtml}
-          ${cardsHtml}
-        </div>
-
-        <details class="wr-assistant-drawer" open>
-          <summary class="wr-assistant-summary">
-            <span>Kanıt-Bağlı Komuta Asistanı (MCP Araç Çıktısı Zorunlu)</span>
-            <span class="metric-value" style="font-size:0.69rem; color:var(--text-secondary);">Sıfır Halüsinasyon</span>
-          </summary>
-          <div class="wr-assistant-body">
-            <div style="display:flex; gap:5px; flex-wrap:wrap;">
-              <button type="button" class="wr-layer-chip" data-assistant-preset="Aktif kesitteki hükmü ve çelişen kaynakları açıkla">Hükmü &amp; Çelişkiyi Açıkla</button>
-              <button type="button" class="wr-layer-chip" data-assistant-preset="BERTH_02 karşı-olgu stres testi sonucunu göster">BERTH_02 Stres Testi</button>
-            </div>
-            <form id="wr-assistant-form" style="display:flex; gap:6px;">
-              <input type="text" class="wr-input" id="wr-assistant-input" style="flex:1;" placeholder="MCP kanıt sorgusu yazın (örn. T2 neden KURAL_İHLALİ?)..." autocomplete="off">
-              <button type="submit" class="wr-btn">Sor</button>
-            </form>
-            ${
-              latestReply
-                ? `
-              <div class="metric-value" style="padding:7px 8px; border-radius:4px; background:var(--surface-panel); border:1px solid var(--border-subtle); font-size:0.72rem;">
-                <div>${escapeHtml(latestReply.structured_answer_tr)}</div>
-                <div style="margin-top:4px; color:var(--text-secondary); font-size:0.68rem;">
-                  Çağrılan MCP Araçları: ${escapeHtml((latestReply.mcp_tools_invoked || []).join(", "))}
-                </div>
-              </div>`
-                : ""
-            }
-          </div>
-        </details>
-      `;
-    }
-
-    function renderTimeConductorZone() {
-      const cutoffBig = BigInt(st.cutoffLearnedAtMs);
-      const span = Number(TIMELINE_MAX_MS - TIMELINE_MIN_MS);
-      const cursorPct = Math.max(
-        0,
-        Math.min(100, ((Number(cutoffBig - TIMELINE_MIN_MS) / span) * 100))
-      );
-
-      const dotsSvg = st.catalogRows
-        .map((r) => {
-          const obsX = Math.max(
-            12,
-            Math.min(
-              588,
-              12 + ((Number(BigInt(r.observed_at_ms) - TIMELINE_MIN_MS) / span) * 576)
-            )
-          );
-          const lrnX = Math.max(
-            12,
-            Math.min(
-              588,
-              12 + ((Number(BigInt(r.learned_at_ms) - TIMELINE_MIN_MS) / span) * 576)
-            )
-          );
-          const isFuture = BigInt(r.learned_at_ms) > cutoffBig;
-          const color =
-            r.epistemic_status === "OBSERVATION"
-              ? "var(--epistemic-observation)"
-              : r.epistemic_status === "CLAIM"
-                ? "var(--epistemic-claim)"
-                : "var(--epistemic-hypothesis)";
-          return `
-            <g opacity="${isFuture ? "0.32" : "1"}">
-              <line x1="${obsX.toFixed(1)}" y1="14" x2="${lrnX.toFixed(1)}" y2="40" stroke="${color}" stroke-width="1" stroke-dasharray="2 2"/>
-              <circle cx="${obsX.toFixed(1)}" cy="14" r="3.6" fill="${color}"/>
-              <rect x="${(lrnX - 3.5).toFixed(1)}" y="36.5" width="7" height="7" rx="1" fill="${color}"/>
-            </g>`;
-        })
-        .join("");
-
-      const cursorX = 12 + (cursorPct / 100) * 576;
-
-      bitemporalBoxEl.innerHTML = `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-          <strong>Çift-Zamanlı İletken (Bi-Temporal Time Conductor)</strong>
-          <span class="metric-value" style="font-size:0.74rem;">
-            cutoff_learned_at_ms = <strong id="wr-cutoff-ms-readout">${escapeHtml(st.cutoffLearnedAtMs)}</strong>
-            (${escapeHtml(formatUtcClockFromMsStr(st.cutoffLearnedAtMs))})
-          </span>
-        </div>
-
-        <div class="wr-bitemporal-tracks">
-          <svg class="wr-track-svg" viewBox="0 0 600 54" aria-label="Üst iz: Olay Gözlem Zamanı, Alt iz: Sistem Öğrenme Kesiti">
-            <text x="4" y="10" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="8">observed_at_ms</text>
-            <line x1="12" y1="14" x2="588" y2="14" stroke="var(--border-strong)" stroke-width="1"/>
-            <text x="4" y="51" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="8">learned_at_ms</text>
-            <line x1="12" y1="40" x2="588" y2="40" stroke="var(--border-strong)" stroke-width="1"/>
-            ${dotsSvg}
-            <line x1="${cursorX.toFixed(1)}" y1="2" x2="${cursorX.toFixed(1)}" y2="52" stroke="var(--status-critical)" stroke-width="2"/>
-          </svg>
-
-          <input type="range" class="wr-cutoff-slider" id="wr-cutoff-slider"
-            min="${TIMELINE_MIN_MS.toString()}" max="${TIMELINE_MAX_MS.toString()}" step="10000"
-            value="${escapeHtml(st.cutoffLearnedAtMs)}"
-            aria-label="Öğrenilme kesiti zaman sürgüsü (cutoff_learned_at_ms)">
-        </div>
-
-        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-          <button type="button" class="wr-btn ${st.playbackMode === "LIVE" ? "wr-btn-active" : ""}" id="wr-btn-toggle-playback" title="Boşluk (Space): Canlı Akış / Tekrar Oynatma">
-            ${st.playbackMode === "LIVE" ? "⏸ LIVE" : "▶ REPLAY"} (Space)
-          </button>
-          <div role="group" aria-label="Tekrar Oynatma Hızı Seçici (1x / 10x)" style="display:inline-flex; gap:4px;">
-            <button type="button" class="wr-btn ${st.replaySpeed === 1 ? "wr-btn-active" : ""}" data-replay-speed="1" aria-pressed="${st.replaySpeed === 1}" title="Gerçek Zamanlı Olay Adımı (1x)">1x</button>
-            <button type="button" class="wr-btn ${st.replaySpeed === 10 ? "wr-btn-active" : ""}" data-replay-speed="10" aria-pressed="${st.replaySpeed === 10}" title="Hızlandırılmış Tekrar Oynatma (10x)">10x</button>
-          </div>
-          <button type="button" class="wr-btn" id="wr-btn-step-prev" title="Önceki Olay ([)">[ Önceki</button>
-          <button type="button" class="wr-btn" id="wr-btn-step-next" title="Sonraki Olay (])">Sonraki ]</button>
-          <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === T1_CUTOFF_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${T1_CUTOFF_MS}" id="wr-btn-snap-t1">
-            T1 · 08:10 (KANIT_YETERSİZ)
-          </button>
-          <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === TAMPER_CHECK_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${TAMPER_CHECK_MS}" id="wr-btn-snap-tamper">
-            08:15 (Karantina)
-          </button>
-          <button type="button" class="wr-btn ${st.cutoffLearnedAtMs === T2_CUTOFF_MS ? "wr-btn-active" : ""}" data-snap-cutoff="${T2_CUTOFF_MS}" id="wr-btn-snap-t2">
-            T2 · 08:25 (KURAL_İHLALİ)
-          </button>
-        </div>
-      `;
-
-      const filteredRows = model.getDecoratedTelemetryRows();
-      telemetryToolbarEl.innerHTML = `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-          <strong>Sanallaştırılmış Telemetri Akışı (${filteredRows.length} Olay · CLS=0)</strong>
-          <div style="display:flex; gap:4px; flex-wrap:wrap;" role="group" aria-label="Epistemik Statü Filtresi">
-            <button type="button" class="wr-layer-chip" data-ep-filter="ALL" aria-pressed="${st.epistemicFilter === "ALL"}">Tümü</button>
-            <button type="button" class="wr-layer-chip" data-ep-filter="OBSERVATION" aria-pressed="${st.epistemicFilter === "OBSERVATION"}">● OBSERVATION</button>
-            <button type="button" class="wr-layer-chip" data-ep-filter="CLAIM" aria-pressed="${st.epistemicFilter === "CLAIM"}">◆ CLAIM</button>
-            <button type="button" class="wr-layer-chip" data-ep-filter="HYPOTHESIS" aria-pressed="${st.epistemicFilter === "HYPOTHESIS"}">▲ HYPOTHESIS</button>
-            <button type="button" class="wr-layer-chip" data-ep-filter="REJECTED" aria-pressed="${st.epistemicFilter === "REJECTED"}">⛔ Karantina</button>
-          </div>
-        </div>
-      `;
-
-      renderVirtualTelemetryRows(filteredRows);
-    }
-
-    function renderVirtualTelemetryRows(rows) {
-      const list = rows || model.getDecoratedTelemetryRows();
-      const totalHeight = Math.max(list.length * VIRTUAL_ROW_HEIGHT_PX, VIRTUAL_ROW_HEIGHT_PX);
-      virtualSpacerEl.style.height = `${totalHeight}px`;
-
-      const viewportHeight = virtualViewportEl.clientHeight || 180;
-      const firstIdx = Math.max(0, Math.floor(virtualScrollTop / VIRTUAL_ROW_HEIGHT_PX) - 2);
-      const visibleCount = Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT_PX) + 5;
-      const lastIdx = Math.min(list.length, firstIdx + visibleCount);
-
-      let html = "";
-      for (let i = firstIdx; i < lastIdx; i++) {
-        const r = list[i];
-        const topPx = i * VIRTUAL_ROW_HEIGHT_PX;
-        const metricText =
-          r.primary_metric_key === "delay_min_fp"
-            ? formatFpScaled(r.primary_fp_val, "dk", 1)
-            : r.primary_metric_key === "wave_m_fp"
-              ? formatFpScaled(r.primary_fp_val, "m", 2)
-              : r.primary_metric_key === "wind_speed_mps_fp"
-                ? formatFpScaled(r.primary_fp_val, "m/s", 2)
-                : r.primary_metric_key === "baro_alt_m_fp"
-                  ? formatFpScaled(r.primary_fp_val, "m", 1)
-                  : `${r.primary_fp_val} fp`;
-
-        html += `
-          <div class="wr-virtual-grid-row" role="row"
-               style="top:${topPx}px;"
-               data-row-event-id="${escapeHtml(r.event_id)}"
-               data-row-source-id="${escapeHtml(r.source_id)}"
-               data-future="${r.is_future}"
-               data-rejected="${r.is_rejected}"
-               data-selected="${st.selectedEventId === r.event_id}">
-            <span class="metric-value wr-cell-ellipsis" title="seq_no=${escapeHtml(r.seq_no)}">
-              ${escapeHtml(r.seq_no)}${r.exceeds_ieee754_safe_int ? " ★>2^53" : ""}
-            </span>
-            <span class="metric-value wr-cell-ellipsis">${escapeHtml(r.event_id)}</span>
-            <span class="wr-cell-ellipsis" title="${escapeHtml(r.source_id)} (${escapeHtml(r.independence_group)})">${escapeHtml(r.source_id)}</span>
-            <span>
-              <span class="wr-epistemic-badge" data-epistemic="${escapeHtml(r.epistemic_status)}">
-                ${epistemicSymbol(r.epistemic_status)} ${escapeHtml(r.epistemic_status)}
-              </span>
-            </span>
-            <span class="timestamp-cell">${escapeHtml(formatUtcClockFromMsStr(r.observed_at_ms))}</span>
-            <span class="timestamp-cell">${escapeHtml(formatUtcClockFromMsStr(r.learned_at_ms))}</span>
-            <span class="metric-value">${escapeHtml(metricText)}</span>
-            <span class="wr-cell-ellipsis" title="${escapeHtml(r.temporal_status_tr)}">${escapeHtml(r.temporal_status_tr)}</span>
-          </div>
-        `;
-      }
-      virtualSpacerEl.innerHTML = html;
-    }
-
-    function openSealInspectorModal() {
-      const slice = (st.sliceSync && st.sliceSync.slice) || {};
-      const val = (st.sliceSync && st.sliceSync.validation) || {};
-      const mf = model.getManifestObject();
-      const sealedEntries = Object.values(st.sealedCards);
-
-      sealContentEl.innerHTML = `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;">
-          <strong>Kriptografik Mühür &amp; Kaynak Manifestosu v2.0 Denetçisi</strong>
-          <button type="button" class="wr-btn" id="wr-btn-close-seal-modal">Kapat (ESC)</button>
-        </div>
-        <div class="metric-value" style="display:flex; flex-direction:column; gap:6px; font-size:0.74rem; padding:10px; border-radius:6px; background:var(--surface-inset); border:1px solid var(--border-subtle);">
-          <div><strong>state_blake3:</strong> ${escapeHtml(slice.state_blake3 || "—")}</div>
-          <div><strong>audit_head_blake3:</strong> ${escapeHtml(st.auditChainHead || slice.state_blake3 || "—")}</div>
-          <div><strong>manifest_version:</strong> ${escapeHtml(mf.manifest_version || "2.0")} (require_v2_airlock=${String(mf.require_v2_airlock)})</div>
-          <div><strong>trust_anchor_pubkey:</strong> ${escapeHtml(mf.trust_anchor_pubkey || "—")}</div>
-          <div><strong>manifest_sig:</strong> ${escapeHtml(String(mf.manifest_sig || "").slice(0, 48))}…</div>
-          <div><strong>Doğrulanan / Karantinaya Alınan Paket:</strong> ${escapeHtml(String(val.accepted_count || 0))} kabul / ${escapeHtml(String(val.rejected_count || 0))} karantina (0-bit state değişimi garantili)</div>
-        </div>
-        <div style="margin-top:10px;">
-          <strong>Mühürlenen Operatör Eylem Kartları (${sealedEntries.length}):</strong>
-          ${
-            sealedEntries.length === 0
-              ? '<div style="color:var(--text-secondary); margin-top:4px;">Henüz operatör tarafından Ed25519 ile imzalanmış kart bulunmuyor.</div>'
-              : sealedEntries
-                  .map(
-                    (s) => `
-                  <div class="metric-value" style="margin-top:6px; padding:8px; border-radius:4px; background:var(--status-nominal-bg); border:1px solid var(--status-nominal); font-size:0.72rem;">
-                    <div>Kart: <strong>${escapeHtml(s.card_id)}</strong> · Hüküm Bağlamı: ${escapeHtml(s.verdict_context)}</div>
-                    <div>operator_pubkey: ${escapeHtml(s.operator_pubkey)}</div>
-                    <div>operator_sig: ${escapeHtml(s.operator_sig.slice(0, 56))}…</div>
-                  </div>`
-                  )
-                  .join("")
-          }
-        </div>
-      `;
-      sealModalEl.hidden = false;
-    }
-
-    function renderCmdkResults(queryStr) {
-      const q = String(queryStr || "").trim().toLowerCase();
+    function renderCmdkItems(filterText = "") {
+      const q = String(filterText || "").toLowerCase();
+      const st = model.state;
       const items = [
-        { label: "Kesit T1 · 08:10 UTC → KANIT_YETERSİZ", hint: T1_CUTOFF_MS, run: () => triggerCutoffChange(T1_CUTOFF_MS, true) },
-        { label: "Kesit 08:15 UTC → SOURCE_EQUIVOCATION Karantina Testi", hint: TAMPER_CHECK_MS, run: () => triggerCutoffChange(TAMPER_CHECK_MS, true) },
-        { label: "Kesit T2 · 08:25 UTC → KURAL_İHLALİ (+15dk CLAIM vs +35dk OBS)", hint: T2_CUTOFF_MS, run: () => triggerCutoffChange(T2_CUTOFF_MS, true) },
-        { label: "64-Bit Hassasiyet Çapası: ev_106 (seq_no = 9007199254740993 > 2^53 - 1)", hint: "port_berth_sensor_sigacik", run: () => { st.selectedEventId = "ev_106"; triggerCutoffChange(T2_CUTOFF_MS, true); } },
-        { label: "Varlık: VESSEL_AEGEAN_01 (Ege Feribotu · Taktik Harita Odağı)", hint: "MAP", run: () => setStageMode("MAP", true) },
-        { label: "Nedensel Graf & Karşı-Olgu Stres Masası (CONFLICT Kenarı)", hint: "GRAPH", run: () => setStageMode("GRAPH", true) },
-        { label: "Eylem Kartı COA-01: BERTH_02 Yedek Rampa Yönlendirmesi", hint: "coa-20261111-01", run: () => { st.focusedActionCardId = "coa-20261111-01"; renderAll(); } },
-        { label: "Tema: OpenBridge Gece Vardiyası (#050505 / #d97736)", hint: "Alt+3", run: () => setTheme("night", true) },
-      ].filter((it) => !q || it.label.toLowerCase().includes(q) || it.hint.toLowerCase().includes(q));
+        {
+          id: "t1",
+          label: trOrKey("cmdk.item_t1", {}, st),
+          run: () => applyCutoffFromUi(T1_CUTOFF_MS),
+        },
+        {
+          id: "tamper",
+          label: trOrKey("cmdk.item_tamper", {}, st),
+          run: () => applyCutoffFromUi(TAMPER_CHECK_MS),
+        },
+        {
+          id: "t2",
+          label: trOrKey("cmdk.item_t2", {}, st),
+          run: () => applyCutoffFromUi(T2_CUTOFF_MS),
+        },
+        {
+          id: "seq64",
+          label: trOrKey("cmdk.item_seq64", {}, st),
+          run: () => {
+            model.state.selectedEventId = "ev_106";
+            renderAll();
+          },
+        },
+        {
+          id: "map",
+          label: trOrKey("cmdk.item_map", {}, st),
+          run: () => {
+            model.state.stageMode = "MAP";
+            renderAll();
+          },
+        },
+        {
+          id: "graph",
+          label: trOrKey("cmdk.item_graph", {}, st),
+          run: () => {
+            model.state.stageMode = "GRAPH";
+            renderAll();
+          },
+        },
+        {
+          id: "lang",
+          label: trOrKey("cmdk.item_lang", {}, st),
+          run: () => {
+            model.toggleLocale();
+            notifyWsLocaleRegisterChange();
+            renderAll();
+          },
+        },
+        {
+          id: "register",
+          label: trOrKey("cmdk.item_register", {}, st),
+          run: () => {
+            model.toggleRegister();
+            notifyWsLocaleRegisterChange();
+            renderAll();
+          },
+        },
+        {
+          id: "night",
+          label: trOrKey("cmdk.item_night", {}, st),
+          run: () => {
+            model.state.theme = "night";
+            renderAll();
+          },
+        },
+      ].filter((it) => !q || it.label.toLowerCase().includes(q));
 
-      cmdkResultsEl.innerHTML = items
+      const box = document.getElementById("wr-cmdk-results");
+      if (!box) return;
+      box.innerHTML = items
         .map(
-          (it, idx) => `
-          <button type="button" class="wr-btn" style="justify-content:space-between; width:100%; text-align:left;" data-cmdk-idx="${idx}">
-            <span>${escapeHtml(it.label)}</span>
-            <span class="metric-value" style="color:var(--text-secondary);">${escapeHtml(it.hint)}</span>
-          </button>`
+          (it) =>
+            `<button type="button" class="wr-btn" style="justify-content:flex-start;" data-cmdk-action="${escapeHtml(it.id)}">${escapeHtml(it.label)}</button>`
         )
         .join("");
 
-      cmdkResultsEl.querySelectorAll("[data-cmdk-idx]").forEach((btn) => {
+      box.querySelectorAll("[data-cmdk-action]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          const idx = Number(btn.getAttribute("data-cmdk-idx"));
-          cmdkModalEl.hidden = true;
-          if (items[idx]) items[idx].run();
+          const found = items.find((x) => x.id === btn.getAttribute("data-cmdk-action"));
+          if (found) found.run();
+          const modal = document.getElementById("wr-cmdk-modal-backdrop");
+          if (modal) modal.hidden = true;
         });
       });
     }
 
-    function triggerCutoffChange(nextCutoffMsStr, instantKbd = false) {
-      if (instantKbd) document.body.setAttribute("data-kbd-instant", "1");
-      const targetStr = String(nextCutoffMsStr);
-      model.setCutoffMs(targetStr);
-      if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-        wsClient.send(
-          JSON.stringify({
-            cmd: "EVALUATE_SLICE",
-            cutoff_learned_at_ms: targetStr,
-          })
-        );
-      }
-      if (instantKbd) {
-        requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
-      }
-    }
-
-    function startReplayInterval() {
-      if (liveReplayTimer) {
-        clearInterval(liveReplayTimer);
-        liveReplayTimer = null;
-      }
-      const intervalMs = st.replaySpeed === 10 ? 120 : 1200;
-      liveReplayTimer = setInterval(() => {
-        if (BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS)) {
-          st.playbackMode = "REPLAY";
-          clearInterval(liveReplayTimer);
-          liveReplayTimer = null;
-          renderTimeConductorZone();
-          return;
-        }
-        const nextMs = model.stepEventCursor(1);
-        if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-          wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
-        }
-      }, intervalMs);
-    }
-
-    function setReplaySpeed(nextSpeed) {
-      const spd = Number(nextSpeed) === 10 ? 10 : 1;
-      st.replaySpeed = spd;
-      if (st.playbackMode === "LIVE") {
-        startReplayInterval();
-      }
-      renderTimeConductorZone();
-    }
-
-    function togglePlaybackMode(instantKbd = false) {
-      if (instantKbd) document.body.setAttribute("data-kbd-instant", "1");
-      if (st.playbackMode === "LIVE") {
-        st.playbackMode = "REPLAY";
-        if (liveReplayTimer) {
-          clearInterval(liveReplayTimer);
-          liveReplayTimer = null;
-        }
-      } else {
-        st.playbackMode = "LIVE";
-        if (BigInt(st.cutoffLearnedAtMs) >= BigInt(T2_CUTOFF_MS)) {
-          model.setCutoffMs("1762848300000");
-        }
-        startReplayInterval();
-      }
-      renderTimeConductorZone();
-      if (instantKbd) {
-        requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
-      }
+    function applyCutoffFromUi(nextCutoffMs) {
+      model.setCutoffMs(nextCutoffMs);
+      sendWsJson({
+        cmd: "EVALUATE_SLICE",
+        cutoff_learned_at_ms: String(nextCutoffMs),
+        locale: model.state.locale,
+        register: model.state.register,
+      });
     }
 
     function renderAll() {
-      renderTopBar();
-      renderStageZone();
-      renderAgentDockZone();
-      renderTimeConductorZone();
+      const st = model.state;
+      syncDocumentThemeAndLocaleMeta();
+
+      const snap = renderCockpitZonesSnapshot(model, { scrollTopPx: virtualScrollTop });
+      const topEl = document.getElementById("wr-top-bar");
+      const stageEl = document.getElementById("wr-stage-viewport");
+      const stageRegion = document.getElementById("wr-stage-region");
+      const stageTablist = document.getElementById("wr-stage-tablist");
+      const dockEl = document.getElementById("wr-agent-dock");
+      const condEl = document.getElementById("wr-bottom-conductor");
+      const sealBody = document.getElementById("wr-seal-modal-body");
+      const sealBackdrop = document.getElementById("wr-seal-modal-backdrop");
+      const cmdkDialog = document.getElementById("wr-cmdk-dialog");
+      const cmdkHeading = document.getElementById("wr-cmdk-heading");
+      const cmdkCloseBtn = document.getElementById("wr-btn-close-cmdk");
+      const cmdkInput = document.getElementById("wr-cmdk-input");
+      const tabMap = document.getElementById("wr-tab-map");
+      const tabGraph = document.getElementById("wr-tab-graph");
+      const ruleBanner = document.getElementById("wr-stage-rule-banner");
+
+      if (returnPill) {
+        returnPill.textContent = trOrKey("app.return_to_cockpit", {}, st);
+      }
+      if (topEl) topEl.innerHTML = snap.topBarHtml;
+      if (stageRegion) stageRegion.setAttribute("aria-label", trOrKey("stage.aria_region", {}, st));
+      if (stageTablist) stageTablist.setAttribute("aria-label", trOrKey("stage.aria_tabs", {}, st));
+      if (tabMap) {
+        tabMap.textContent = trOrKey("stage.tab_map", {}, st);
+        tabMap.setAttribute("aria-selected", String(st.stageMode === "MAP"));
+        tabMap.setAttribute("aria-pressed", String(st.stageMode === "MAP"));
+      }
+      if (tabGraph) {
+        tabGraph.textContent = trOrKey("stage.tab_graph", {}, st);
+        tabGraph.setAttribute("aria-selected", String(st.stageMode === "GRAPH"));
+        tabGraph.setAttribute("aria-pressed", String(st.stageMode === "GRAPH"));
+      }
+      if (ruleBanner) {
+        ruleBanner.textContent = snap.stageRuleBanner;
+      }
+      if (stageEl) stageEl.innerHTML = snap.stageHtml;
+      if (dockEl) {
+        dockEl.setAttribute("aria-label", trOrKey("dock.aria_region", {}, st));
+        dockEl.innerHTML = snap.dockHtml;
+      }
+      if (condEl) condEl.innerHTML = snap.conductorHtml;
+      if (sealBody) {
+        sealBody.setAttribute("aria-label", trOrKey("modal.seal_aria", {}, st));
+        sealBody.innerHTML = snap.sealModalHtml;
+      }
+      if (cmdkDialog) cmdkDialog.setAttribute("aria-label", trOrKey("modal.cmdk_aria", {}, st));
+      if (cmdkHeading) cmdkHeading.textContent = trOrKey("modal.cmdk_title", {}, st);
+      if (cmdkCloseBtn) cmdkCloseBtn.textContent = trOrKey("modal.close_esc", {}, st);
+      if (cmdkInput) {
+        cmdkInput.setAttribute("placeholder", trOrKey("modal.cmdk_placeholder", {}, st));
+        cmdkInput.setAttribute("aria-label", trOrKey("modal.cmdk_aria", {}, st));
+      }
+
+      const vp = document.getElementById("wr-virtual-viewport");
+      if (vp) {
+        vp.scrollTop = virtualScrollTop;
+        vp.addEventListener(
+          "scroll",
+          () => {
+            virtualScrollTop = vp.scrollTop;
+            if (scrollRafPending) return;
+            scrollRafPending = true;
+            requestAnimationFrame(() => {
+              scrollRafPending = false;
+              const spacer = document.getElementById("wr-virtual-spacer");
+              if (!spacer) return;
+              const rows = model.getDecoratedTelemetryRows();
+              const sIdx = Math.max(0, Math.floor(virtualScrollTop / VIRTUAL_ROW_HEIGHT_PX) - 2);
+              const eIdx = Math.min(rows.length, sIdx + Math.ceil(180 / VIRTUAL_ROW_HEIGHT_PX) + 5);
+              const freshSnap = renderCockpitZonesSnapshot(model, { scrollTopPx: virtualScrollTop });
+              spacer.innerHTML = freshSnap.renderVirtualRowsHtml(rows.slice(sIdx, eIdx), sIdx);
+            });
+          },
+          { passive: true }
+        );
+      }
+
+      const rangeEl = document.getElementById("wr-cutoff-range");
+      if (rangeEl) {
+        rangeEl.addEventListener("input", (ev) => {
+          applyCutoffFromUi(ev.target.value);
+        });
+      }
+
+      const presetSel = document.getElementById("wr-stress-preset-select");
+      if (presetSel) {
+        presetSel.addEventListener("change", (ev) => {
+          model.state.customStressMode = ev.target.value;
+          renderAll();
+        });
+      }
+
+      const customFpInput = document.getElementById("wr-custom-fp-input");
+      if (customFpInput) {
+        customFpInput.addEventListener("change", (ev) => {
+          const cleaned = String(ev.target.value || "").trim();
+          if (/^-?\d+$/.test(cleaned)) {
+            model.state.customOverrideFp = cleaned;
+          }
+        });
+      }
+
+      const assistantForm = document.getElementById("wr-assistant-form");
+      if (assistantForm) {
+        assistantForm.addEventListener("submit", (ev) => {
+          ev.preventDefault();
+          const inp = document.getElementById("wr-assistant-input");
+          const q = inp ? inp.value.trim() : "";
+          if (!q) return;
+          if (
+            !sendWsJson({
+              cmd: "ASSISTANT_QUERY",
+              cutoff_learned_at_ms: model.state.cutoffLearnedAtMs,
+              locale: model.state.locale,
+              register: model.state.register,
+              query: q,
+            })
+          ) {
+            model.submitAssistantQueryLocal(q);
+          }
+        });
+      }
+
+      if (sealBackdrop && !sealBackdrop.hidden) {
+        const closeSeal = document.getElementById("wr-btn-close-seal-modal");
+        if (closeSeal) closeSeal.focus();
+      }
+
+      syncLiveMapLibreAndDeckGl();
+      syncLiveCesium3D();
     }
 
-    model.subscribe(() => renderAll());
+    function activateInteractiveTarget(target) {
+      if (!target || typeof target.closest !== "function") return false;
 
-    // Delegated Click & Input Event Handlers
-    rootEl.addEventListener("click", (ev) => {
-      const target = ev.target.closest("button, [data-graph-node], [data-row-event-id], [data-map-select-event], [data-map-focus-card]");
-      if (!target) return;
+      const localeBtn = target.closest("[data-set-locale]");
+      if (localeBtn) {
+        model.setLocale(localeBtn.getAttribute("data-set-locale"));
+        notifyWsLocaleRegisterChange();
+        renderAll();
+        return true;
+      }
 
-      if (target.hasAttribute("data-set-theme")) {
-        setTheme(target.getAttribute("data-set-theme"), false);
-        return;
+      const registerBtn = target.closest("[data-set-register]");
+      if (registerBtn) {
+        model.setRegister(registerBtn.getAttribute("data-set-register"));
+        notifyWsLocaleRegisterChange();
+        renderAll();
+        return true;
       }
-      if (target.id === "wr-btn-open-seal-modal") {
-        openSealInspectorModal();
-        return;
-      }
-      if (target.id === "wr-btn-close-seal-modal") {
-        sealModalEl.hidden = true;
-        return;
-      }
-      if (target.id === "wr-btn-open-cmdk") {
-        cmdkModalEl.hidden = false;
-        renderCmdkResults("");
-        cmdkInputEl.value = "";
-        cmdkInputEl.focus();
-        return;
-      }
-      if (target.id === "wr-btn-close-cmdk") {
-        cmdkModalEl.hidden = true;
-        return;
-      }
-      if (target.id === "wr-btn-switch-studio") {
-        toggleCockpitShellVisibility(false);
-        return;
-      }
-      if (target.hasAttribute("data-stage-mode")) {
-        setStageMode(target.getAttribute("data-stage-mode"), false);
-        return;
-      }
-      if (target.hasAttribute("data-map-engine")) {
-        const nextEng = target.getAttribute("data-map-engine");
-        if (nextEng === "SVG" || nextEng === "MAPLIBRE_DECK" || nextEng === "CESIUM_3D") {
-          st.mapEngine = nextEng;
-          renderStageZone();
-        }
-        return;
-      }
-      if (target.hasAttribute("data-toggle-layer")) {
-        const layerKey = target.getAttribute("data-toggle-layer");
-        st.mapLayers[layerKey] = !st.mapLayers[layerKey];
-        renderStageZone();
-        return;
-      }
-      if (target.hasAttribute("data-map-select-event")) {
-        st.selectedEventId = target.getAttribute("data-map-select-event");
-        renderTimeConductorZone();
-        return;
-      }
-      if (target.hasAttribute("data-map-focus-card")) {
-        st.focusedActionCardId = target.getAttribute("data-map-focus-card");
-        renderAgentDockZone();
-        return;
-      }
-      if (target.hasAttribute("data-focus-evidence")) {
-        const evid = target.getAttribute("data-focus-evidence");
-        st.selectedEventId = evid;
-        st.epistemicFilter = "ALL";
-        const rows = model.getDecoratedTelemetryRows();
-        const idx = rows.findIndex((r) => r.event_id === evid);
-        if (idx >= 0) {
-          st.selectedGraphNodeId = rows[idx].source_id || st.selectedGraphNodeId;
-          virtualScrollTop = Math.max(0, idx * VIRTUAL_ROW_HEIGHT_PX - VIRTUAL_ROW_HEIGHT_PX);
-          virtualViewportEl.scrollTop = virtualScrollTop;
-        }
-        renderTimeConductorZone();
-        if (st.stageMode === "GRAPH") renderStageZone();
-        return;
-      }
-      if (target.hasAttribute("data-graph-node")) {
-        st.selectedGraphNodeId = target.getAttribute("data-graph-node");
-        renderStageZone();
-        return;
-      }
-      if (target.id === "wr-btn-toggle-disable-node") {
-        model.toggleGraphSourceDisabled(st.selectedGraphNodeId);
-        return;
-      }
-      if (target.id === "wr-btn-run-node-counterfactual") {
-        const sel = rootEl.querySelector("#wr-stress-delta-select");
-        const fpInp = rootEl.querySelector("#wr-stress-custom-fp-input");
-        const modeVal = sel ? sel.value : st.customStressMode || "BERTH_02";
-        st.customStressMode = modeVal;
-        const rawFp = fpInp ? String(fpInp.value || "").trim() : st.customOverrideFp;
-        const safeFp = /^-?[0-9]+$/.test(rawFp) ? rawFp : "16000000";
-        st.customOverrideFp = safeFp;
 
-        let interventions;
-        if (modeVal === "ROUTE_SHELTER_01") {
-          interventions = [{ target_id: "ROUTE_SHELTER_01", override_field: "route_shelter_corridor", fp_val: "16000000" }];
-          st.customStressDeltaMin = "-7";
-        } else if (modeVal === "CUSTOM_FP") {
-          interventions = [{ target_id: "ROUTE_SHELTER_01", override_field: "route_shelter_corridor", fp_val: safeFp }];
-          st.customStressDeltaMin = "custom";
-        } else {
-          interventions = [{ target_id: "BERTH_02", override_field: "status", fp_val: "0" }];
-          st.customStressDeltaMin = "-18";
+      const speedUnitBtn = target.closest("[data-toggle-speed-unit]");
+      if (speedUnitBtn) {
+        const nextSpeed = model.state.speedUnit === "kn" ? "kmh" : "kn";
+        model.setUnits({
+          speedUnit: nextSpeed,
+          distanceUnit: nextSpeed === "kmh" ? "km" : "nm",
+        });
+        return true;
+      }
+
+      const clockModeBtn = target.closest("[data-toggle-clock-mode]");
+      if (clockModeBtn) {
+        model.setUnits({
+          clockMode: model.state.clockMode === "UTC" ? "LOCAL" : "UTC",
+        });
+        return true;
+      }
+
+      const proofBtn = target.closest("[data-toggle-card-proof]");
+      if (proofBtn) {
+        model.toggleCardProof(proofBtn.getAttribute("data-toggle-card-proof"));
+        return true;
+      }
+
+      const focusChipBtn = target.closest("[data-assistant-focus-chip]");
+      if (focusChipBtn) {
+        const kind = focusChipBtn.getAttribute("data-assistant-focus-chip");
+        if (kind === "FOCUS_MAP_ENTITY") {
+          model.state.stageMode = "MAP";
+          model.state.highlightedCorridor = "PRIMARY_NORTH";
+          renderAll();
+        } else if (kind === "FOCUS_EVENT_ROW") {
+          const evId = focusChipBtn.getAttribute("data-chip-event") || "ev_106";
+          model.state.selectedEventId = evId;
+          renderAll();
+        } else if (kind === "SIMULATE_CARD") {
+          const cardId = focusChipBtn.getAttribute("data-chip-card") || "coa-20261111-01";
+          const card = model.state.actionCards.find((c) => c.card_id === cardId);
+          model.state.stageMode = "GRAPH";
+          if (card) {
+            model.runInteractiveCounterfactual(card.interventions, card.branch_id);
+          } else {
+            renderAll();
+          }
         }
-        const branchName = `cf_${modeVal.toLowerCase()}`;
-        sendWsOrFallback(
-          {
+        return true;
+      }
+
+      const themeBtn = target.closest("[data-set-theme]");
+      if (themeBtn) {
+        model.state.theme = themeBtn.getAttribute("data-set-theme");
+        renderAll();
+        return true;
+      }
+
+      if (target.closest("#wr-tab-map")) {
+        model.state.stageMode = "MAP";
+        renderAll();
+        return true;
+      }
+      if (target.closest("#wr-tab-graph")) {
+        model.state.stageMode = "GRAPH";
+        renderAll();
+        return true;
+      }
+
+      if (target.closest("#wr-btn-switch-studio")) {
+        document.documentElement.removeAttribute("data-c2-cockpit");
+        document.body.removeAttribute("data-c2-cockpit");
+        return true;
+      }
+
+      if (target.closest("#wr-btn-open-seal-modal")) {
+        const m = document.getElementById("wr-seal-modal-backdrop");
+        if (m) m.hidden = false;
+        return true;
+      }
+      if (target.closest("#wr-btn-close-seal-modal") || target.id === "wr-seal-modal-backdrop") {
+        const m = document.getElementById("wr-seal-modal-backdrop");
+        if (m) m.hidden = true;
+        return true;
+      }
+
+      if (target.closest("#wr-btn-open-cmdk")) {
+        const m = document.getElementById("wr-cmdk-modal-backdrop");
+        if (m) {
+          m.hidden = false;
+          renderCmdkItems("");
+          const inp = document.getElementById("wr-cmdk-input");
+          if (inp) inp.focus();
+        }
+        return true;
+      }
+      if (target.closest("#wr-btn-close-cmdk") || target.id === "wr-cmdk-modal-backdrop") {
+        const m = document.getElementById("wr-cmdk-modal-backdrop");
+        if (m) m.hidden = true;
+        return true;
+      }
+
+      const layerBtn = target.closest("[data-toggle-layer]");
+      if (layerBtn) {
+        const k = layerBtn.getAttribute("data-toggle-layer");
+        model.state.mapLayers[k] = !model.state.mapLayers[k];
+        renderAll();
+        return true;
+      }
+
+      const engineBtn = target.closest("[data-map-engine]");
+      if (engineBtn) {
+        model.state.mapEngine = engineBtn.getAttribute("data-map-engine") || "SVG";
+        renderAll();
+        return true;
+      }
+
+      const evFocusPill = target.closest("[data-focus-evidence]");
+      if (evFocusPill) {
+        const evId = evFocusPill.getAttribute("data-focus-evidence");
+        model.state.selectedEventId = evId;
+        const foundRow = model.state.catalogRows.find((r) => r.event_id === evId);
+        if (foundRow) {
+          model.state.selectedGraphNodeId = foundRow.source_id;
+          virtualScrollTop = Math.max(0, foundRow.row_index * VIRTUAL_ROW_HEIGHT_PX - 36);
+        }
+        renderAll();
+        return true;
+      }
+
+      const graphNode = target.closest("[data-graph-source]");
+      if (graphNode) {
+        model.state.selectedGraphNodeId = graphNode.getAttribute("data-graph-source");
+        renderAll();
+        return true;
+      }
+
+      if (target.closest("#wr-btn-toggle-graph-node")) {
+        model.toggleGraphSourceDisabled(model.state.selectedGraphNodeId);
+        return true;
+      }
+
+      if (target.closest("#wr-btn-run-whatif")) {
+        const customFpEl = document.getElementById("wr-custom-fp-input");
+        const fpValStr =
+          customFpEl && /^-?\d+$/.test(customFpEl.value.trim())
+            ? customFpEl.value.trim()
+            : model.state.customOverrideFp || "16000000";
+        model.state.customOverrideFp = fpValStr;
+
+        const interventions =
+          model.state.customStressMode === "BERTH_02"
+            ? [{ target_id: "BERTH_02", override_field: "status", fp_val: "0" }]
+            : model.state.customStressMode === "ROUTE_SHELTER_01"
+              ? [
+                  {
+                    target_id: "ROUTE_SHELTER_01",
+                    override_field: "route_shelter_corridor",
+                    fp_val: fpValStr,
+                  },
+                ]
+              : [
+                  {
+                    target_id: "VESSEL_AEGEAN_01",
+                    override_field: "delay_min_fp",
+                    fp_val: fpValStr,
+                  },
+                ];
+        if (
+          !sendWsJson({
             cmd: "RUN_COUNTERFACTUAL",
-            base_cutoff_ms: st.cutoffLearnedAtMs,
-            branch_id: branchName,
+            base_cutoff_ms: model.state.cutoffLearnedAtMs,
+            branch_id: "cf_ui_desk",
             interventions,
-          },
-          () => model.runInteractiveCounterfactual(interventions, branchName)
-        );
-        return;
-      }
-      if (target.hasAttribute("data-card-focus")) {
-        const cid = target.getAttribute("data-card-focus");
-        st.focusedActionCardId = cid;
-        st.highlightedCorridor =
-          cid === "coa-20261111-02" ? "SOUTH_SAMOS_SHELTERED" : "PRIMARY_NORTH";
-        setStageMode("MAP", false);
-        renderAgentDockZone();
-        return;
-      }
-      if (target.hasAttribute("data-card-stress")) {
-        const cid = target.getAttribute("data-card-stress");
-        const card = st.actionCards.find((c) => c.card_id === cid);
-        if (card) {
-          st.focusedActionCardId = cid;
-          st.stageMode = "GRAPH";
-          sendWsOrFallback(
-            {
-              cmd: "RUN_COUNTERFACTUAL",
-              base_cutoff_ms: st.cutoffLearnedAtMs,
-              branch_id: card.branch_id,
-              interventions: card.interventions,
-            },
-            () => model.runInteractiveCounterfactual(card.interventions, card.branch_id)
-          );
+          })
+        ) {
+          model.runInteractiveCounterfactual(interventions, "cf_ui_desk");
         }
-        return;
+        return true;
       }
-      if (target.hasAttribute("data-card-sign")) {
-        const cid = target.getAttribute("data-card-sign");
-        const localSigned = model.signAndSealActionCardLocal(cid);
-        if (localSigned.ok && wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-          wsClient.send(
-            JSON.stringify({
-              cmd: "SIGN_ACTION_CARD",
-              card_id: localSigned.card_id,
-              scenario_id: localSigned.scenario_id,
-              verdict_context: localSigned.verdict_context,
-              state_blake3: localSigned.state_blake3,
-              branch_state_blake3: localSigned.branch_state_blake3,
-              approved_at_ms: localSigned.approved_at_ms,
-              operator_pubkey: localSigned.operator_pubkey,
-              operator_sig: localSigned.operator_sig,
-            })
-          );
+
+      const snapBtn = target.closest("[data-snap-cutoff]");
+      if (snapBtn) {
+        applyCutoffFromUi(snapBtn.getAttribute("data-snap-cutoff"));
+        return true;
+      }
+
+      const speedBtn = target.closest("[data-replay-speed]");
+      if (speedBtn) {
+        const sp = Number(speedBtn.getAttribute("data-replay-speed")) === 10 ? 10 : 1;
+        model.state.replaySpeed = sp;
+        renderAll();
+        return true;
+      }
+
+      if (target.closest("#wr-btn-step-prev")) {
+        const t = model.stepEventCursor(-1);
+        sendWsJson({
+          cmd: "EVALUATE_SLICE",
+          cutoff_learned_at_ms: t,
+          locale: model.state.locale,
+          register: model.state.register,
+        });
+        return true;
+      }
+      if (target.closest("#wr-btn-step-next")) {
+        const t = model.stepEventCursor(1);
+        sendWsJson({
+          cmd: "EVALUATE_SLICE",
+          cutoff_learned_at_ms: t,
+          locale: model.state.locale,
+          register: model.state.register,
+        });
+        return true;
+      }
+
+      if (target.closest("#wr-btn-toggle-play")) {
+        if (model.state.playbackMode === "LIVE") {
+          model.state.playbackMode = "REPLAY";
+          if (livePlayInterval) {
+            clearInterval(livePlayInterval);
+            livePlayInterval = null;
+          }
+        } else {
+          model.state.playbackMode = "LIVE";
+          livePlayInterval = setInterval(() => {
+            const mult = BigInt(model.state.replaySpeed || 1);
+            const cur = BigInt(model.state.cutoffLearnedAtMs);
+            const nxt =
+              cur + 30000n * mult <= TIMELINE_MAX_MS ? cur + 30000n * mult : TIMELINE_MIN_MS;
+            applyCutoffFromUi(nxt.toString());
+          }, 900);
         }
-        return;
+        renderAll();
+        return true;
       }
-      if (target.hasAttribute("data-assistant-preset")) {
-        const q = target.getAttribute("data-assistant-preset");
-        sendWsOrFallback(
-          { cmd: "ASSISTANT_QUERY", cutoff_learned_at_ms: st.cutoffLearnedAtMs, query: q },
-          () => model.submitAssistantQueryLocal(q)
-        );
-        return;
-      }
-      if (target.id === "wr-btn-toggle-playback") {
-        togglePlaybackMode(false);
-        return;
-      }
-      if (target.hasAttribute("data-replay-speed")) {
-        setReplaySpeed(target.getAttribute("data-replay-speed"));
-        return;
-      }
-      if (target.id === "wr-btn-step-prev") {
-        const prevMs = model.stepEventCursor(-1);
-        if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-          wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: prevMs }));
-        }
-        return;
-      }
-      if (target.id === "wr-btn-step-next") {
-        const nextMs = model.stepEventCursor(1);
-        if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-          wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
-        }
-        return;
-      }
-      if (target.hasAttribute("data-snap-cutoff")) {
-        triggerCutoffChange(target.getAttribute("data-snap-cutoff"), false);
-        return;
-      }
-      if (target.hasAttribute("data-ep-filter")) {
-        st.epistemicFilter = target.getAttribute("data-ep-filter");
+
+      const filterBtn = target.closest("[data-epistemic-filter]");
+      if (filterBtn) {
+        model.state.epistemicFilter = filterBtn.getAttribute("data-epistemic-filter");
         virtualScrollTop = 0;
-        virtualViewportEl.scrollTop = 0;
-        renderTimeConductorZone();
-        return;
+        renderAll();
+        return true;
       }
-      if (target.hasAttribute("data-row-event-id")) {
-        st.selectedEventId = target.getAttribute("data-row-event-id");
-        st.selectedGraphNodeId = target.getAttribute("data-row-source-id") || st.selectedGraphNodeId;
-        renderVirtualTelemetryRows();
-        if (st.stageMode === "GRAPH") renderStageZone();
+
+      const rowEl = target.closest("[data-row-event-id]");
+      if (rowEl) {
+        model.state.selectedEventId = rowEl.getAttribute("data-row-event-id");
+        renderAll();
+        return true;
+      }
+
+      const focusBtn = target.closest("[data-card-focus]");
+      if (focusBtn) {
+        const cid = focusBtn.getAttribute("data-card-focus");
+        model.state.focusedActionCardId = cid;
+        model.state.stageMode = "MAP";
+        model.state.highlightedCorridor =
+          cid === "coa-20261111-02" ? "SOUTH_SAMOS_SHELTERED" : "PRIMARY_NORTH";
+        renderAll();
+        return true;
+      }
+
+      const stressBtn = target.closest("[data-card-stress]");
+      if (stressBtn) {
+        const cid = stressBtn.getAttribute("data-card-stress");
+        const card = model.state.actionCards.find((c) => c.card_id === cid);
+        model.state.stageMode = "GRAPH";
+        if (card) {
+          model.runInteractiveCounterfactual(card.interventions, card.branch_id);
+        } else {
+          renderAll();
+        }
+        return true;
+      }
+
+      const signBtn = target.closest("[data-card-sign]");
+      if (signBtn) {
+        const cid = signBtn.getAttribute("data-card-sign");
+        const sealRes = model.signAndSealActionCardLocal(cid);
+        if (sealRes.ok) {
+          sendWsJson({
+            cmd: "SIGN_ACTION_CARD",
+            card_id: sealRes.card_id,
+            scenario_id: sealRes.scenario_id,
+            verdict_context: sealRes.verdict_context,
+            state_blake3: sealRes.state_blake3,
+            branch_state_blake3: sealRes.branch_state_blake3,
+            approved_at_ms: sealRes.approved_at_ms,
+            operator_pubkey: sealRes.operator_pubkey,
+            operator_sig: sealRes.operator_sig,
+          });
+        }
+        return true;
+      }
+
+      const presetAsk = target.closest("[data-assistant-preset]");
+      if (presetAsk) {
+        const q = presetAsk.getAttribute("data-assistant-preset");
+        if (
+          !sendWsJson({
+            cmd: "ASSISTANT_QUERY",
+            cutoff_learned_at_ms: model.state.cutoffLearnedAtMs,
+            locale: model.state.locale,
+            register: model.state.register,
+            query: q,
+          })
+        ) {
+          model.submitAssistantQueryLocal(q);
+        }
+        return true;
+      }
+
+      return false;
+    }
+
+    shell.addEventListener("click", (ev) => {
+      activateInteractiveTarget(ev.target);
+    });
+
+    shell.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        const interactiveSvgOrRow =
+          ev.target &&
+          typeof ev.target.closest === "function" &&
+          (ev.target.closest("[data-graph-source]") || ev.target.closest("[data-row-event-id]"));
+        if (interactiveSvgOrRow) {
+          ev.preventDefault();
+          activateInteractiveTarget(interactiveSvgOrRow);
+        }
       }
     });
 
-    rootEl.addEventListener("change", (ev) => {
-      if (ev.target && ev.target.id === "wr-stress-delta-select") {
-        st.customStressMode = ev.target.value;
-      }
+    returnPill.addEventListener("click", () => {
+      document.documentElement.setAttribute("data-c2-cockpit", "active");
+      document.body.setAttribute("data-c2-cockpit", "active");
     });
 
-    rootEl.addEventListener("input", (ev) => {
-      if (ev.target && ev.target.id === "wr-cutoff-slider") {
-        triggerCutoffChange(ev.target.value, false);
-      } else if (ev.target && ev.target.id === "wr-cmdk-input") {
-        renderCmdkResults(ev.target.value);
-      } else if (ev.target && ev.target.id === "wr-stress-custom-fp-input") {
-        st.customOverrideFp = ev.target.value;
-      }
-    });
+    const cmdkInput = document.getElementById("wr-cmdk-input");
+    if (cmdkInput) {
+      cmdkInput.addEventListener("input", (ev) => {
+        renderCmdkItems(ev.target.value);
+      });
+    }
 
-    rootEl.addEventListener("submit", (ev) => {
-      if (ev.target && ev.target.id === "wr-assistant-form") {
-        ev.preventDefault();
-        const inp = rootEl.querySelector("#wr-assistant-input");
-        const q = inp ? inp.value.trim() : "";
-        if (!q) return;
-        inp.value = "";
-        sendWsOrFallback(
-          { cmd: "ASSISTANT_QUERY", cutoff_learned_at_ms: st.cutoffLearnedAtMs, query: q },
-          () => model.submitAssistantQueryLocal(q)
-        );
-      }
-    });
-
-    virtualViewportEl.addEventListener(
-      "scroll",
-      () => {
-        virtualScrollTop = virtualViewportEl.scrollTop;
-        renderVirtualTelemetryRows();
-      },
-      { passive: true }
-    );
-
-    // §4.3 Zorunlu Operatör Klavye Kısayolları (0ms gecikmeli)
+    // Klavye Kısayolları: Space, [, ], L (TR<->EN), S (Sade<->Teknik), M, G, Alt+1/2/3, Cmd/Ctrl+K, Escape
     window.addEventListener("keydown", (ev) => {
-      const cockpitActive = document.body.getAttribute("data-c2-cockpit") === "active";
-      if (!cockpitActive) return;
+      if (!document.body.hasAttribute("data-c2-cockpit")) return;
+      const tag = (ev.target && ev.target.tagName) || "";
+      const inInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "k") {
         ev.preventDefault();
-        cmdkModalEl.hidden = !cmdkModalEl.hidden;
-        if (!cmdkModalEl.hidden) {
-          renderCmdkResults("");
-          cmdkInputEl.value = "";
-          cmdkInputEl.focus();
+        const m = document.getElementById("wr-cmdk-modal-backdrop");
+        if (m) {
+          m.hidden = !m.hidden;
+          if (!m.hidden) {
+            renderCmdkItems("");
+            const inp = document.getElementById("wr-cmdk-input");
+            if (inp) inp.focus();
+          }
         }
         return;
       }
 
       if (ev.key === "Escape") {
-        if (!cmdkModalEl.hidden) cmdkModalEl.hidden = true;
-        if (!sealModalEl.hidden) sealModalEl.hidden = true;
+        const sModal = document.getElementById("wr-seal-modal-backdrop");
+        const cModal = document.getElementById("wr-cmdk-modal-backdrop");
+        if (sModal && !sModal.hidden) sModal.hidden = true;
+        if (cModal && !cModal.hidden) cModal.hidden = true;
         return;
       }
 
-      const tag = (ev.target && ev.target.tagName ? ev.target.tagName : "").toUpperCase();
-      const isEditing =
-        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean(ev.target && ev.target.isContentEditable);
-      if (isEditing) return;
+      if (inInput) return;
+
+      document.body.setAttribute("data-kbd-instant", "1");
+      setTimeout(() => document.body.removeAttribute("data-kbd-instant"), 60);
 
       if (ev.altKey && ev.key === "1") {
         ev.preventDefault();
-        setTheme("day", true);
-        return;
-      }
-      if (ev.altKey && ev.key === "2") {
+        model.state.theme = "day";
+        renderAll();
+      } else if (ev.altKey && ev.key === "2") {
         ev.preventDefault();
-        setTheme("dusk", true);
-        return;
-      }
-      if (ev.altKey && ev.key === "3") {
+        model.state.theme = "dusk";
+        renderAll();
+      } else if (ev.altKey && ev.key === "3") {
         ev.preventDefault();
-        setTheme("night", true);
-        return;
-      }
-      if (!ev.ctrlKey && !ev.metaKey && !ev.altKey) {
-        if (ev.code === "Space") {
-          ev.preventDefault();
-          togglePlaybackMode(true);
-        } else if (ev.key === "[") {
-          ev.preventDefault();
-          document.body.setAttribute("data-kbd-instant", "1");
-          const prevMs = model.stepEventCursor(-1);
-          if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-            wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: prevMs }));
-          }
-          requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
-        } else if (ev.key === "]") {
-          ev.preventDefault();
-          document.body.setAttribute("data-kbd-instant", "1");
-          const nextMs = model.stepEventCursor(1);
-          if (wsClient && wsClient.readyState === 1 && agUiHandshakeConfirmed) {
-            wsClient.send(JSON.stringify({ cmd: "EVALUATE_SLICE", cutoff_learned_at_ms: nextMs }));
-          }
-          requestAnimationFrame(() => document.body.removeAttribute("data-kbd-instant"));
-        } else if (ev.key === "m" || ev.key === "M") {
-          ev.preventDefault();
-          setStageMode("MAP", true);
-        } else if (ev.key === "g" || ev.key === "G") {
-          ev.preventDefault();
-          setStageMode("GRAPH", true);
-        }
+        model.state.theme = "night";
+        renderAll();
+      } else if (ev.key === "[") {
+        ev.preventDefault();
+        const t = model.stepEventCursor(-1);
+        sendWsJson({
+          cmd: "EVALUATE_SLICE",
+          cutoff_learned_at_ms: t,
+          locale: model.state.locale,
+          register: model.state.register,
+        });
+      } else if (ev.key === "]") {
+        ev.preventDefault();
+        const t = model.stepEventCursor(1);
+        sendWsJson({
+          cmd: "EVALUATE_SLICE",
+          cutoff_learned_at_ms: t,
+          locale: model.state.locale,
+          register: model.state.register,
+        });
+      } else if (ev.key === " ") {
+        ev.preventDefault();
+        const btn = document.getElementById("wr-btn-toggle-play");
+        if (btn) btn.click();
+      } else if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key.toLowerCase() === "l") {
+        ev.preventDefault();
+        model.toggleLocale();
+        notifyWsLocaleRegisterChange();
+        renderAll();
+      } else if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key.toLowerCase() === "s") {
+        ev.preventDefault();
+        model.toggleRegister();
+        notifyWsLocaleRegisterChange();
+        renderAll();
+      } else if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key.toLowerCase() === "m") {
+        model.state.stageMode = "MAP";
+        renderAll();
+      } else if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key.toLowerCase() === "g") {
+        model.state.stageMode = "GRAPH";
+        renderAll();
       }
     });
 
-    // Canlı WebSocket (`ws://127.0.0.1:47809`) Köprüsü: Yalnızca localhost / açıkça yapılandırılmışsa bağlan
-    function connectLocalAgUiBridgeIfAvailable() {
-      if (typeof WebSocket === "undefined" || typeof location === "undefined") return;
-      const explicitWsUrl = window.CAELUS_AG_UI_WS_URL || "";
-      const isLocalLoopback =
-        location.hostname === "127.0.0.1" || location.hostname === "localhost";
-      if (!explicitWsUrl && !isLocalLoopback) return;
+    model.subscribe(() => renderAll());
+    renderAll();
 
-      if (isLocalLoopback && typeof fetch === "function" && location.protocol.startsWith("http")) {
-        fetch("/api/health", { cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((info) => {
-            if (info && info.protocol === "CAELUS_AG_UI_V1") {
-              st.serverAirlockMode = info.mode === "live" ? "LIVE_AIRLOCK" : "OFFLINE_REPLAY";
-              renderTopBar();
-            }
-          })
-          .catch(() => {});
-      }
-
-      const defaultLoopbackWs =
-        location.protocol.startsWith("http") && location.host
-          ? `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`
-          : "ws://127.0.0.1:47809/ws";
-      const wsUrl = explicitWsUrl || defaultLoopbackWs;
+    // Opsiyonel Yerel Loopback AG-UI WebSocket Bağlantısı (`ws://127.0.0.1:47809/ws`)
+    if (mountOptions.enableWebSocket !== false && typeof WebSocket !== "undefined") {
       try {
-        const sock = new WebSocket(wsUrl);
-        sock.addEventListener("open", () => {
-          wsClient = sock;
-          st.transportMode = "WS_CPP_ENGINE";
-          renderTopBar();
-          sock.send(
-            JSON.stringify({
-              cmd: "EVALUATE_SLICE",
-              cutoff_learned_at_ms: st.cutoffLearnedAtMs,
-            })
-          );
+        const wsHost =
+          window.location &&
+          window.location.hostname &&
+          window.location.protocol.startsWith("http")
+            ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`
+            : "ws://127.0.0.1:47809/ws";
+        wsConn = new WebSocket(wsHost);
+        wsConn.addEventListener("open", () => {
+          model.state.transportMode = "WS_LIVE";
+          notifyWsLocaleRegisterChange();
+          renderAll();
         });
-        sock.addEventListener("message", (msgEv) => {
+        wsConn.addEventListener("message", (ev) => {
           try {
-            const parsed = JSON.parse(String(msgEv.data || ""));
-            if (parsed && parsed.protocol === "CAELUS_AG_UI_V1") {
-              if (!agUiHandshakeConfirmed) {
-                agUiHandshakeConfirmed = true;
-                st.transportMode = "WS_LIVE";
+            const msg = JSON.parse(String(ev.data || ""));
+            if (msg && msg.protocol === "CAELUS_AG_UI_V1") {
+              if (msg.msg_type === "SERVER_HELLO") {
+                model.state.serverAirlockMode = msg.airlock_mode || "OFFLINE_REPLAY";
+                if (msg.pilot_manifest_json || msg.pilot_batch_ndjson) {
+                  model.updatePilotBundle(msg.pilot_manifest_json, msg.pilot_batch_ndjson);
+                }
+              } else {
+                model.applyAgUiEnvelopes([msg]);
               }
-              model.applyAgUiEnvelopes([parsed]);
+            } else if (msg && (msg.type === "WELCOME" || msg.type === "INIT_DATA")) {
+              model.state.transportMode = "WS_CPP_ENGINE";
+              renderAll();
             }
-          } catch (_) {
-            // Geçersiz çerçeve fail-closed yoksayılır
-          }
+          } catch (_) {}
         });
-        sock.addEventListener("close", () => {
-          if (wsClient === sock) wsClient = null;
-          agUiHandshakeConfirmed = false;
-          st.transportMode = "AIRGAPPED_LOCAL";
-          renderTopBar();
+        wsConn.addEventListener("close", () => {
+          model.state.transportMode = "AIRGAPPED_LOCAL";
+          renderAll();
         });
-        sock.addEventListener("error", () => {
-          // Hava boşluklu modda sessizce yerel motorda kal
+        wsConn.addEventListener("error", () => {
+          model.state.transportMode = "AIRGAPPED_LOCAL";
         });
       } catch (_) {
-        // Çevrimdışı ortam
+        model.state.transportMode = "AIRGAPPED_LOCAL";
       }
     }
 
-    setTheme(st.theme, true);
-    renderAll();
-    connectLocalAgUiBridgeIfAvailable();
-
-    return {
-      model,
-      setTheme,
-      setStageMode,
-      triggerCutoffChange,
-      toggleCockpitShellVisibility,
-    };
+    return model;
   }
 
-  // Tarayıcıda `#caelus-war-room-cockpit-shell` mevcutsa otomatik olarak monte et
-  if (typeof document !== "undefined") {
-    const boot = () => {
-      const el = document.getElementById("caelus-war-room-cockpit-shell");
-      if (el && !window.__caelusWarRoomCockpitInstance) {
-        window.__caelusWarRoomCockpitInstance = mountWarRoomCockpitDom(el);
-      }
-    };
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", boot, { once: true });
-    } else {
-      boot();
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!window.__CAELUS_WAR_ROOM_INSTANCE) {
+          window.__CAELUS_WAR_ROOM_INSTANCE = mountWarRoomCockpitDom();
+        }
+      });
+    } else if (!window.__CAELUS_WAR_ROOM_INSTANCE) {
+      window.__CAELUS_WAR_ROOM_INSTANCE = mountWarRoomCockpitDom();
     }
   }
 
@@ -2419,8 +2960,8 @@
     TAMPER_CHECK_MS,
     T2_CUTOFF_MS,
     EMBEDDED_AEGEAN_PILOT_BUNDLE,
-    parseTimelineCatalogFromBatch,
     createWarRoomCockpitModel,
+    renderCockpitZonesSnapshot,
     mountWarRoomCockpitDom,
   };
 });

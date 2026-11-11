@@ -812,6 +812,7 @@ private:
              path == "/personal_agent_and_advisor.js" || path == "/ui/personal_agent_and_advisor.js" ||
              path == "/spatial_experience.js" || path == "/ui/spatial_experience.js" ||
              path == "/sidecar_airlock_mcp.js" || path == "/ui/sidecar_airlock_mcp.js" ||
+             path == "/war_room_i18n.js" || path == "/ui/war_room_i18n.js" ||
              path == "/war_room_ag_ui_engine.js" || path == "/ui/war_room_ag_ui_engine.js" ||
              path == "/war_room_cockpit.js" || path == "/ui/war_room_cockpit.js") &&
             path.find("..") == std::string::npos &&

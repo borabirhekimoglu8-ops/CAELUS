@@ -410,6 +410,14 @@ if "%ONLY_DET%"=="0" (
     )
     where node > nul 2>&1
     if not errorlevel 1 (
+        node --test "%ROOT%\tests\test_i18n_and_plain_mode_parity.mjs"
+        if errorlevel 1 (
+            echo [CI FAIL] Kapilar 4: Dil Esitligi ve Sade Mod kapisi BASARISIZ!
+            set "CI_PASS=1"
+            set "STEP_FAIL=!STEP_FAIL! WAR_ROOM_I18N_PARITY"
+        ) else (
+            echo [CI OK] Kapilar 4: Dil Esitligi ve Sade Mod kapisi gecti
+        )
         node --test "%ROOT%\tests\test_war_room_master_gates.mjs"
         if errorlevel 1 (
             echo [CI FAIL] War Room 4-Ajan AG-UI ve Hava Bosluklu Kokpit kapilari BASARISIZ!

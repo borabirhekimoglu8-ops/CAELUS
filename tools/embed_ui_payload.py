@@ -35,6 +35,7 @@ INLINE_MODULES = [
     "ui/first_real_task_engine.js",
     "ui/personal_agent_and_advisor.js",
     "ui/spatial_experience.js",
+    "ui/war_room_i18n.js",
     "ui/sidecar_airlock_mcp.js",
     "ui/war_room_ag_ui_engine.js",
     "ui/war_room_cockpit.js",
@@ -232,3 +233,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

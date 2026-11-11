@@ -45,6 +45,7 @@ const MIME_BY_EXT = Object.freeze({
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".ndjson": "application/x-ndjson; charset=utf-8",
+  ".ftl": "text/plain; charset=utf-8",
 });
 
 function deterministicSeedHex(domainLabel) {
@@ -245,13 +246,15 @@ export async function startWarRoomAgUiServer(options = {}) {
     }
   }
 
-  function buildFullSliceEnvelopes(cutoffMsStr) {
+  function buildFullSliceEnvelopes(cutoffMsStr, i18nOpts = {}) {
     const res = orchestrator.orchestrateSliceStream({
       batch_path: activeBatchPath,
       manifest_path: defaultManifestPath,
       cutoff_learned_at_ms: String(cutoffMsStr),
       scenario_id: "AEGEAN_FERRY_01",
       policy_id: "MARITIME_SAFETY_V2",
+      locale: i18nOpts.locale || "tr",
+      register: i18nOpts.register || "plain",
       audit_log_path: activeAuditLogPath,
       audit_seed: auditSeedHex,
       det_clock: true,
@@ -407,10 +410,23 @@ export async function startWarRoomAgUiServer(options = {}) {
     }
 
     const cmd = String(msg.cmd || msg.type || "");
-    if (cmd === "EVALUATE_SLICE") {
+    if (typeof msg.locale === "string" && (msg.locale === "tr" || msg.locale === "en")) {
+      client.locale = msg.locale;
+    }
+    if (
+      typeof msg.register === "string" &&
+      (msg.register === "plain" || msg.register === "technical")
+    ) {
+      client.register = msg.register;
+    }
+
+    if (cmd === "EVALUATE_SLICE" || cmd === "SET_LOCALE_REGISTER") {
       const targetCutoff = String(msg.cutoff_learned_at_ms || currentCutoffMs);
       currentCutoffMs = targetCutoff;
-      const envs = buildFullSliceEnvelopes(targetCutoff);
+      const envs = buildFullSliceEnvelopes(targetCutoff, {
+        locale: client.locale,
+        register: client.register,
+      });
       for (const env of envs) enqueueEnvelope(client, env);
       return;
     }
@@ -483,6 +499,8 @@ export async function startWarRoomAgUiServer(options = {}) {
         cutoff_learned_at_ms: String(msg.cutoff_learned_at_ms || currentCutoffMs),
         scenario_id: "AEGEAN_FERRY_01",
         policy_id: "MARITIME_SAFETY_V2",
+        locale: client.locale,
+        register: client.register,
         audit_log_path: activeAuditLogPath,
         audit_seed: auditSeedHex,
         det_clock: true,
@@ -506,6 +524,8 @@ export async function startWarRoomAgUiServer(options = {}) {
       error: { errorCode: "UNKNOWN_WS_COMMAND", messageTr: `Bilinmeyen komut: ${cmd}` },
     });
   }
+
+  const localesRootDir = path.join(REPO_ROOT, "locales");
 
   const server = http.createServer((req, res) => {
     const reqUrl = new URL(req.url || "/", `http://${host}:${port}`);
@@ -546,6 +566,34 @@ export async function startWarRoomAgUiServer(options = {}) {
         "Cache-Control": "no-store",
       });
       res.end(body);
+      return;
+    }
+
+    if (pathname.startsWith("/locales/")) {
+      const localeRel = pathname.slice("/locales/".length);
+      if (localeRel.includes("\0") || localeRel.includes("..")) {
+        res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Forbidden");
+        return;
+      }
+      const localeCandidate = path.resolve(localesRootDir, localeRel);
+      if (!localeCandidate.startsWith(path.resolve(localesRootDir))) {
+        res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Forbidden");
+        return;
+      }
+      if (!fs.existsSync(localeCandidate) || !fs.statSync(localeCandidate).isFile()) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not Found");
+        return;
+      }
+      const ext = path.extname(localeCandidate).toLowerCase();
+      res.writeHead(200, {
+        "Content-Type": MIME_BY_EXT[ext] || "application/octet-stream",
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.end(fs.readFileSync(localeCandidate));
       return;
     }
 
@@ -605,6 +653,8 @@ export async function startWarRoomAgUiServer(options = {}) {
       queue: [],
       recvBuf: Buffer.alloc(0),
       closed: false,
+      locale: "tr",
+      register: "plain",
     };
     clients.add(client);
 
@@ -643,8 +693,11 @@ export async function startWarRoomAgUiServer(options = {}) {
     socket.on("close", cleanupClient);
     socket.on("error", cleanupClient);
 
-    // Bağlantı kurulur kurulmaz aktif kesitin 4 uzman ajan zarflarını yayınla
-    const initialEnvelopes = buildFullSliceEnvelopes(currentCutoffMs);
+    // Bağlantı kurulur kurulmaz aktif kesitin 4 uzman ajan zarflarını varsayılan Sade TR modunda yayınla
+    const initialEnvelopes = buildFullSliceEnvelopes(currentCutoffMs, {
+      locale: client.locale,
+      register: client.register,
+    });
     for (const env of initialEnvelopes) {
       enqueueEnvelope(client, env);
     }

@@ -175,6 +175,7 @@ test("Faz 0 & Kapı 6: A-1/A-2/A-3 mimari yasaları ve %100 Hava Boşluklu UI do
   // Yeni War Room UI varlıklarında sıfır dış CDN / Google Fonts / çevrimiçi karo URL'si
   const airGappedUiFiles = [
     "ui/tokens.css",
+    "ui/war_room_i18n.js",
     "ui/sidecar_airlock_mcp.js",
     "ui/war_room_ag_ui_engine.js",
     "ui/war_room_cockpit.js",
@@ -463,6 +464,7 @@ test("Kapı 7: Tüm Giriş Noktaları (ws_emitter.h, ui_payload.h, dist/index.ht
   const wsEmitterH = fs.readFileSync(path.join(ROOT, "include", "ws_emitter.h"), "utf8");
   for (const allowedAsset of [
     "/tokens.css",
+    "/war_room_i18n.js",
     "/sidecar_airlock_mcp.js",
     "/war_room_ag_ui_engine.js",
     "/war_room_cockpit.js",
@@ -509,6 +511,7 @@ test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/c
     for (const relUrl of [
       "/",
       "/tokens.css",
+      "/war_room_i18n.js",
       "/sidecar_airlock_mcp.js",
       "/war_room_ag_ui_engine.js",
       "/war_room_cockpit.js",

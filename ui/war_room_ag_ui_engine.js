@@ -1,29 +1,40 @@
 /**
- * CAELUS OS — 4 Specialist Agents & Proactive Command Assistant Engine (`CAELUS_AG_UI_V1`)
+ * CAELUS OS — 4 Specialist Agents & Multi-Lingual Proactive Command Assistant (`CAELUS_AG_UI_V1`)
  *
- * Katman 2 (Master Spesifikasyon §3.2 & §4.2.4):
+ * Katman 3 (Master Spesifikasyon §2.1, §4.1 & §4.2):
  * - Ajanlar serbest metinle karar uydurmaz; yalnızca deterministik Sidecar Airlock / MCP
  *   araçlarını (`caelus_airlock_validate_batch`, `caelus_evaluate_slice`,
  *   `caelus_run_counterfactual_branch`, `caelus_explain_outcome`) çağırır.
- * - Tüm 64-bit tam sayılar (`int64_t` / `u64`, `fp_val`, `seq_no`, zaman damgaları) ondalık
- *   ASCII `string` olarak korunur (`> 2^53 - 1` sıfır bit kaybı).
+ * - Çift Eksenli Dil Desteği (`locale: "tr" | "en"` × `register: "plain" | "technical"`):
+ *   Her zarf kanonik `msg_id` + `msg_params` (tüm 64-bit tam sayılar ondalık ASCII `string`)
+ *   ve seçili dil + sadelik seviyesinde tam yerelleştirilmiş metin üretir; `state_blake3` 0 bit değişir.
  * - Hem Node.js (`ws://127.0.0.1:47809` WebSocket sunucusu) hem de %100 çevrimdışı (air-gapped)
  *   tarayıcı / PWA ortamında sıfır harici bağımlılıkla çalışır.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
     const sidecarAirlock = require("./sidecar_airlock_mcp.js");
-    module.exports = factory(sidecarAirlock);
+    const warRoomI18n = require("./war_room_i18n.js");
+    module.exports = factory(sidecarAirlock, warRoomI18n);
   } else {
-    root.CaelusWarRoomAgUiEngine = factory(root.CaelusSidecarAirlockMcp);
+    root.CaelusWarRoomAgUiEngine = factory(
+      root.CaelusSidecarAirlockMcp,
+      root.CaelusWarRoomI18n
+    );
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (sidecarAirlock) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (sidecarAirlock, warRoomI18n) {
   "use strict";
 
   const AG_UI_PROTOCOL = "CAELUS_AG_UI_V1";
   const SPECIALIST_AGENTS = Object.freeze(["SENTINEL", "RED_TEAM", "STRATEGIST", "AUDITOR"]);
 
-  function formatFpMinutesShort(fpDecStr) {
+  function formatFpMinutesShort(fpDecStr, ctx = {}) {
+    if (warRoomI18n && warRoomI18n.formatFpMinutes) {
+      return warRoomI18n.formatFpMinutes(fpDecStr, {
+        locale: ctx.locale || "tr",
+        signed: true,
+      });
+    }
     if (typeof fpDecStr !== "string" || fpDecStr.length === 0) return "0.0 dk";
     try {
       const v = BigInt(fpDecStr);
@@ -46,6 +57,21 @@
     } catch (_) {
       return "0";
     }
+  }
+
+  function resolveCtx(params = {}) {
+    const locale = warRoomI18n
+      ? warRoomI18n.normalizeLocale(params.locale)
+      : params.locale === "en"
+        ? "en"
+        : "tr";
+    const register = warRoomI18n
+      ? warRoomI18n.normalizeRegister(params.register)
+      : params.register === "technical"
+        ? "technical"
+        : "plain";
+    const clockMode = params.clockMode === "LOCAL" ? "LOCAL" : "UTC";
+    return { locale, register, clockMode };
   }
 
   function createWarRoomAgUiOrchestrator(options = {}) {
@@ -85,9 +111,10 @@
 
     /**
      * Belirtilen `cutoff_learned_at_ms` kesitinde 4 uzman ajanın tam orkestrasyonunu koşturur
-     * ve `CAELUS_AG_UI_V1` zarf dizisini üretir.
+     * ve seçili `{ locale, register }` dil/sadelik matrisinde `CAELUS_AG_UI_V1` zarf dizisini üretir.
      */
     function orchestrateSliceStream(params = {}) {
+      const ctx = resolveCtx(params);
       const cutoffMs = String(params.cutoff_learned_at_ms || "1762849500000");
       const scenarioId = String(params.scenario_id || "AEGEAN_FERRY_01");
       const policyId = String(params.policy_id || "MARITIME_SAFETY_V2");
@@ -114,6 +141,8 @@
         arguments: {
           ...baseInput,
           cutoff_learned_at_ms: cutoffMs,
+          locale: ctx.locale,
+          register: ctx.register,
           advisor_template: "STRESS_TESTER",
         },
       });
@@ -126,6 +155,8 @@
         ...baseInput,
         cutoff_learned_at_ms: cutoffMs,
         state_blake3: sliceRes.state_blake3,
+        locale: ctx.locale,
+        register: ctx.register,
         advisor_template: "EXPLAINER",
       };
       const explainRes = airlockMcp.invokeAirlockTool({
@@ -142,6 +173,8 @@
       envelopes.push({
         protocol: AG_UI_PROTOCOL,
         msg_type: "SLICE_STATE_SYNC",
+        locale: ctx.locale,
+        register: ctx.register,
         cutoff_learned_at_ms: cutoffMs,
         scenario_id: scenarioId,
         policy_id: policyId,
@@ -166,38 +199,112 @@
 
       const anomalies = [];
       for (const rej of rejectedInSlice) {
+        const srcName = warRoomI18n
+          ? warRoomI18n.formatSourceName(rej.source_id, ctx)
+          : rej.source_id;
+        const detailText =
+          rej.error_code === "ERR_SOURCE_EQUIVOCATION"
+            ? warRoomI18n
+              ? warRoomI18n.t(
+                  "agent.sentinel.anomaly_equivocation",
+                  {
+                    source_name: srcName,
+                    source_id: rej.source_id,
+                    seq_no: String(rej.seq_no),
+                  },
+                  ctx
+                )
+              : `Kaynak çatallanması (${rej.source_id}, seq_no=${rej.seq_no}) yakalandı.`
+            : warRoomI18n
+              ? warRoomI18n.t(
+                  "agent.sentinel.anomaly_rejected",
+                  {
+                    source_name: srcName,
+                    source_id: rej.source_id,
+                    event_id: rej.event_id,
+                    error_code: rej.error_code,
+                  },
+                  ctx
+                )
+              : `Paket reddedildi (${rej.error_code}): ${rej.detail}`;
+
         anomalies.push({
           anomaly_kind:
             rej.error_code === "ERR_SOURCE_EQUIVOCATION"
               ? "SOURCE_EQUIVOCATION_TAMPER"
               : "AIRLOCK_INGEST_REJECTED",
+          msg_id:
+            rej.error_code === "ERR_SOURCE_EQUIVOCATION"
+              ? "security.source_equivocation"
+              : "security.ingest_rejected",
           severity: rej.error_code === "ERR_SOURCE_EQUIVOCATION" ? "CRITICAL" : "SERIOUS",
           source_id: rej.source_id,
           event_id: rej.event_id,
           seq_no: String(rej.seq_no),
           error_code: rej.error_code,
-          detail_tr:
-            rej.error_code === "ERR_SOURCE_EQUIVOCATION"
-              ? `Kaynak çatallanması (${rej.source_id}, seq_no=${rej.seq_no}) yakalandı; simülasyon durumu 0-bit korundu.`
-              : `Paket reddedildi (${rej.error_code}): ${rej.detail}`,
+          detail: detailText,
+          detail_tr: detailText,
         });
       }
       for (const st of staleSources) {
+        const srcName = warRoomI18n
+          ? warRoomI18n.formatSourceName(st.source_id, ctx)
+          : st.source_id;
+        const ageSecStr = (() => {
+          try {
+            return (BigInt(String(st.age_ms || "0")) / 1000n).toString();
+          } catch (_) {
+            return "0";
+          }
+        })();
+        const detailText = warRoomI18n
+          ? warRoomI18n.t(
+              "agent.sentinel.anomaly_stale",
+              {
+                source_name: srcName,
+                source_id: st.source_id,
+                age_sec: ageSecStr,
+                age_ms: String(st.age_ms),
+                max_ms: String(st.max_staleness_ms),
+              },
+              ctx
+            )
+          : `${st.source_id} tazelik sınırını aştı (${st.age_ms} ms > ${st.max_staleness_ms} ms).`;
         anomalies.push({
           anomaly_kind: "SENSOR_STALENESS_EXCEEDED",
+          msg_id: "agent.sentinel.anomaly_stale",
           severity: "CAUTION",
           source_id: st.source_id,
           age_ms: String(st.age_ms),
           max_staleness_ms: String(st.max_staleness_ms),
-          detail_tr: `${st.source_id} tazelik sınırını aştı (${st.age_ms} ms > ${st.max_staleness_ms} ms).`,
+          detail: detailText,
+          detail_tr: detailText,
         });
       }
       for (const cf of activeConflicts) {
         const conflictingAssertions = activeAssertions.filter((a) =>
           (cf.event_ids || []).includes(a.event_id)
         );
+        const minLabel = formatFpMinutesShort(String(cf.min_fp_val), ctx);
+        const maxLabel = formatFpMinutesShort(String(cf.max_fp_val), ctx);
+        const detailText = warRoomI18n
+          ? warRoomI18n.t(
+              "agent.sentinel.anomaly_conflict",
+              {
+                subject_id: cf.subject_id,
+                metric_key: cf.metric_key,
+                min_label: minLabel,
+                max_label: maxLabel,
+                min_fp: String(cf.min_fp_val),
+                max_fp: String(cf.max_fp_val),
+              },
+              ctx
+            )
+          : `${cf.subject_id}.${cf.metric_key} çelişiyor (${minLabel} vs ${maxLabel}).`;
+
         anomalies.push({
           anomaly_kind: "EPISTEMIC_SOURCE_CONFLICT",
+          msg_id: "agent.sentinel.anomaly_conflict",
           severity: "SERIOUS",
           subject_id: cf.subject_id,
           metric_key: cf.metric_key,
@@ -208,11 +315,18 @@
           preserved_side_by_side: conflictingAssertions.map((a) => ({
             event_id: a.event_id,
             source_id: a.source_id,
+            source_display: warRoomI18n
+              ? warRoomI18n.formatSourceName(a.source_id, ctx)
+              : a.source_id,
             epistemic_status: a.epistemic_status,
+            epistemic_display: warRoomI18n
+              ? warRoomI18n.formatEpistemicShort(a.epistemic_status, ctx)
+              : a.epistemic_status,
             fp_val: String(a.fp_val),
-            human_label: formatFpMinutesShort(String(a.fp_val)),
+            human_label: formatFpMinutesShort(String(a.fp_val), ctx),
           })),
-          detail_tr: `${cf.subject_id}.${cf.metric_key} için bağımsız kaynaklar çelişiyor (${formatFpMinutesShort(String(cf.min_fp_val))} vs ${formatFpMinutesShort(String(cf.max_fp_val))}); her iki kanıt da silinmeden korundu.`,
+          detail: detailText,
+          detail_tr: detailText,
         });
       }
 
@@ -224,10 +338,36 @@
             ? "CAUTION"
             : "NOMINAL";
 
+      const sentinelMsgId =
+        anomalies.length === 0 ? "agent.sentinel.nominal" : "agent.sentinel.alert";
+      const sentinelSummary = warRoomI18n
+        ? warRoomI18n.t(
+            sentinelMsgId,
+            {
+              total: anomalies.length,
+              quarantined: rejectedInSlice.length,
+              stale: staleSources.length,
+              conflicts: activeConflicts.length,
+            },
+            ctx
+          )
+        : anomalies.length === 0
+          ? "Tüm imzalar ve kaynak tazelik pencereleri nominal sınırda."
+          : `${anomalies.length} anomali saptandı.`;
+
       envelopes.push({
         protocol: AG_UI_PROTOCOL,
         msg_type: "EVENT_ANOMALY_FLAGGED",
         agent_id: "SENTINEL",
+        locale: ctx.locale,
+        register: ctx.register,
+        msg_id: sentinelMsgId,
+        msg_params: {
+          total: anomalies.length,
+          quarantined: rejectedInSlice.length,
+          stale: staleSources.length,
+          conflicts: activeConflicts.length,
+        },
         severity: sentinelSeverity,
         cutoff_learned_at_ms: cutoffMs,
         state_blake3: sliceRes.state_blake3,
@@ -239,10 +379,8 @@
           source_id: a.source_id,
           epistemic_status: a.epistemic_status,
         })),
-        summary_tr:
-          anomalies.length === 0
-            ? "Tüm imzalar ve kaynak tazelik pencereleri nominal sınırda."
-            : `${anomalies.length} anomali saptandı (${rejectedInSlice.length} karantina, ${staleSources.length} bayat sensör, ${activeConflicts.length} kaynak çelişkisi).`,
+        summary: sentinelSummary,
+        summary_tr: sentinelSummary,
       });
 
       // ── Ajan 2: RED_TEAM (`STRESS_THRESHOLD_ALERT`) ─────────────────────────
@@ -279,10 +417,39 @@
             ? "CAUTION"
             : "NOMINAL";
 
+      const redTeamMsgId =
+        projectedBreachRules.length > 0 ? "agent.redteam.alert" : "agent.redteam.nominal";
+      const p95Label = formatFpMinutesShort(String(world12.p95 || "0"), ctx);
+      const waveLabel = warRoomI18n
+        ? warRoomI18n.formatFpMeters(maxWaveP95Fp.toString(), ctx)
+        : `${maxWaveP95Fp.toString()} fp`;
+      const redTeamSummary = warRoomI18n
+        ? warRoomI18n.t(
+            redTeamMsgId,
+            {
+              count: projectedBreachRules.length,
+              p95_label: p95Label,
+              wave_label: waveLabel,
+              p95_fp: String(world12.p95 || "0"),
+              wave_fp: maxWaveP95Fp.toString(),
+            },
+            ctx
+          )
+        : projectedBreachRules.length > 0
+          ? `12-Dünya p95 stres zarfında ${projectedBreachRules.length} emniyet sınırı baskı altında.`
+          : "12-Dünya p50/p95 stres zarfı emniyet eşikleri içinde.";
+
       envelopes.push({
         protocol: AG_UI_PROTOCOL,
         msg_type: "STRESS_THRESHOLD_ALERT",
         agent_id: "RED_TEAM",
+        locale: ctx.locale,
+        register: ctx.register,
+        msg_id: redTeamMsgId,
+        msg_params: {
+          count: projectedBreachRules.length,
+          max_allowed_fp: maxAllowedFpStr,
+        },
         severity: redTeamSeverity,
         cutoff_learned_at_ms: cutoffMs,
         state_blake3: sliceRes.state_blake3,
@@ -295,10 +462,8 @@
         wave_p95_m_fp: maxWaveP95Fp.toString(),
         wind_gust_kn_fp: maxWindGustFp.toString(),
         projected_breach_rules: projectedBreachRules,
-        summary_tr:
-          projectedBreachRules.length > 0
-            ? `12-Dünya p95 stres zarfında ${projectedBreachRules.length} emniyet sınırı baskı altında (p95=${String(world12.p95)} fp, dalga p95=${maxWaveP95Fp.toString()} fp).`
-            : "12-Dünya p50/p95 stres zarfı emniyet eşikleri içinde.",
+        summary: redTeamSummary,
+        summary_tr: redTeamSummary,
       });
 
       // ── Ajan 3 (STRATEGIST) + Ajan 4 (AUDITOR): Karşılaştırmalı `ACTION_APPROVAL_CARD`lar ──
@@ -315,22 +480,35 @@
       );
 
       if (sliceRes.verdict === "KURAL_İHLALİ" || sliceRes.verdict === "KANIT_YETERSİZ") {
+        const coa1Title = warRoomI18n
+          ? warRoomI18n.t("agent.strategist.coa1_title", {}, ctx)
+          : "Seçenek A: Yedek Rıhtıma (Berth-B) Yanaş — Süre Kazancı: 18 dk";
+        const coa1Rationale = warRoomI18n
+          ? warRoomI18n.t("agent.strategist.coa1_rationale", {}, ctx)
+          : "Rüzgar altı Yedek Rıhtım-B rampasını devreye alarak gecikmeyi emniyet sınırına indirir.";
+        const coa2Title = warRoomI18n
+          ? warRoomI18n.t("agent.strategist.coa2_title", {}, ctx)
+          : "Seçenek B: Güney Sisam Korunaklı Rotaya Geç / Limanda 25 dk Bekle";
+        const coa2Rationale = warRoomI18n
+          ? warRoomI18n.t("agent.strategist.coa2_rationale", {}, ctx)
+          : "Güney Sisam korunaklı rota koridorunu kullanarak açık deniz dalga riskini düşürür.";
+
         const candidatePlans = [
           {
             card_id: "coa-20261111-01",
             branch_id: "cf_01",
-            title: "Yedek Rıhtıma (Berth-B) Yönlendirme ve +20 dk Kalkış Güncellemesi",
-            rationale_tr:
-              "Rüzgar altı Berth-B rampasını devreye alarak Sığacık ana rıhtım kuyruğunu sönümler ve SLA ihlalini emniyet marjına çeker.",
+            msg_id: "agent.strategist.coa1",
+            title: coa1Title,
+            rationale: coa1Rationale,
             focus_target: { entity_id: "VESSEL_AEGEAN_01", berth_id: "BERTH_B", graph_node: "ev_104" },
             interventions: [{ target_id: "BERTH_02", override_field: "status", fp_val: "0" }],
           },
           {
             card_id: "coa-20261111-02",
             branch_id: "cf_02",
-            title: "Güney Samos Dalga Korunaklı Koridora Geçiş ve İskele Sıra Kilidi",
-            rationale_tr:
-              "p95 dalga zarfını düşürmek için Güney Samos korunaklı rota koridoruna geçer ve rıhtım kapı kilidini senkronize eder.",
+            msg_id: "agent.strategist.coa2",
+            title: coa2Title,
+            rationale: coa2Rationale,
             focus_target: {
               entity_id: "CORRIDOR_SIGACIK_VATHI",
               berth_id: "BERTH_A",
@@ -346,7 +524,6 @@
           },
         ];
 
-        // Kanıt referanslarını öncelikli olarak OBSERVATION + HYPOTHESIS + CLAIM birleşimiyle kur
         const evidenceRefs = activeAssertions.map((a) => ({
           event_id: a.event_id,
           source_id: a.source_id,
@@ -359,13 +536,21 @@
           activeConflicts.length > 0
             ? activeAssertions
                 .filter((a) => (activeConflicts[0].event_ids || []).includes(a.event_id))
-                .map((a) => ({
-                  event_id: a.event_id,
-                  source_id: a.source_id,
-                  epistemic_status: a.epistemic_status,
-                  fp_val: String(a.fp_val),
-                  label: `${a.source_id} (${a.epistemic_status}): ${formatFpMinutesShort(String(a.fp_val))}`,
-                }))
+                .map((a) => {
+                  const srcLabel = warRoomI18n
+                    ? warRoomI18n.formatSourceName(a.source_id, ctx)
+                    : a.source_id;
+                  const epLabel = warRoomI18n
+                    ? warRoomI18n.formatEpistemicShort(a.epistemic_status, ctx)
+                    : a.epistemic_status;
+                  return {
+                    event_id: a.event_id,
+                    source_id: a.source_id,
+                    epistemic_status: a.epistemic_status,
+                    fp_val: String(a.fp_val),
+                    label: `${srcLabel} (${epLabel}): ${formatFpMinutesShort(String(a.fp_val), ctx)}`,
+                  };
+                })
             : [];
 
         for (const plan of candidatePlans) {
@@ -388,6 +573,9 @@
           envelopes.push({
             protocol: AG_UI_PROTOCOL,
             msg_type: "ACTION_APPROVAL_CARD",
+            locale: ctx.locale,
+            register: ctx.register,
+            msg_id: plan.msg_id,
             card_id: plan.card_id,
             branch_id: plan.branch_id,
             severity: cardSeverity,
@@ -395,7 +583,8 @@
             base_verdict: cfRes.base_verdict,
             branch_verdict: cfRes.branch_verdict,
             title: plan.title,
-            rationale_tr: plan.rationale_tr,
+            rationale: plan.rationale,
+            rationale_tr: plan.rationale,
             agents_involved: [...SPECIALIST_AGENTS],
             evidence_refs: evidenceRefs.map((e) => ({
               event_id: e.event_id,
@@ -432,6 +621,8 @@
 
       return {
         ok: true,
+        locale: ctx.locale,
+        register: ctx.register,
         cutoff_learned_at_ms: cutoffMs,
         verdict: sliceRes.verdict,
         state_blake3: sliceRes.state_blake3,
@@ -440,11 +631,13 @@
     }
 
     /**
-     * Komuta Asistanı Sorgu Çubuğu (§4.2.4):
-     * Doğal dil sorusuna serbest metin uydurmadan, doğrudan MCP araç çıktılarına ve
-     * kanıt referanslarına (`event_id`, `source_id`, `state_blake3`) bağlı yanıt üretir.
+     * Çok Dilli Proaktif Komuta Asistanı (§4.2):
+     * Kullanıcının seçtiği `locale` (`tr`/`en`) ve `register` (`plain`/`technical`) bağlamını alır;
+     * %100 o dilde, sıfır kırma teknik terimle ve doğrudan ilgili harita/olay kartına odaklanmayı
+     * sağlayan tıklanabilir `focus_chips` eylem çipleriyle yanıt verir.
      */
     function answerEvidenceBoundQuery(params = {}) {
+      const ctx = resolveCtx(params);
       const queryText = String(params.query || "").trim();
       const cutoffMs = String(params.cutoff_learned_at_ms || "1762849500000");
       const scenarioId = String(params.scenario_id || "AEGEAN_FERRY_01");
@@ -461,6 +654,8 @@
         arguments: {
           ...baseInput,
           cutoff_learned_at_ms: cutoffMs,
+          locale: ctx.locale,
+          register: ctx.register,
           advisor_template: "STRESS_TESTER",
         },
       });
@@ -474,6 +669,8 @@
           ...baseInput,
           cutoff_learned_at_ms: cutoffMs,
           state_blake3: sliceRes.state_blake3,
+          locale: ctx.locale,
+          register: ctx.register,
           advisor_template: "EXPLAINER",
         },
       });
@@ -484,6 +681,14 @@
         qLower.includes("berth") ||
         qLower.includes("rıhtım") ||
         qLower.includes("rihtim") ||
+        qLower.includes("yedek") ||
+        qLower.includes("alternate") ||
+        qLower.includes("option") ||
+        qLower.includes("seçenek") ||
+        qLower.includes("secenek") ||
+        qLower.includes("simulate") ||
+        qLower.includes("sına") ||
+        qLower.includes("sina") ||
         qLower.includes("karşı") ||
         qLower.includes("karsi") ||
         qLower.includes("what-if") ||
@@ -514,29 +719,139 @@
         seq_no: String(a.seq_no),
       }));
 
-      const parts = [
-        `[MCP Kanıt Yanıtı] Kesit=${cutoffMs} ms | Karar=${sliceRes.verdict} | Kural=${sliceRes.applied_rule_id} | state_blake3=${sliceRes.state_blake3.slice(0, 16)}…`,
-      ];
+      const clockLabel = warRoomI18n
+        ? warRoomI18n.formatClockMs(cutoffMs, ctx)
+        : `${cutoffMs} ms`;
+      const verdictDisplay = warRoomI18n
+        ? warRoomI18n.formatVerdict(
+            sliceRes.verdict,
+            {
+              policy_id: policyId,
+              rule_id: sliceRes.applied_rule_id,
+              missing_groups: missing,
+            },
+            ctx
+          )
+        : sliceRes.verdict;
+
+      const parts = [];
+      if (warRoomI18n) {
+        parts.push(
+          warRoomI18n.t(
+            "assistant.reply_summary",
+            {
+              clock: clockLabel,
+              verdict_label: verdictDisplay,
+              cutoff_ms: cutoffMs,
+              verdict_code: sliceRes.verdict,
+              rule_id: sliceRes.applied_rule_id,
+              state_hash: String(sliceRes.state_blake3 || "").slice(0, 16),
+            },
+            ctx
+          )
+        );
+      } else {
+        parts.push(`Durum: ${verdictDisplay}.`);
+      }
+
       if (conflicts.length > 0) {
         const c = conflicts[0];
+        const minLabel = formatFpMinutesShort(String(c.min_fp_val), ctx);
+        const maxLabel = formatFpMinutesShort(String(c.max_fp_val), ctx);
         parts.push(
-          `Çelişki Korundu: ${c.subject_id}.${c.metric_key} aralığı [${formatFpMinutesShort(String(c.min_fp_val))}, ${formatFpMinutesShort(String(c.max_fp_val))}] (${(c.source_ids || []).join(" vs ")}).`
+          warRoomI18n
+            ? warRoomI18n.t(
+                "assistant.reply_conflict",
+                {
+                  subject_id: c.subject_id,
+                  metric_key: c.metric_key,
+                  min_label: minLabel,
+                  max_label: maxLabel,
+                  min_fp: String(c.min_fp_val),
+                  max_fp: String(c.max_fp_val),
+                  sources: (c.source_ids || []).join(" vs "),
+                },
+                ctx
+              )
+            : `${minLabel} vs ${maxLabel}`
         );
       }
       if (missing.length > 0) {
-        parts.push(`Eksik Teyit: ${missing.join(", ")}.`);
-      }
-      if (cfOut && cfOut.ok) {
         parts.push(
-          `Karşı-Olgu (${cfOut.branch_id}): ${cfOut.base_verdict} -> ${cfOut.branch_verdict} (Δ gecikme=${formatFpMinutesShort(String(cfOut.delta_delay_min_fp))}, branch_blake3=${cfOut.branch_state_blake3.slice(0, 12)}…).`
+          warRoomI18n
+            ? warRoomI18n.t(
+                "assistant.reply_missing",
+                {
+                  missing_groups: missing.join(", "),
+                },
+                ctx
+              )
+            : `Eksik: ${missing.join(", ")}`
         );
       }
+      if (cfOut && cfOut.ok) {
+        const baseVerdictText = warRoomI18n
+          ? warRoomI18n.formatVerdict(cfOut.base_verdict, { policy_id: policyId }, ctx)
+          : cfOut.base_verdict;
+        const branchVerdictText = warRoomI18n
+          ? warRoomI18n.formatVerdict(cfOut.branch_verdict, { policy_id: policyId }, ctx)
+          : cfOut.branch_verdict;
+        parts.push(
+          warRoomI18n
+            ? warRoomI18n.t(
+                "assistant.reply_cf",
+                {
+                  branch_id: cfOut.branch_id,
+                  base_verdict: ctx.register === "technical" ? cfOut.base_verdict : baseVerdictText,
+                  branch_verdict:
+                    ctx.register === "technical" ? cfOut.branch_verdict : branchVerdictText,
+                  delta_label: formatFpMinutesShort(String(cfOut.delta_delay_min_fp), ctx),
+                  delta_fp: String(cfOut.delta_delay_min_fp),
+                  branch_hash: String(cfOut.branch_state_blake3 || "").slice(0, 12),
+                },
+                ctx
+              )
+            : `${cfOut.base_verdict} -> ${cfOut.branch_verdict}`
+        );
+      }
+
+      const focusEventId =
+        evidenceRefs.length > 0 ? evidenceRefs[evidenceRefs.length - 1].event_id : "ev_106";
+      const focusChips = [
+        {
+          chip_kind: "FOCUS_MAP_ENTITY",
+          entity_id: "VESSEL_AEGEAN_01",
+          label: warRoomI18n
+            ? warRoomI18n.t("dock.focus_chip_map", {}, ctx)
+            : "📍 Haritada Odakla",
+        },
+        {
+          chip_kind: "FOCUS_EVENT_ROW",
+          event_id: focusEventId,
+          label:
+            (warRoomI18n ? warRoomI18n.t("dock.focus_chip_event", {}, ctx) : "🔎 Kaydı Göster") +
+            (ctx.register === "technical" ? ` (${focusEventId})` : ""),
+        },
+        {
+          chip_kind: "SIMULATE_CARD",
+          card_id: "coa-20261111-01",
+          branch_id: "cf_01",
+          label: warRoomI18n
+            ? warRoomI18n.t("dock.focus_chip_simulate", {}, ctx)
+            : "⚡ Seçeneği Dene",
+        },
+      ];
+
+      const structuredText = parts.join(" ");
 
       return {
         ok: true,
         envelope: {
           protocol: AG_UI_PROTOCOL,
           msg_type: "ASSISTANT_EVIDENCE_REPLY",
+          locale: ctx.locale,
+          register: ctx.register,
+          msg_id: "assistant.evidence_reply",
           query: queryText,
           cutoff_learned_at_ms: cutoffMs,
           verdict: sliceRes.verdict,
@@ -545,9 +860,11 @@
           mcp_tools_invoked: toolsInvoked,
           world_12_risk_band_fp: sliceRes.world_12_risk_band_fp,
           evidence_refs: evidenceRefs,
+          focus_chips: focusChips,
           triggered_rules: (explainRes && explainRes.triggered_rules) || [sliceRes.applied_rule_id],
           counterfactual_preview: cfOut && cfOut.ok ? cfOut : null,
-          structured_answer_tr: parts.join(" "),
+          structured_answer: structuredText,
+          structured_answer_tr: structuredText,
         },
       };
     }

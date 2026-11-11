@@ -753,21 +753,102 @@ fn extract_audit_trace_json(audit_path: &str) -> Result<String, String> {
     ))
 }
 
+const FLUENT_MESSAGES_TR: &str = include_str!("../../locales/tr/messages.ftl");
+const FLUENT_MESSAGES_EN: &str = include_str!("../../locales/en/messages.ftl");
+
+fn normalize_cli_locale(raw: Option<&str>) -> &'static str {
+    match raw.unwrap_or("tr").trim().to_ascii_lowercase().as_str() {
+        "en" => "en",
+        _ => "tr",
+    }
+}
+
+fn normalize_cli_register(raw: Option<&str>) -> &'static str {
+    match raw.unwrap_or("plain").trim().to_ascii_lowercase().as_str() {
+        "technical" => "technical",
+        _ => "plain",
+    }
+}
+
+fn format_fluent_message(locale: &str, key: &str, vars: &[(&str, &str)]) -> String {
+    let catalog = if locale == "en" {
+        FLUENT_MESSAGES_EN
+    } else {
+        FLUENT_MESSAGES_TR
+    };
+    let mut template: Option<&str> = None;
+    for raw_line in catalog.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((lhs, rhs)) = line.split_once('=') {
+            if lhs.trim() == key {
+                template = Some(rhs.trim());
+                break;
+            }
+        }
+    }
+    let Some(tpl) = template else {
+        return key.to_owned();
+    };
+    let mut out = tpl.to_owned();
+    for (k, v) in vars {
+        let pat_spaced = format!("{{ ${} }}", k);
+        let pat_compact = format!("{{${}}}", k);
+        out = out.replace(&pat_spaced, v).replace(&pat_compact, v);
+    }
+    out
+}
+
+fn canonical_verdict_msg_id(verdict_str: &str) -> &'static str {
+    match verdict_str {
+        "GEÇTİ" => "verdict.pass",
+        "KURAL_İHLALİ" => "verdict.rule_breach",
+        _ => "verdict.insufficient_corroboration",
+    }
+}
+
+fn fluent_verdict_key(verdict_str: &str, register: &str) -> &'static str {
+    match (verdict_str, register) {
+        ("GEÇTİ", "technical") => "verdict-pass-technical",
+        ("GEÇTİ", _) => "verdict-pass-plain",
+        ("KURAL_İHLALİ", "technical") => "verdict-rule-breach-technical",
+        ("KURAL_İHLALİ", _) => "verdict-rule-breach-plain",
+        (_, "technical") => "verdict-insufficient-corroboration-technical",
+        _ => "verdict-insufficient-corroboration-plain",
+    }
+}
+
 fn cmd_explain(args: &[String]) -> Result<(), String> {
     // Support both full slice explain (`--batch ... --manifest ... --cutoff-ms ...`)
-    // AND audit-bound lookup (`--state-blake3 <64hex> --audit-log <path>` — §3.1 item 4).
+    // AND audit-bound lookup (`--state-blake3 <64hex> --audit-log <path>` — §3.1 item 4),
+    // plus optional `--locale <tr|en>` and `--register <plain|technical>` (§2.1 & §4.1).
     let mut state_blake3_filter: Option<String> = None;
+    let mut locale_arg: Option<String> = None;
+    let mut register_arg: Option<String> = None;
     let mut filtered_args: Vec<String> = Vec::new();
     let mut idx = 0;
     while idx < args.len() {
-        if args[idx] == "--state-blake3" {
-            idx += 1;
-            state_blake3_filter = args.get(idx).cloned();
-        } else {
-            filtered_args.push(args[idx].clone());
+        match args[idx].as_str() {
+            "--state-blake3" => {
+                idx += 1;
+                state_blake3_filter = args.get(idx).cloned();
+            }
+            "--locale" => {
+                idx += 1;
+                locale_arg = args.get(idx).cloned();
+            }
+            "--register" => {
+                idx += 1;
+                register_arg = args.get(idx).cloned();
+            }
+            _ => filtered_args.push(args[idx].clone()),
         }
         idx += 1;
     }
+    let locale = normalize_cli_locale(locale_arg.as_deref());
+    let register = normalize_cli_register(register_arg.as_deref());
 
     let has_batch = filtered_args.iter().any(|a| a == "--batch");
     if !has_batch {
@@ -796,6 +877,7 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let mut triggered_rules: Vec<String> = Vec::new();
+        let mut primary_rule = String::new();
         if Path::new(&audit_path).is_file() {
             let content = fs::read_to_string(&audit_path).unwrap_or_default();
             for ln in content.lines() {
@@ -808,6 +890,9 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
                         if ev_obj.get("state_blake3").and_then(|x| x.as_str()) == Some(target_b3.as_str()) {
                             if let Some(rule) = ev_obj.get("applied_rule_id").and_then(|x| x.as_str()) {
                                 if !rule.is_empty() {
+                                    if primary_rule.is_empty() {
+                                        primary_rule = rule.to_owned();
+                                    }
                                     triggered_rules.push(format!("\"{}\"", escape_audit_json_str(rule)));
                                 }
                             }
@@ -816,8 +901,35 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
                 }
             }
         }
+        let explain_key = if register == "technical" {
+            "explain-outcome-technical"
+        } else {
+            "explain-outcome-plain"
+        };
+        let policy_title = if locale == "en" {
+            "Maritime Berthing Safety"
+        } else {
+            "Deniz Yanaşma Emniyeti"
+        };
+        let verdict_plain = format_fluent_message(locale, "verdict-insufficient-corroboration-plain", &[]);
+        let localized_text = format_fluent_message(
+            locale,
+            explain_key,
+            &[
+                ("verdict_label", &verdict_plain),
+                ("verdict_code", "AUDIT_TRACE"),
+                ("policy_title", policy_title),
+                ("rule_id", &primary_rule),
+                ("group_count", "0"),
+                ("state_blake3", &target_b3),
+                ("audit_verified", if chain_verified { "true" } else { "false" }),
+            ],
+        );
         println!(
-            "{{\"ok\":true,\"state_blake3\":\"{}\",\"triggered_rules\":[{}],\"supporting_events\":[],\"audit_chain_verified\":{},\"seal_signer_pubkey\":\"{}\",\"audit_log_trace\":{},\"human_approval_required\":true,\"write_authority\":\"NONE\"}}",
+            "{{\"ok\":true,\"msg_id\":\"explain.audit_trace\",\"locale\":\"{}\",\"register\":\"{}\",\"localized_explanation\":\"{}\",\"state_blake3\":\"{}\",\"triggered_rules\":[{}],\"supporting_events\":[],\"audit_chain_verified\":{},\"seal_signer_pubkey\":\"{}\",\"audit_log_trace\":{},\"human_approval_required\":true,\"write_authority\":\"NONE\"}}",
+            locale,
+            register,
+            escape_audit_json_str(&localized_text),
             escape_audit_json_str(&target_b3),
             triggered_rules.join(","),
             if chain_verified { "true" } else { "false" },
@@ -829,6 +941,7 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
 
     let (b_path, m_path, cutoff_ms, policy, existing_audit_log, _, _, _) =
         parse_policy_and_eval_args(&filtered_args)?;
+    let max_allowed_fp_str = format_i64_decimal_ascii(policy.max_allowed_fp);
 
     let batch_raw =
         fs::read_to_string(&b_path).map_err(|e| format!("failed to read batch: {}", e))?;
@@ -948,8 +1061,64 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
         .map(|v| format!("\"{}\"", format_i64_decimal_ascii(v)))
         .unwrap_or_else(|| "null".to_owned());
 
+    let msg_id = canonical_verdict_msg_id(rep.verdict.as_str());
+    let fkey = fluent_verdict_key(rep.verdict.as_str(), register);
+    let missing_joined = if rep.missing_evidence.is_empty() {
+        "NONE".to_owned()
+    } else {
+        rep.missing_evidence.join(", ")
+    };
+    let verdict_text = format_fluent_message(
+        locale,
+        fkey,
+        &[
+            ("policy_id", &rep.policy_id),
+            ("state_blake3", &outcome.state_blake3),
+            ("rule_id", &rep.applied_rule_id),
+            ("max_allowed_fp", &max_allowed_fp_str),
+            ("missing_groups", &missing_joined),
+        ],
+    );
+    let explain_key = if register == "technical" {
+        "explain-outcome-technical"
+    } else {
+        "explain-outcome-plain"
+    };
+    let policy_title = if locale == "en" {
+        "Maritime Berthing Safety"
+    } else {
+        "Deniz Yanaşma Emniyeti"
+    };
+    let group_count_str = rep.corroborated_groups.len().to_string();
+    let localized_explanation = format_fluent_message(
+        locale,
+        explain_key,
+        &[
+            ("verdict_label", &verdict_text),
+            ("verdict_code", rep.verdict.as_str()),
+            ("policy_title", policy_title),
+            ("rule_id", &rep.applied_rule_id),
+            ("group_count", &group_count_str),
+            ("state_blake3", &outcome.state_blake3),
+            ("audit_verified", if audit_chain_verified { "true" } else { "false" }),
+        ],
+    );
+    let max_delay_fp_str = rep
+        .max_assumption_fp
+        .map(format_i64_decimal_ascii)
+        .unwrap_or_else(|| "0".to_owned());
+
     println!(
-        "{{\"ok\":true,\"verdict\":\"{}\",\"applied_rule_id\":\"{}\",\"triggered_rules\":[\"{}\"],\"scenario_id\":\"{}\",\"policy_id\":\"{}\",\"cutoff_learned_at_ms\":\"{}\",\"input_batch_blake3\":\"{}\",\"state_blake3\":\"{}\",\"referenced_event_ids\":[{}],\"assumption_range_fp\":[{},{}],\"source_assumptions\":[{}],\"supporting_events\":[{}],\"missing_evidence\":[{}],\"conflicting_evidence\":[{}],\"audit_chain_verified\":{},\"seal_signer_pubkey\":\"{}\",\"audit_log_trace\":{},\"human_approval_required\":true,\"write_authority\":\"NONE\"}}",
+        "{{\"ok\":true,\"msg_id\":\"{}\",\"msg_params\":{{\"source_count\":{},\"group_count\":{},\"delay_min_fp\":\"{}\",\"max_allowed_fp\":\"{}\"}},\"locale\":\"{}\",\"register\":\"{}\",\"verdict_text\":\"{}\",\"localized_explanation\":\"{}\",\"verdict\":\"{}\",\"applied_rule_id\":\"{}\",\"triggered_rules\":[\"{}\"],\"scenario_id\":\"{}\",\"policy_id\":\"{}\",\"cutoff_learned_at_ms\":\"{}\",\"input_batch_blake3\":\"{}\",\"state_blake3\":\"{}\",\"referenced_event_ids\":[{}],\"assumption_range_fp\":[{},{}],\"source_assumptions\":[{}],\"supporting_events\":[{}],\"missing_evidence\":[{}],\"conflicting_evidence\":[{}],\"audit_chain_verified\":{},\"seal_signer_pubkey\":\"{}\",\"audit_log_trace\":{},\"human_approval_required\":true,\"write_authority\":\"NONE\"}}",
+        msg_id,
+        rep.active_assertions.len(),
+        rep.corroborated_groups.len(),
+        escape_audit_json_str(&max_delay_fp_str),
+        escape_audit_json_str(&max_allowed_fp_str),
+        locale,
+        register,
+        escape_audit_json_str(&verdict_text),
+        escape_audit_json_str(&localized_explanation),
         rep.verdict.as_str(),
         escape_audit_json_str(&rep.applied_rule_id),
         escape_audit_json_str(&rep.applied_rule_id),

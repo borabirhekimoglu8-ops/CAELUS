@@ -1,13 +1,16 @@
 /* ============================================================================
  * CAELUS OS — Endüstriyel Komuta Kokpiti Tasarım Tokenları ve 4-Bölgeli C2 Izgarası
  * Standartlar: OpenBridge 6.0 (Day/Dusk/Night), Astro UXDS (Ciddiyet + Şekil),
- *              NASA OpenMCT (Çift-Zamanlı İletken), OpenCTI (Epistemik Statü)
+ *              NASA OpenMCT (Çift-Zamanlı İletken), OpenCTI (Epistemik Statü),
+ *              Vercel Web Interface Guidelines & Emil Design Engineering
  * A-3 Yasası: %100 Hava Boşluklu (Air-Gapped) — Sıfır Dış Font / CDN / Tile İsteği
  * ============================================================================ */
 
 :root,
 [data-ob-theme="dusk"] {
-  /* OpenBridge Dusk / Operasyon Merkezi Ana Yüzeyler (§4.1 Birebir Tokenlar) */
+  color-scheme: dark;
+
+  /* OpenBridge Dusk / Operasyon Merkezi Ana Yüzeyler (§5.1 Birebir Tokenlar) */
   --bg-canvas: #0b1017;
   --bg-surface-1: #121a24;
   --bg-surface-2: #1a2533;
@@ -24,11 +27,11 @@
   --text-muted: #8fa3b8;
 
   /* Astro UXDS Ciddiyet (Renk + İkon Şekli + Metin Etiketi Zorunlu) */
-  --status-critical: #ff3b30;       /* KURAL_İHLALİ / Kesin Engel */
-  --status-serious: #ff9500;        /* Yüksek Stres / Gecikme Eşiği */
-  --status-caution: #ffcc00;        /* Çelişkili İddia / Stale Veri */
-  --status-nominal: #30d158;        /* GEÇTİ / Doğrulanmış Akış */
-  --status-insufficient: #64d2ff;   /* KANIT_YETERSİZ / Kesikli Çerçeve */
+  --status-critical: #ff3b30;       /* ▲ KRİTİK / KURAL_İHLALİ */
+  --status-serious: #ff9500;        /* ■ CİDDİ / Yüksek Stres */
+  --status-caution: #ffcc00;        /* ● DİKKAT / Gecikmeli Sensör */
+  --status-nominal: #30d158;        /* ✓ NORMAL / GEÇTİ */
+  --status-insufficient: #64d2ff;   /* ◌ TEYİT BEKLİYOR / KANIT_YETERSİZ */
 
   --status-critical-bg: rgba(255, 59, 48, 0.15);
   --status-serious-bg: rgba(255, 149, 0, 0.15);
@@ -38,8 +41,8 @@
 
   /* OpenCTI Epistemik Statü */
   --epistemic-observation: #2dd4bf; /* Doğrudan Sensör Ölçümü */
-  --epistemic-claim: #f59e0b;       /* Tek Kaynak İddiası */
-  --epistemic-hypothesis: #a78bfa;  /* Model Hipotezi */
+  --epistemic-claim: #f59e0b;       /* Operatör / Kurum Bildirimi */
+  --epistemic-hypothesis: #a78bfa;  /* Hava / Model Tahmini */
 
   --epistemic-observation-bg: rgba(45, 212, 191, 0.14);
   --epistemic-claim-bg: rgba(245, 158, 11, 0.15);
@@ -61,7 +64,9 @@
 }
 
 [data-ob-theme="night"] {
-  /* Gece Vardiyası (§4.1 Birebir Tokenlar): Sıfır mavi parlama, kehribar spektrum */
+  color-scheme: dark;
+
+  /* Gece Vardiyası (§5.1 Birebir Tokenlar): Sıfır mavi parlama, kehribar spektrum */
   --bg-canvas: #050505;
   --bg-surface-1: #0d0a08;
   --bg-surface-2: #17110d;
@@ -104,6 +109,8 @@
 }
 
 [data-ob-theme="day"] {
+  color-scheme: light;
+
   /* OpenBridge Parlak Köprüüstü Gündüz Modu: Güneş parlamasında yüksek kontrast */
   --bg-canvas: #e9eef5;
   --bg-surface-1: #ffffff;
@@ -153,12 +160,23 @@
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* Klavye ile tetiklenen eylemlerde sıfır animasyon gecikmesi */
+/* Klavye ile tetiklenen eylemlerde ve hareket azaltma tercihinde sıfır animasyon gecikmesi */
 [data-kbd-instant="1"] *,
 [data-kbd-instant="1"] *::before,
 [data-kbd-instant="1"] *::after {
   transition: none !important;
   animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wr-cockpit-shell *,
+  .wr-cockpit-shell *::before,
+  .wr-cockpit-shell *::after,
+  .wr-return-floating-pill {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Kokpit Aktifken Eski 3B Evrensel Stüdyo Kabuğunu Gizle (DOM Korunur) */
@@ -169,6 +187,7 @@ body[data-c2-cockpit="active"] {
   font-family: var(--font-ui);
   margin: 0;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 body[data-c2-cockpit="active"] .workbench-shell,
@@ -191,8 +210,8 @@ body:not([data-c2-cockpit="active"]) #caelus-war-room-cockpit-shell {
 /* Evrensel Stüdyo Modundayken War Room'a Geri Dönüş Kapsülü */
 .wr-return-floating-pill {
   position: fixed;
-  bottom: 16px;
-  left: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(16px, env(safe-area-inset-left));
   z-index: 9990;
   display: none;
   align-items: center;
@@ -209,6 +228,7 @@ body:not([data-c2-cockpit="active"]) #caelus-war-room-cockpit-shell {
   letter-spacing: 0.02em;
   cursor: pointer;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
 
@@ -224,11 +244,15 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   grid-template-rows: auto minmax(440px, 1fr) auto;
   min-height: 100dvh;
   width: 100%;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
   background: var(--surface-canvas);
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 13px;
   line-height: 1.38;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .wr-cockpit-shell *,
@@ -237,12 +261,50 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   box-sizing: border-box;
 }
 
+@media (pointer: fine) {
+  html[data-c2-cockpit="active"] {
+    overscroll-behavior: none;
+  }
+}
+
+.wr-skip-link {
+  position: absolute;
+  left: 12px;
+  top: -120px;
+  z-index: 10000;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 2px solid var(--epistemic-observation);
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.80rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.wr-skip-link:focus-visible {
+  top: 10px;
+}
+
+.wr-cockpit-shell a:focus-visible,
 .wr-cockpit-shell button:focus-visible,
 .wr-cockpit-shell input:focus-visible,
 .wr-cockpit-shell select:focus-visible,
+.wr-cockpit-shell summary:focus-visible,
 .wr-cockpit-shell [tabindex]:focus-visible {
   outline: 2px solid var(--epistemic-observation);
   outline-offset: 2px;
+}
+
+.wr-segmented-group:focus-within {
+  border-color: var(--epistemic-observation);
+}
+
+.wr-cockpit-shell h1,
+.wr-cockpit-shell h2,
+.wr-cockpit-shell h3 {
+  text-wrap: balance;
 }
 
 /* ── Bölge 1: TopCommandBar ─────────────────────────────────────────────── */
@@ -250,7 +312,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   padding: 6px 12px;
   background: var(--surface-panel);
@@ -273,7 +335,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   gap: 8px;
   font-weight: 800;
   font-size: 0.86rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -284,13 +346,17 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   gap: 5px;
   padding: 3px 8px;
   border-radius: 4px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 0.72rem;
   font-weight: 700;
   border: 1px solid var(--border-strong);
   background: var(--surface-elevated);
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+[data-c2-register="technical"] .wr-mode-pill {
+  font-family: var(--font-mono);
 }
 
 .wr-mode-pill[data-transport="WS_LIVE"] {
@@ -303,12 +369,11 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 7px;
+  padding: 3px 8px;
   border-radius: 4px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-inset);
-  font-family: var(--font-mono);
-  font-size: 0.70rem;
+  font-size: 0.71rem;
   font-variant-numeric: tabular-nums lining-nums;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -337,12 +402,15 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   gap: 6px;
   padding: 5px 10px;
   border-radius: 5px;
-  font-family: var(--font-mono);
   font-size: 0.77rem;
   font-weight: 800;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   border: 1px solid var(--border-strong);
   white-space: nowrap;
+}
+
+[data-c2-register="technical"] .wr-verdict-banner-badge {
+  font-family: var(--font-mono);
 }
 
 .wr-verdict-banner-badge[data-verdict="KURAL_İHLALİ"] {
@@ -361,6 +429,49 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   background: var(--status-nominal-bg);
   border-color: var(--status-nominal);
   color: var(--status-nominal);
+}
+
+/* Segmented Dil / Sadelik / Birim Anahtarları */
+.wr-segmented-group {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-inset);
+  padding: 2px;
+  gap: 2px;
+}
+
+.wr-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 38px;
+  min-width: 40px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  white-space: nowrap;
+  transition: opacity 140ms var(--ease-out-c2), transform 140ms var(--ease-out-c2);
+}
+
+.wr-seg-btn[aria-pressed="true"] {
+  background: var(--epistemic-observation-bg);
+  border-color: var(--epistemic-observation);
+  color: var(--text-primary);
+}
+
+.wr-seg-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 /* >= 44x44px Operatör Dokunma / Tıklama Hedefi Standardı */
@@ -386,12 +497,22 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   transition: opacity 140ms var(--ease-out-c2), transform 140ms var(--ease-out-c2);
 }
 
-.wr-btn:hover:not(:disabled) {
-  opacity: 0.92;
+@media (hover: hover) and (pointer: fine) {
+  .wr-btn:hover:not(:disabled),
+  .wr-seg-btn:hover:not(:disabled),
+  .wr-layer-chip:hover:not(:disabled),
+  .wr-evidence-pill:hover:not(:disabled),
+  .wr-proof-toggle-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .wr-virtual-grid-row:hover {
+    background: var(--surface-elevated);
+  }
 }
 
 .wr-btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .wr-btn:disabled {
@@ -425,16 +546,20 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   align-items: center;
   gap: 5px;
   min-height: 44px;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 5px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-inset);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.71rem;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums lining-nums;
   cursor: pointer;
   touch-action: manipulation;
+  transition: transform 140ms var(--ease-out-c2);
+}
+
+.wr-hash-trigger:active {
+  transform: scale(0.97);
 }
 
 /* ── Merkez Gövde: Bölge 2 (%60 Sol) + Bölge 4 (%40 Sağ) ────────────────── */
@@ -508,10 +633,16 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   border: 1px solid var(--border-subtle);
   background: var(--surface-panel);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.71rem;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
+  transition: opacity 140ms var(--ease-out-c2), transform 140ms var(--ease-out-c2);
+}
+
+.wr-layer-chip:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .wr-layer-chip[aria-pressed="true"] {
@@ -552,7 +683,21 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   color: var(--text-primary);
 }
 
-/* Mod 2: Nedensel Graf ve "What-If" Stres Masası */
+/* Mod 2: Nedensel Akış ve "Ya Şöyle Olursa?" Masası */
+.wr-causal-chain-banner {
+  padding: 7px 10px;
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .wr-graph-desk-split {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 1fr);
@@ -571,7 +716,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
 .wr-causal-svg {
   width: 100%;
   flex: 1;
-  min-height: 350px;
+  min-height: 340px;
   display: block;
   background: var(--surface-inset);
 }
@@ -583,6 +728,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   padding: 10px;
   background: var(--surface-panel);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .wr-conflict-dash-line {
@@ -598,11 +744,14 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   gap: 4px;
   padding: 2px 6px;
   border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.69rem;
   font-weight: 700;
   border: 1px solid transparent;
   white-space: nowrap;
+}
+
+[data-c2-register="technical"] .wr-epistemic-badge {
+  font-family: var(--font-mono);
 }
 
 .wr-epistemic-badge[data-epistemic="OBSERVATION"] {
@@ -662,6 +811,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
 .wr-agent-scroll-body {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -710,10 +860,64 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   border-color: var(--status-nominal);
 }
 
+/* Kart Bazlı `[Teknik Kanıtı Gör]` Rozeti ve Çekmecesi (§2.2) */
+.wr-proof-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 0.69rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+  transition: opacity 140ms var(--ease-out-c2), transform 140ms var(--ease-out-c2);
+}
+
+.wr-proof-toggle-btn:active {
+  transform: scale(0.97);
+}
+
+.wr-proof-toggle-btn[aria-expanded="true"] {
+  border-color: var(--epistemic-observation);
+  color: var(--epistemic-observation);
+}
+
+.wr-tech-proof-drawer {
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px dashed var(--border-strong);
+  background: var(--surface-inset);
+  font-family: var(--font-mono);
+  font-size: 0.69rem;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wr-tech-proof-drawer[hidden] {
+  display: none !important;
+}
+
 .wr-action-btn-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.wr-focus-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
 }
 
 /* Katlanabilir Kanıt-Bağlı Komuta Asistanı Çubuğu */
@@ -727,8 +931,10 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 44px;
   padding: 8px 10px;
   cursor: pointer;
+  touch-action: manipulation;
   font-weight: 700;
   font-size: 0.77rem;
   list-style: none;
@@ -780,16 +986,17 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
 
 .wr-cutoff-slider {
   width: 100%;
-  height: 28px;
+  height: 32px;
   accent-color: var(--epistemic-observation);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 /* Sanallaştırılmış Yüksek Yoğunluklu Telemetri Tablosu (Sabit Satır = 36px, CLS = 0) */
 .wr-virtual-grid-header,
 .wr-virtual-grid-row {
   display: grid;
-  grid-template-columns: 156px 96px 150px 108px 94px 94px 118px minmax(130px, 1fr);
+  grid-template-columns: 156px 96px 150px 148px 102px 102px 118px minmax(130px, 1fr);
   align-items: center;
   gap: 6px;
   padding: 0 8px;
@@ -811,6 +1018,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   height: 180px;
   overflow-y: auto;
   overflow-x: auto;
+  overscroll-behavior: contain;
   background: var(--surface-inset);
   border: 1px solid var(--border-subtle);
   border-top: none;
@@ -820,7 +1028,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
 .wr-virtual-spacer {
   position: relative;
   width: 100%;
-  min-width: 930px;
+  min-width: 980px;
 }
 
 .wr-virtual-grid-row {
@@ -831,11 +1039,8 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   border-bottom: 1px solid var(--border-subtle);
   font-size: 0.72rem;
   cursor: pointer;
+  touch-action: manipulation;
   background: var(--surface-panel);
-}
-
-.wr-virtual-grid-row:hover {
-  background: var(--surface-elevated);
 }
 
 .wr-virtual-grid-row[data-future="true"] {
@@ -868,6 +1073,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   align-items: flex-start;
   justify-content: center;
   padding: 56px 16px 24px;
+  overscroll-behavior: contain;
 }
 
 .wr-modal-backdrop[hidden] {
@@ -879,6 +1085,7 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   max-width: 720px;
   max-height: 82dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface-panel);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -892,10 +1099,32 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   padding: 6px 10px;
   border-radius: 5px;
   border: 1px solid var(--border-strong);
-  background: var(--surface-inset);
+  background-color: var(--surface-inset);
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 0.80rem;
+}
+
+select.wr-input,
+select.wr-input option {
+  background-color: var(--surface-panel);
+  color: var(--text-primary);
+}
+
+/* Mobil / Tablet Dokunmatik Ergonomi (iPhone & iPad >= 44x44px Dokunma Hedefi) */
+@media (pointer: coarse) {
+  .wr-seg-btn,
+  .wr-layer-chip,
+  .wr-evidence-pill,
+  .wr-proof-toggle-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 11px;
+  }
+
+  .wr-cutoff-slider {
+    height: 44px;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -916,6 +1145,9 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   }
   .wr-conflict-pair-grid {
     grid-template-columns: 1fr;
+  }
+  .wr-input {
+    font-size: 16px; /* iOS Safari otomatik yakınlaştırma engeli */
   }
 }
 
@@ -961,15 +1193,25 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
-  padding: 2px 7px;
+  min-height: 30px;
+  padding: 3px 8px;
   border-radius: 4px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-inset);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.67rem;
+  font-size: 0.68rem;
+  font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
+  transition: opacity 140ms var(--ease-out-c2), transform 140ms var(--ease-out-c2);
+}
+
+[data-c2-register="technical"] .wr-evidence-pill {
+  font-family: var(--font-mono);
+}
+
+.wr-evidence-pill:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .wr-evidence-pill[data-epistemic="OBSERVATION"] {
@@ -997,5 +1239,3 @@ body:not([data-c2-cockpit="active"]) .wr-return-floating-pill {
   flex-wrap: wrap;
   margin-top: 4px;
 }
-
-

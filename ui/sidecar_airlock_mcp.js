@@ -17,6 +17,7 @@
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
     let nodeDeps = null;
+    let i18nMod = null;
     try {
       nodeDeps = {
         fs: require("node:fs"),
@@ -28,11 +29,16 @@
     } catch (_) {
       nodeDeps = null;
     }
-    module.exports = factory(nodeDeps);
+    try {
+      i18nMod = require("./war_room_i18n.js");
+    } catch (_) {
+      i18nMod = null;
+    }
+    module.exports = factory(nodeDeps, i18nMod);
   } else {
-    root.CaelusSidecarAirlockMcp = factory(null);
+    root.CaelusSidecarAirlockMcp = factory(null, root.CaelusWarRoomI18n || null);
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (nodeDeps) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (nodeDeps, warRoomI18n) {
   "use strict";
 
   const FP_SCALE = 1000000n;
@@ -2609,7 +2615,7 @@
     Object.freeze({
       name: "caelus_explain_outcome",
       description:
-        "Üretilen bilgi kesiti kararını (GEÇTİ / KURAL_İHLALİ / KANIT_YETERSİZ) triggered_rules, supporting_events, sabit nokta varsayım aralığı ve audit_log Ed25519 mührüne bağlar.",
+        "Üretilen bilgi kesiti kararını (GEÇTİ / KURAL_İHLALİ / KANIT_YETERSİZ) triggered_rules, supporting_events, sabit nokta varsayım aralığı ve audit_log Ed25519 mührüne bağlar; çıktıyı kanonik msg_id + params ve seçili locale (tr/en) + register (plain/technical) metniyle döner.",
       readOnly: true,
       humanApprovalRequired: true,
       writeAuthority: "NONE",
@@ -2630,6 +2636,16 @@
           conflict_threshold_fp: { type: "string" },
           min_independent_groups_for_pass: { type: "integer", minimum: 1 },
           audit_log_path: { type: "string" },
+          locale: {
+            type: "string",
+            enum: ["tr", "en"],
+            description: "Offline output language ('tr' default or 'en'); mutates state_blake3 by 0 bits.",
+          },
+          register: {
+            type: "string",
+            enum: ["plain", "technical"],
+            description: "Cognitive register ('plain' default operator language or 'technical' audit detail).",
+          },
           advisor_template: {
             type: "string",
             enum: ["WATCHER", "STRESS_TESTER", "STRATEGIST", "EXPLAINER"],
@@ -2638,6 +2654,76 @@
       },
     }),
   ]);
+
+  function canonicalMsgIdForVerdict(verdictCode) {
+    if (verdictCode === "GEÇTİ") return "verdict.pass";
+    if (verdictCode === "KURAL_İHLALİ") return "verdict.rule_breach";
+    return "verdict.insufficient_corroboration";
+  }
+
+  function enrichOutcomeWithCanonicalI18n(baseObj, rawArgs = {}) {
+    const loc = warRoomI18n ? warRoomI18n.normalizeLocale(rawArgs.locale) : rawArgs.locale === "en" ? "en" : "tr";
+    const reg = warRoomI18n
+      ? warRoomI18n.normalizeRegister(rawArgs.register)
+      : rawArgs.register === "technical"
+        ? "technical"
+        : "plain";
+    const verdictCode = String(baseObj.verdict || "KANIT_YETERSİZ");
+    const msgId = canonicalMsgIdForVerdict(verdictCode);
+    const activeList = Array.isArray(baseObj.active_assertions)
+      ? baseObj.active_assertions
+      : Array.isArray(baseObj.supporting_events)
+        ? baseObj.supporting_events
+        : [];
+    const groupList = Array.isArray(baseObj.corroborated_groups) ? baseObj.corroborated_groups : [];
+    const rangeFp = Array.isArray(baseObj.assumption_range_fp) ? baseObj.assumption_range_fp : [null, null];
+    const maxDelayFpStr = rangeFp[1] !== null && rangeFp[1] !== undefined ? String(rangeFp[1]) : "0";
+    const maxAllowedFpStr = String(rawArgs.max_allowed_fp || "20000000");
+
+    const msgParams = {
+      source_count: activeList.length,
+      group_count: groupList.length,
+      delay_min_fp: maxDelayFpStr,
+      max_allowed_fp: maxAllowedFpStr,
+    };
+
+    let verdictText = verdictCode;
+    let localizedExplanation = verdictCode;
+    if (warRoomI18n) {
+      verdictText = warRoomI18n.formatVerdict(
+        verdictCode,
+        {
+          policy_id: baseObj.policy_id || rawArgs.policy_id || "MARITIME_SAFETY_V2",
+          rule_id: baseObj.applied_rule_id || "—",
+          max_allowed_fp: maxAllowedFpStr,
+          missing_groups: baseObj.missing_corroborations || baseObj.missing_evidence || [],
+        },
+        { locale: loc, register: reg }
+      );
+      localizedExplanation = warRoomI18n.resolveCanonicalMessage(
+        "explain.outcome",
+        {
+          verdict_code: verdictCode,
+          policy_id: baseObj.policy_id || rawArgs.policy_id || "MARITIME_SAFETY_V2",
+          rule_id: baseObj.applied_rule_id || "—",
+          max_allowed_fp: maxAllowedFpStr,
+          group_count: groupList.length,
+          state_blake3: baseObj.state_blake3 || "",
+        },
+        { locale: loc, register: reg }
+      );
+    }
+
+    return {
+      ...baseObj,
+      msg_id: baseObj.msg_id || msgId,
+      msg_params: baseObj.msg_params || msgParams,
+      locale: loc,
+      register: reg,
+      verdict_text: verdictText,
+      localized_explanation: localizedExplanation,
+    };
+  }
 
   function createSidecarAirlockMcpController(options = {}) {
     const repoRootDir =
@@ -2993,13 +3079,16 @@
           if (!ar.ok) return ar;
           const nativeBin = findNativeSidecarBinary(options);
           if (nativeBin) {
-            const res = runNativeBinary(nativeBin, [
+            const explainOnlyArgs = [
               "explain",
               "--state-blake3",
               rawArgs.state_blake3,
               "--audit-log",
               ar.resolvedPath,
-            ]);
+            ];
+            if (rawArgs.locale) explainOnlyArgs.push("--locale", String(rawArgs.locale));
+            if (rawArgs.register) explainOnlyArgs.push("--register", String(rawArgs.register));
+            const res = runNativeBinary(nativeBin, explainOnlyArgs);
             if (!res.ok) return res;
             return {
               ...res.parsed,
@@ -3072,8 +3161,12 @@
             if (resolvedAuditPath) {
               cliArgs.push("--audit-log", resolvedAuditPath);
             }
-            if (toolName === "caelus_explain_outcome" && rawArgs.state_blake3) {
-              cliArgs.push("--state-blake3", String(rawArgs.state_blake3));
+            if (toolName === "caelus_explain_outcome") {
+              if (rawArgs.state_blake3) {
+                cliArgs.push("--state-blake3", String(rawArgs.state_blake3));
+              }
+              if (rawArgs.locale) cliArgs.push("--locale", String(rawArgs.locale));
+              if (rawArgs.register) cliArgs.push("--register", String(rawArgs.register));
             }
             if (toolName === "caelus_evaluate_slice") {
               if (rawArgs.audit_seed) cliArgs.push("--audit-seed", String(rawArgs.audit_seed));
@@ -3092,8 +3185,9 @@
                 messageTr: `Geçersiz karar etiketi: ${res.parsed.verdict}`,
               };
             }
+            const enrichedNative = enrichOutcomeWithCanonicalI18n(res.parsed, rawArgs);
             return {
-              ...res.parsed,
+              ...enrichedNative,
               tool: toolName,
               engine_execution_mode: "NATIVE_RUST_AIRLOCK",
               advisor_template: advisorMeta,
@@ -3128,39 +3222,47 @@
                 }) + "\n";
               nodeDeps.fs.appendFileSync(resolvedAuditPath, sliceAuditLine, "utf8");
             }
+            const enrichedJsSlice = enrichOutcomeWithCanonicalI18n(evalRes, rawArgs);
             return {
-              ...evalRes,
+              ...enrichedJsSlice,
               tool: toolName,
               engine_execution_mode: "PURE_JS_BIGINT_FALLBACK",
               advisor_template: advisorMeta,
             };
           }
+          const enrichedJsExplain = enrichOutcomeWithCanonicalI18n(
+            {
+              ok: true,
+              verdict: evalRes.verdict,
+              applied_rule_id: evalRes.applied_rule_id,
+              triggered_rules: [evalRes.applied_rule_id],
+              scenario_id: evalRes.scenario_id,
+              policy_id: evalRes.policy_id,
+              cutoff_learned_at_ms: evalRes.cutoff_learned_at_ms,
+              input_batch_blake3: evalRes.input_batch_blake3,
+              state_blake3: evalRes.state_blake3,
+              corroborated_groups: evalRes.corroborated_groups || [],
+              referenced_event_ids: evalRes.active_assertions.map((a) => a.event_id),
+              assumption_range_fp: evalRes.assumption_range_fp,
+              source_assumptions: evalRes.active_assertions,
+              supporting_events: evalRes.active_assertions.map((a) => ({
+                event_id: a.event_id,
+                source_id: a.source_id,
+                epistemic_status: a.epistemic_status,
+                fp_val: a.fp_val,
+              })),
+              missing_evidence: evalRes.missing_evidence,
+              conflicting_evidence: evalRes.conflicts,
+              audit_chain_verified: false,
+              seal_signer_pubkey: "",
+              audit_log_trace: null,
+            },
+            rawArgs
+          );
           return {
-            ok: true,
+            ...enrichedJsExplain,
             tool: toolName,
             engine_execution_mode: "PURE_JS_BIGINT_FALLBACK",
-            verdict: evalRes.verdict,
-            applied_rule_id: evalRes.applied_rule_id,
-            triggered_rules: [evalRes.applied_rule_id],
-            scenario_id: evalRes.scenario_id,
-            policy_id: evalRes.policy_id,
-            cutoff_learned_at_ms: evalRes.cutoff_learned_at_ms,
-            input_batch_blake3: evalRes.input_batch_blake3,
-            state_blake3: evalRes.state_blake3,
-            referenced_event_ids: evalRes.active_assertions.map((a) => a.event_id),
-            assumption_range_fp: evalRes.assumption_range_fp,
-            source_assumptions: evalRes.active_assertions,
-            supporting_events: evalRes.active_assertions.map((a) => ({
-              event_id: a.event_id,
-              source_id: a.source_id,
-              epistemic_status: a.epistemic_status,
-              fp_val: a.fp_val,
-            })),
-            missing_evidence: evalRes.missing_evidence,
-            conflicting_evidence: evalRes.conflicts,
-            audit_chain_verified: false,
-            seal_signer_pubkey: "",
-            audit_log_trace: null,
             advisor_template: advisorMeta,
             human_approval_required: true,
             write_authority: "NONE",

@@ -58,6 +58,7 @@ jobs:
           node --check ui/discovery_value_engine.js
           node --check ui/first_real_task_engine.js
           node --check ui/personal_agent_and_advisor.js
+          node --check ui/war_room_i18n.js
           node --check ui/sidecar_airlock_mcp.js
           node --check ui/war_room_ag_ui_engine.js
           node --check ui/war_room_cockpit.js
@@ -68,6 +69,7 @@ jobs:
           node --test tests/discovery_value_engine.test.mjs
           node --test tests/first_real_task.test.mjs
           node --test tests/personal_agent_and_advisor.test.mjs
+          node --test tests/test_i18n_and_plain_mode_parity.mjs
           node --test tests/test_war_room_master_gates.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
