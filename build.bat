@@ -70,6 +70,14 @@ if errorlevel 1 (
 )
 echo [OK] cargo: mevcut
 
+if "%EMBED_UI%"=="1" (
+    powershell -NoProfile -Command "$PSVersionTable.PSVersion.ToString()" > nul 2>&1
+    if errorlevel 1 (
+        echo [HATA] PowerShell bulunamadi ^(UI asset embedding icin gerekli^).
+        exit /b 1
+    )
+)
+
 :: Check tool availability first. g++ alone is not enough for Rust GNU ABI:
 :: cargo's x86_64-pc-windows-gnu target normally needs x86_64-w64-mingw32-gcc.
 set "CXX_TOOL="
@@ -336,18 +344,22 @@ echo ---------------------------------------------------------------------------
 :: windows-gnu bin linkinin bekledigi libgcc_eh.a arsivini icermez. Signer,
 :: lib basarili olursa host ABI'sinde ayrica derlenir; exe ABI'den bagimsizdir.
 pushd "%ROOT%"
-if /I "%CAELUS_SKIP_RUST%"=="1" if exist "%RUST_LIB%" (
+set "DO_SKIP_RUST=0"
+if /I "%CAELUS_SKIP_RUST%"=="1" (
+    if exist "%RUST_LIB%" set "DO_SKIP_RUST=1"
+)
+if "!DO_SKIP_RUST!"=="1" (
     echo [INFO] CAELUS_SKIP_RUST=1 ------- mevcut %RUST_LIB% yeniden kullaniliyor.
 ) else (
     if defined RUST_TARGET (
-        echo [INFO] cargo build --release -p caelus_network --target !RUST_TARGET! --lib
-        cargo build --release -p caelus_network --target !RUST_TARGET! --lib
+        echo [INFO] cargo build --release --locked --target !RUST_TARGET! --lib
+        cargo build --release --locked --target !RUST_TARGET! --lib
     ) else (
-        cargo build --release -p caelus_network
+        cargo build --release --locked
     )
     if not errorlevel 1 if defined RUST_TARGET (
-        echo [INFO] cargo build --release -p caelus_network --bin caelus_sign_scenario --bin caelus_verify_audit --bin caelus_sidecar_airlock  ^(host ABI^)
-        cargo build --release -p caelus_network --bin caelus_sign_scenario --bin caelus_verify_audit --bin caelus_sidecar_airlock
+        echo [INFO] cargo build --release --locked --bin caelus_sign_scenario --bin caelus_sign_model --bin caelus_verify_audit --bin caelus_sidecar_airlock  ^(host ABI^)
+        cargo build --release --locked --bin caelus_sign_scenario --bin caelus_sign_model --bin caelus_verify_audit --bin caelus_sidecar_airlock
     )
 )
 if errorlevel 1 (
@@ -485,9 +497,9 @@ echo ---------------------------------------------------------------------------
 echo ---------kt----     : %OUT_EXE%
 echo Boyut     : ~!EXE_SIZE_KB! KB  (~!EXE_SIZE_MB! MB)  [!EXE_BYTES! bayt]
 echo Toolchain : %CXX_TOOL%  ^|  Rust target: %RUST_TARGET%
-if /I "%CAELUS_PRODUCTION%"=="1" echo PRODUCTION GATES: COMPILED-OUT  ^(CAELUS_PRODUCTION ------- SELF_SIGNED_DEV / plugin dev-bypass / pin-bypass derleme-disi^)
-if !EXE_BYTES! GTR %MAX_BYTES% (
-    echo Hedef     : ^<50 MB -------  A----ILDI  ^(!EXE_BYTES! ^> %MAX_BYTES% bayt^)
+if /I "%CAELUS_PRODUCTION%"=="1" echo PRODUCTION GATES: COMPILED-OUT  ^(CAELUS_PRODUCTION — SELF_SIGNED_DEV / plugin dev-bypass / pin-bypass derleme-disi^)
+if !EXE_BYTES! GEQ %MAX_BYTES% (
+    echo Hedef     : ^<50 MB ✗  AŞILDI  ^(!EXE_BYTES! ^> %MAX_BYTES% bayt^)
     echo.
     echo [HATA] Statik binary 50 MB sinirini asti ------- build BASARISIZ.
     echo        Boyut dusurme onerileri:

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "claude/**"]
+    branches: [main, "claude/**", "feat/**"]
   pull_request:
   workflow_dispatch:
 
@@ -25,9 +25,12 @@ jobs:
           python3 --version
           node --version
 
-      - name: Run full CI pipeline (builds CAELUS_PRODUCTION=1 dist/caelus_os and verifies C++/Rust core)
+      - name: Fetch dependencies for the offline dataset test
+        run: cargo fetch --locked --manifest-path caelus_core/Cargo.toml
+
+      - name: Run full CI pipeline (builds CAELUS_PRODUCTION=1 dist/caelus_os and verifies C++/Rust/Neural/Airlock/WarRoom)
         run: |
-          chmod +x build.sh ci.sh
+          chmod +x build.sh ci.sh tools/build_host_bridge.sh tools/run_war_room_demo.sh
           ./ci.sh
 
       - name: Extract deterministic CDET block (UTF-8 LF)
@@ -54,14 +57,14 @@ jobs:
           path: dist/caelus_os
           if-no-files-found: error
 
-      - name: Validate universal browser scenario compiler & NCM-2 against native Linux binary
+      - name: Validate universal browser scenario compiler, War Room AG-UI, Airlock MCP & NCM-2 against native Linux binary
         env:
           CAELUS_OFFLINE_ONLY: "1"
           CAELUS_REQUIRE_NATIVE_BIN: "1"
         run: |
           CAELUS_SKIP_RUST=1 ./build.sh
           rustup target add wasm32-unknown-unknown
-          cargo build --locked -p caelus_wasm --target wasm32-unknown-unknown --release
+          cargo build --locked --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
           node --check ui/scenario_compiler.js
           node --check ui/living_world_model.js
           node --check ui/discovery_value_engine.js
@@ -109,7 +112,10 @@ jobs:
           py -3 --version
           node --version
 
-      - name: Run full CI pipeline (builds CAELUS_PRODUCTION=1 dist\caelus_os.exe and verifies C++/Rust/Verus)
+      - name: Fetch dependencies for the offline dataset test
+        run: cargo fetch --locked --manifest-path caelus_core/Cargo.toml
+
+      - name: Run full CI pipeline (builds CAELUS_PRODUCTION=1 dist\caelus_os.exe and verifies C++/Rust/Neural/Airlock/WarRoom)
         shell: cmd
         env:
           CAELUS_CXX: MSVC
@@ -153,7 +159,7 @@ jobs:
           path: dist/caelus_os.exe
           if-no-files-found: error
 
-      - name: Validate universal browser scenario compiler & NCM-2 against native Windows binary
+      - name: Validate universal browser scenario compiler, War Room AG-UI, Airlock MCP & NCM-2 against native Windows binary
         shell: pwsh
         env:
           CAELUS_OFFLINE_ONLY: "1"
@@ -164,7 +170,7 @@ jobs:
           cmd.exe /c "call build.bat"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustup target add wasm32-unknown-unknown
-          cargo build --locked -p caelus_wasm --target wasm32-unknown-unknown --release
+          cargo build --locked --manifest-path caelus_wasm/Cargo.toml --target wasm32-unknown-unknown --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check ui/scenario_compiler.js
           node --check ui/living_world_model.js

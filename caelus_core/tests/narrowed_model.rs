@@ -5,45 +5,43 @@
 // (tüm sarmal aritmetik mod 2^B maskelenir — orijinaldeki mod 2^64'ün
 // daraltılmış karşılığı) ve B=6 alanında TÜKETİCİ taranır.
 //
-// ── TARAMANIN KEŞİFLERİ (F2 bulgusu — iki kesin ön koşul) ────────────────────
-// Sınırsız iddia "sonuç == min(cap, ⌊a·b/d⌋)" YANLIŞTIR. Kesin ön koşullar:
+// ── TARAMANIN KEŞİFLERİ (F2 bulgusu — kesin ön koşul) ─────────────────────────
+// Sınırsız iddia "sonuç == min(cap, ⌊a·b/d⌋)" yalnız kalan toplamı bit
+// genişliğini aşmadığında doğrudur:
 //
-//   (1) divisor ≤ 2^(W-1)      — kalan toplamları (result_r+add_r, add_r+add_r)
+//   divisor ≤ 2^(W-1)          — kalan toplamları (result_r+add_r, add_r+add_r)
 //       < 2·divisor olduğundan ancak bu koşulla genişliği sarmaz.
 //       Karşı-örnek (B=6): a=3,b=22,d=49,cap=1 → result_r 66≡2 (mod 64) →
 //       kalan taşması kaçar → 0, oysa min(1,⌊66/49⌋)=1.
-//   (2) a / divisor ≤ cap      — başlangıç add_q cap'i aşmamalı; aşarsa
-//       koruyucu çıkarmalar sarar, add_q mod-2^W sarabilir.
-//       Karşı-örnek (B=6): a=2,b=32,d=1,cap=1 → add_q 2→…→64≡0 → 0 ≠ 1.
 //
-// İkisi sağlanınca sonuç TAM olarak min(cap, ⌊a·b/d⌋) — HER cap için.
-// u64 motor yolu İKİSİNİ DE yapısal olarak sağlar: divisor ya FP_SCALE'dir ya
-// bir i64 mutlak değeri (≤ 2^63 = 2^(64-1)); a/divisor > cap yalnız
-// fp_div(i64::MIN, ±1e-6)'nın işaret-pozitif teorik ucunda mümkündür (kilitli).
+// Koşul sağlanınca sonuç TAM olarak min(cap, ⌊a·b/d⌋) — HER cap için.
+// Doyum yardımcıları cap'e eşit/büyük girdileri çıkarma yapmadan cap'e kilitler.
+// u64 motor yolunda divisor ya FP_SCALE'dir ya bir i64 mutlak değeridir
+// (≤ 2^63 = 2^(64-1)), dolayısıyla koşul yapısal olarak sağlanır.
 //
 // İddialar:
 //   P-2a (güvenlik, TÜM girdiler):    sonuç ≤ cap.
-//   P-2b (kesinlik, ön koşul altında): a/d ≤ cap ⇒ sonuç == min(cap, ⌊a·b/d⌋).
-//   Köşe kilidi:                       keşfedilen davranış belgelenir/kilitlenir.
+//   P-2b (kesinlik, ön koşul altında): sonuç == min(cap, ⌊a·b/d⌋).
+//   Köşe kilidi:                       cap üstü ara değerler doğru doyar.
 //   Transkripsiyon koruması:           B=64 modeli == gerçek kod (örneklem).
 
 use caelus_core::fp::fp_mul_div_u64_sat_raw;
 
 /// fp_sat_add_u64'ün B-bit transkripsiyonu (mod 2^B sarmal).
 fn sat_add_n(a: u64, b: u64, cap: u64, mask: u64) -> u64 {
-    if a > (cap.wrapping_sub(b) & mask) {
+    if a >= cap || b >= cap || a > cap - b {
         cap
     } else {
-        (a.wrapping_add(b)) & mask
+        (a + b) & mask
     }
 }
 
 /// fp_sat_double_u64'ün B-bit transkripsiyonu.
 fn sat_double_n(v: u64, cap: u64, mask: u64) -> u64 {
-    if v > (cap.wrapping_sub(v) & mask) {
+    if v >= cap || v > cap - v {
         cap
     } else {
-        (v.wrapping_add(v)) & mask
+        (v + v) & mask
     }
 }
 
@@ -124,9 +122,9 @@ fn p2a_safety_result_never_exceeds_cap_exhaustive_b6() {
     }
 }
 
-/// P-2b — KESİNLİK, keşfedilen iki ön koşul altında, TÜM cap'ler:
-///   divisor ≤ 2^(B-1)  ∧  a/divisor ≤ cap  ⇒  sonuç == min(cap, ⌊a·b/d⌋)
-/// (Motor yolları her ikisini de yapısal olarak sağlar; bkz. fp.rs sözleşmesi.)
+/// P-2b — KESİNLİK, keşfedilen ön koşul altında, TÜM cap'ler:
+///   divisor ≤ 2^(B-1) ⇒ sonuç == min(cap, ⌊a·b/d⌋)
+/// (Motor yolları bunu yapısal olarak sağlar; bkz. fp.rs sözleşmesi.)
 #[test]
 fn p2b_exactness_under_precondition_exhaustive_b6() {
     const BITS: u32 = 6;
@@ -141,7 +139,7 @@ fn p2b_exactness_under_precondition_exhaustive_b6() {
             for divisor in 0..=mask {
                 for &cap in &caps {
                     // Ön koşul filtreleri (divisor=0 yolu zaten 0 döner, dahil et)
-                    if divisor > half || (divisor != 0 && a / divisor > cap) {
+                    if divisor > half {
                         skipped += 1;
                         continue;
                     }
@@ -161,27 +159,19 @@ fn p2b_exactness_under_precondition_exhaustive_b6() {
     assert!(checked > 100_000, "tarama beklenenden küçük: {checked}");
 }
 
-/// Keşfedilen köşenin kilidi: ön koşul İHLALİNDE (a/divisor > cap) u64
-/// ORİJİNALİ min'den küçük sonuç verebilir (C++ ile özdeş davranış).
-/// Bu test davranışı BELGELEYİP KİLİTLER — değişirse sadakat bozulmuş demektir.
+/// Cap üstündeki başlangıç bölümünün çıkarma taşması olmadan doyduğunu kilitler.
 #[test]
-fn documented_corner_precondition_violation() {
-    // a=2^63, d=1 → add_q=2^63; cap=1: sat_double koruyucusu sarmal cap-v
-    // (2^63+1) yüzünden kaçırır → add_q 2^64 ≡ 0 → sonuç 0 (min=1 olurdu).
+fn oversized_initial_quotient_saturates() {
     let got = fp_mul_div_u64_sat_raw(1u64 << 63, 2, 1, 1);
-    assert_eq!(got, 0, "köşe davranışı değişti — C++ sadakatini doğrula!");
+    assert_eq!(got, 1);
 
-    // Aynı sarma cap=2^63-1'de de tetiklenir (a/d = 2^63 > cap): sonuç 0.
-    // Motorda tek teorik erişim yolu fp_div(i64::MIN, ±1e-6) işaret-pozitif ucu.
     let got2 = fp_mul_div_u64_sat_raw(1u64 << 63, 2, 1, i64::MAX as u64);
-    assert_eq!(got2, 0, "köşe davranışı değişti — C++ sadakatini doğrula!");
+    assert_eq!(got2, i64::MAX as u64);
 
-    // P-2a güvenliği köşede bile tutar: sonuç ≤ cap.
     assert!(got <= 1 && got2 <= i64::MAX as u64);
 
-    // Ön koşul SAĞLANINCA aynı büyüklükler TAM: divisor=FP_SCALE (fp_mul yolu).
     let exact = fp_mul_div_u64_sat_raw(1u64 << 63, 2_000_000, 1_000_000, i64::MAX as u64);
-    assert_eq!(exact, i64::MAX as u64); // min(2^63-1, 2^64) doyumu
+    assert_eq!(exact, i64::MAX as u64);
 }
 
 /// P-2b genişletilmiş tarama (B=8) — yalnız açık istekle:
@@ -198,7 +188,7 @@ fn p2b_exactness_contract_caps_exhaustive_b8() {
         for b in 0..=mask {
             for divisor in 0..=mask {
                 for &cap in &caps {
-                    if divisor > half || (divisor != 0 && a / divisor > cap) {
+                    if divisor > half {
                         continue;
                     }
                     let got = mul_div_sat_n(a, b, divisor, cap, mask);

@@ -491,6 +491,15 @@ const el = {
   btnTestAuto2d: $('btn-test-auto-2d'),
   gpuBenchmarkResult: $('gpu-benchmark-result'),
 
+  neuralCard:     $('neural-card'),
+  neuralGate:     $('neural-gate'),
+  neuralMode:     $('neural-mode'),
+  neuralModel:    $('neural-model'),
+  neuralTick:     $('neural-tick'),
+  neuralFallback: $('neural-fallback'),
+  neuralReason:   $('neural-reason'),
+  neuralNodeList: $('neural-node-list'),
+  neuralLevers:   $('neural-levers'),
   lcOutput: $('lc-output'),
   lcInput: $('lc-input'),
   lcSend: $('lc-send'),
@@ -537,6 +546,238 @@ function safeLabel(value, maxLen = 72) {
   return String(value).replace(/\s+/g, ' ').trim().slice(0, maxLen);
 }
 
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function fixedPointBigInt(value) {
+  const text = String(value ?? '').trim();
+  if (!/^-?\d{1,20}$/.test(text)) return null;
+  try { return BigInt(text); } catch (_) { return null; }
+}
+
+function formatFixedPoint(value, digits = 3) {
+  const parsed = fixedPointBigInt(value);
+  if (parsed === null) return '—';
+  const scale = 1000000n;
+  const negative = parsed < 0n;
+  const absolute = negative ? -parsed : parsed;
+  const whole = absolute / scale;
+  const fraction = String(absolute % scale).padStart(6, '0').slice(0, digits);
+  return `${negative ? '-' : ''}${whole}${digits ? '.' + fraction : ''}`;
+}
+
+function formatFixedPercent(value) {
+  const parsed = fixedPointBigInt(value);
+  if (parsed === null) return '—';
+  const tenths = (parsed * 1000n) / 1000000n;
+  const negative = tenths < 0n;
+  const absolute = negative ? -tenths : tenths;
+  return `${negative ? '-' : ''}${absolute / 10n}.${absolute % 10n}%`;
+}
+
+function fixedPointDifferenceAtLeast(left, right, threshold = 50000n) {
+  const leftValue = fixedPointBigInt(left);
+  const rightValue = fixedPointBigInt(right);
+  if (leftValue === null || rightValue === null) return false;
+  const difference = leftValue >= rightValue
+    ? leftValue - rightValue
+    : rightValue - leftValue;
+  return difference >= threshold;
+}
+
+function appendNeuralValue(container, label, value, className = '') {
+  const entry = document.createElement('span');
+  if (className) entry.className = className;
+  const labelNode = document.createTextNode(`${label}: `);
+  const valueNode = document.createElement('b');
+  valueNode.textContent = value;
+  entry.append(labelNode, valueNode);
+  container.appendChild(entry);
+}
+
+function applyNeuralObservation(data) {
+  if (!isRecord(data) || data.schema_ver !== 1 || !el.neuralCard) return;
+  state.neuralObservation = data;
+
+  const gateDecision = safeLabel(data.gate_decision || 'UNKNOWN', 48);
+  const mode = safeLabel(data.mode || 'SYMBOLIC_ONLY', 24);
+  const runtimeStatus = safeLabel(data.runtime_status || 'UNKNOWN', 32);
+  const gateAccepted = data.gate_accepted === true;
+  const modelTrusted = data.model_trusted === true;
+  const authorityExpected = data.authority_expected === true;
+  const authorityCommitted = data.authority_committed === true;
+  const rollbackApplied = data.rollback_applied === true;
+  const rollbackFailed = data.rollback_failed === true;
+  const booleanFieldsValid = [
+    'gate_accepted',
+    'fallback',
+    'model_trusted',
+    'authority_expected',
+    'authority_committed',
+    'rollback_applied',
+    'rollback_failed',
+  ].every(field => typeof data[field] === 'boolean');
+  const acceptedBounded =
+    gateDecision === 'ACCEPTED_BOUNDED' &&
+    mode === 'ASSURANCE' &&
+    authorityExpected &&
+    authorityCommitted;
+  const acceptedAdvisory =
+    gateDecision === 'ACCEPTED_ADVISORY' &&
+    mode === 'ADVISORY' &&
+    !authorityExpected &&
+    !authorityCommitted;
+  const accepted =
+    booleanFieldsValid &&
+    gateAccepted &&
+    modelTrusted &&
+    runtimeStatus === 'OK' &&
+    data.fallback === false &&
+    !rollbackApplied &&
+    !rollbackFailed &&
+    (acceptedBounded || acceptedAdvisory);
+  const unsafe =
+    rollbackFailed ||
+    (!accepted && (
+      gateAccepted ||
+      data.fallback === false ||
+      authorityCommitted ||
+      rollbackApplied
+    ));
+  const fallback = !accepted;
+
+  el.neuralCard.classList.remove(
+    'neural--accepted', 'neural--rejected', 'neural--unsafe'
+  );
+  el.neuralCard.classList.add(
+    unsafe ? 'neural--unsafe' : (accepted ? 'neural--accepted' : 'neural--rejected')
+  );
+  if (el.neuralGate) el.neuralGate.textContent = gateDecision || 'UNKNOWN';
+  if (el.neuralMode) el.neuralMode.textContent = mode;
+
+  const modelId = safeLabel(data.model_id || 'not loaded', 48);
+  const modelVersion = safeLabel(data.model_version || '', 24);
+  const trustLabel = modelTrusted ? 'trusted' : 'untrusted';
+  if (el.neuralModel) {
+    el.neuralModel.textContent =
+      `${modelId}${modelVersion ? '@' + modelVersion : ''} · ${trustLabel}`;
+    el.neuralModel.title =
+      `load=${safeLabel(data.model_load_status || 'UNKNOWN', 32)} · ` +
+      `runtime=${runtimeStatus} · schema=${safeLabel(data.feature_schema_version, 8)}`;
+  }
+  if (el.neuralTick) {
+    el.neuralTick.textContent =
+      `${safeLabel(data.tick, 24) || '—'} / ${safeLabel(data.observed_history_ticks, 8) || '0'} of 8`;
+  }
+  if (el.neuralFallback) {
+    el.neuralFallback.textContent =
+      unsafe ? 'UNSAFE CLAIM · IGNORED' : (fallback ? 'ACTIVE · SYMBOLIC' : 'NO');
+  }
+  if (el.neuralReason) {
+    const authority = acceptedBounded && accepted
+      ? 'Bounded proposal committed by symbolic authority.'
+      : 'No neural mutation committed; symbolic state remains authoritative.';
+    const safety = unsafe
+      ? ' Inconsistent telemetry claims were ignored.'
+      : '';
+    el.neuralReason.textContent =
+      `${safeLabel(data.gate_reason || 'No gate reason supplied.', 180)} ${authority}${safety}`;
+  }
+
+  if (el.neuralNodeList) {
+    el.neuralNodeList.replaceChildren();
+    const nodes = Array.isArray(data.nodes) ? data.nodes.slice(0, 64) : [];
+    nodes.forEach(rawNode => {
+      if (!isRecord(rawNode)) return;
+      const node = document.createElement('div');
+      node.className = 'neural-node';
+      const divergent = fixedPointDifferenceAtLeast(
+        rawNode.reported_state_fp, rawNode.authoritative_state_fp
+      );
+      if (divergent) node.classList.add('neural-node--divergent');
+
+      const heading = document.createElement('div');
+      heading.className = 'neural-node-name';
+      const name = document.createElement('span');
+      name.textContent = safeLabel(rawNode.node_id || 'UNKNOWN_NODE', 40);
+      const flag = document.createElement('span');
+      flag.className = 'neural-node-flag';
+      flag.textContent = divergent ? 'TELEMETRY DIVERGENCE' : 'CONSISTENT';
+      heading.append(name, flag);
+      node.appendChild(heading);
+
+      const values = document.createElement('div');
+      values.className = 'neural-values';
+      appendNeuralValue(values, 'Reported', formatFixedPoint(rawNode.reported_state_fp));
+      appendNeuralValue(
+        values,
+        accepted ? 'Neural estimate' : 'Neural estimate (rejected)',
+        rawNode.neural_output_available === true
+          ? formatFixedPoint(rawNode.estimated_true_state_fp)
+          : 'unavailable',
+        'neural-estimate'
+      );
+      appendNeuralValue(
+        values, 'Authoritative symbolic', formatFixedPoint(rawNode.authoritative_state_fp)
+      );
+      appendNeuralValue(values, 'Trust', formatFixedPercent(rawNode.trust_fp));
+      node.appendChild(values);
+
+      if (rawNode.neural_output_available === true) {
+        const risks = document.createElement('div');
+        risks.className = 'neural-risks';
+        risks.textContent =
+          `Anomaly ${formatFixedPercent(rawNode.anomaly_score_fp)} · ` +
+          `Confidence ${formatFixedPercent(rawNode.confidence_fp)} · ` +
+          `OOD ${formatFixedPercent(rawNode.ood_score_fp)} · ` +
+          `Outage S/M/L ${formatFixedPercent(rawNode.outage_short_fp)} / ` +
+          `${formatFixedPercent(rawNode.outage_medium_fp)} / ` +
+          `${formatFixedPercent(rawNode.outage_long_fp)}`;
+        node.appendChild(risks);
+      }
+      el.neuralNodeList.appendChild(node);
+    });
+  }
+
+  if (el.neuralLevers) {
+    el.neuralLevers.replaceChildren();
+    const title = document.createElement('strong');
+    title.textContent = 'Symbolically evaluated lever candidates: ';
+    el.neuralLevers.appendChild(title);
+    const levers = Array.isArray(data.lever_candidates)
+      ? data.lever_candidates.filter(isRecord).slice(0, 3)
+      : [];
+    if (!levers.length) {
+      el.neuralLevers.appendChild(document.createTextNode('none'));
+    } else {
+      const summary = levers.map(lever => {
+        const marker = lever.selected === true ? 'SELECTED ' : '';
+        return `${marker}${safeLabel(lever.lever_id || 'unknown', 40)} ` +
+          `(neural ${formatFixedPercent(lever.neural_score_fp)}, ` +
+          `symbolic ${formatFixedPercent(lever.symbolic_score_fp)})`;
+      }).join(' · ');
+      el.neuralLevers.appendChild(document.createTextNode(summary));
+    }
+  }
+
+  const disposition = unsafe
+    ? 'UNSAFE PAYLOAD IGNORED'
+    : (accepted ? (acceptedBounded ? 'BOUNDED ACCEPT' : 'ADVISORY ACCEPT') : 'SYMBOLIC FALLBACK');
+  const decisionKey = `${gateDecision}:${disposition}`;
+  if (state.lastNeuralDecision !== decisionKey) {
+    addAuditLog(
+      unsafe ? 'err' : (accepted ? 'ok' : 'warn'),
+      `NEURAL GATE: ${gateDecision} · ${disposition}`
+    );
+    state.lastNeuralDecision = decisionKey;
+  }
+  if (unsafe) SFX.alarm();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LEFT TAB SWITCHER
+   ═══════════════════════════════════════════════════════════════ */
 function addAuditLog(level, msg) {
   if (!el.cryptoLog) return;
   const now = new Date();
@@ -1130,6 +1371,11 @@ function handleEngineEvent(ev) {
   }
 
   const evType = String(data.type || data.event || '').toLowerCase();
+
+  if (evType === 'neural_observation') {
+    applyNeuralObservation(data);
+    return;
+  }
 
   if (evType === 'world_store_loaded') {
     if (typeof handleRemoteWorldStoreLoaded === 'function') {
@@ -27804,6 +28050,7 @@ function initCaelusLivingAdvisorAndAgentStudio() {
         exported_at: new Date().toISOString(),
         schema: 'CAELUS_SOVEREIGN_USER_EXPORT_V1',
         advisor_memory: advisorSession ? advisorSession.inspectSeparatedMemory() : null,
+        decision_task: decisionWorkspace ? decisionWorkspace.load() : null,
         world_gate_zones: worldDataGate ? worldDataGate.inspectZones() : null,
         agents: agentStudio ? agentStudio.listAgents().map((a) => agentStudio.exportAgentTemplateSafe(a)) : []
       };
@@ -27886,8 +28133,437 @@ function initCaelusLivingAdvisorAndAgentStudio() {
     });
   }
 
+  function researchCitationLabel(evidence, title = evidence.title) {
+    return title + (evidence.locatorKind === 'DOCX_BODY_PARAGRAPH' ? ' ¶' : ':') + evidence.line;
+  }
+
+  const decisionPanel = document.getElementById('laa-decision-workspace');
+  let decisionWorkspace;
+  let stageDecisionResearchClaim;
+  if (decisionPanel && advMod?.createDecisionWorkspace) {
+    const taskForm = decisionPanel.querySelector('#laa-decision-task');
+    const evidenceForm = decisionPanel.querySelector('#laa-decision-evidence');
+    const replayForm = decisionPanel.querySelector('#laa-decision-replay');
+    const deleteBtn = decisionPanel.querySelector('#laa-decision-delete');
+    const optionRows = decisionPanel.querySelector('#laa-decision-options');
+    const optionTemplate = decisionPanel.querySelector('#laa-decision-option');
+    const status = decisionPanel.querySelector('#laa-decision-status');
+    const output = decisionPanel.querySelector('#laa-decision-output');
+    const attachment = decisionPanel.querySelector('#laa-decision-research-attachment');
+    const attachmentSummary = decisionPanel.querySelector('#laa-decision-research-summary');
+    const attachmentQuote = decisionPanel.querySelector('#laa-decision-research-quote');
+    let pendingResearchClaim;
+    function clearDecisionAttachment() {
+      if (pendingResearchClaim) evidenceForm.elements.reference.value = '';
+      pendingResearchClaim = undefined;
+      attachmentSummary.textContent = '';
+      attachmentQuote.textContent = '';
+      attachment.hidden = true;
+    }
+
+    const statuses = {
+      AVAILABLE: 'Uygulanabilir', WAITING: 'Teyit bekliyor', DENIED: 'Teyit reddedildi',
+      OUTSIDE_LIMITS: 'Hedef veya bütçe dışında', EXPIRED: 'Karar süresi doldu'
+    };
+    const planName = (plan) => plan.recommended?.name ||
+      (plan.status === 'WAITING_FOR_EVIDENCE' ? 'Teyit bekleniyor' : 'Uygulanabilir seçenek yok');
+    const displayTime = (time) => new Date(time).toLocaleString('tr-TR');
+    function addOption() {
+      if (optionRows.childElementCount >= 20) return;
+      const row = optionTemplate.content.cloneNode(true);
+      row.querySelector('[data-remove-option]').addEventListener('click', (event) => {
+        if (optionRows.childElementCount > 1) event.currentTarget.closest('fieldset').remove();
+      });
+      optionRows.append(row);
+    }
+    function renderDecision(plan, previous) {
+      const heading = document.createElement('p');
+      heading.textContent = plan.goal + ' · ' + displayTime(plan.asOf) + ' · Sonuç: ' + planName(plan);
+      const options = document.createElement('ul');
+      for (const option of plan.options) {
+        const item = document.createElement('li');
+        item.textContent = option.name + ' · ' + option.units + ' birim · ' + option.cost +
+          ' · Son karar: ' + displayTime(option.deadline) + ' · ' + statuses[option.status] +
+          (option.condition ? ' · ' + option.condition : '') +
+          (option.evidence ? ' · Kaynak: ' + option.evidence.reference : '');
+        const research = option.evidence?.researchClaim;
+        if (research) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.textContent = researchCitationLabel(research.evidence) + ' · ' +
+            research.subject + ': ' + research.value;
+          const quote = document.createElement('blockquote');
+          quote.style.whiteSpace = 'pre-wrap';
+          quote.style.overflowWrap = 'anywhere';
+          quote.textContent = research.evidence.quote;
+          details.append(summary, quote);
+          item.append(details);
+        }
+        options.append(item);
+      }
+      output.replaceChildren(heading, options);
+      if (previous) {
+        const change = document.createElement('p');
+        change.textContent = 'Önce: ' + planName(previous) + ' / Şimdi: ' + planName(plan);
+        output.prepend(change);
+      }
+    }
+    function refreshDecision() {
+      const saved = decisionWorkspace.load();
+      taskForm.hidden = Boolean(saved);
+      replayForm.hidden = !saved;
+      deleteBtn.hidden = !saved;
+      clearDecisionAttachment();
+      evidenceForm.reset();
+      const select = evidenceForm.elements.condition;
+      const prompt = new Option('Koşul seçin', '', true, true);
+      prompt.disabled = true;
+      select.replaceChildren(prompt);
+      const conditions = new Set(saved?.task.options.map((option) => option.condition).filter(Boolean));
+      for (const condition of conditions) select.add(new Option(condition, condition));
+      evidenceForm.hidden = conditions.size === 0;
+      if (saved) renderDecision(decisionWorkspace.replay());
+      else output.replaceChildren();
+    }
+    function handleDecision(event, action) {
+      event.preventDefault();
+      status.textContent = '';
+      try { action(); } catch (error) { status.textContent = error.message; }
+    }
+    try {
+      decisionWorkspace = advMod.createDecisionWorkspace(window.localStorage);
+      addOption();
+      addOption();
+      refreshDecision();
+    } catch (error) {
+      status.textContent = error.message;
+    }
+    if (decisionWorkspace) {
+      stageDecisionResearchClaim = (claim) => {
+        const saved = decisionWorkspace.load();
+        if (!saved || !saved.task.options.some((option) => option.condition)) {
+          throw new Error('Önce teyit koşulu olan bir karar görevi oluşturun.');
+        }
+        if (claim.evidence.quote.length > 4096) throw new Error('En fazla 4.096 karakterlik bir kaynak satırı seçin.');
+        clearDecisionAttachment();
+        evidenceForm.reset();
+        pendingResearchClaim = claim;
+        const { title, quote } = claim.evidence;
+        evidenceForm.elements.reference.value = researchCitationLabel(claim.evidence, title.slice(0, 220));
+        attachmentSummary.textContent = researchCitationLabel(claim.evidence) + ' · ' + claim.subject + ': ' + claim.value;
+        attachmentQuote.textContent = quote;
+        attachment.hidden = false;
+        decisionPanel.open = true;
+        status.textContent = 'Alıntı eklendi. Koşulu ve durumu seçip kaydedin.';
+        evidenceForm.elements.condition.focus();
+      };
+      decisionPanel.querySelector('#laa-decision-detach-research').addEventListener('click', clearDecisionAttachment);
+      decisionPanel.querySelector('#laa-decision-add-option').addEventListener('click', addOption);
+      taskForm.addEventListener('submit', (event) => handleDecision(event, () => {
+        const values = taskForm.elements;
+        const options = Array.from(optionRows.children, (row) => ({
+          name: row.querySelector('[name=optionName]').value,
+          units: row.querySelector('[name=optionUnits]').valueAsNumber,
+          cost: row.querySelector('[name=optionCost]').valueAsNumber,
+          deadline: new Date(row.querySelector('[name=optionDeadline]').value).toISOString(),
+          condition: row.querySelector('[name=optionCondition]').value.trim()
+        }));
+        decisionWorkspace.create({
+          goal: values.goal.value, minUnits: values.minUnits.valueAsNumber,
+          maxCost: values.maxCost.valueAsNumber, options
+        });
+        refreshDecision();
+      }));
+      evidenceForm.addEventListener('submit', (event) => handleDecision(event, () => {
+        const values = evidenceForm.elements;
+        const update = decisionWorkspace.recordEvidence({
+          condition: values.condition.value, status: values.status.value, reference: values.reference.value,
+          researchClaim: pendingResearchClaim
+        });
+        renderDecision(update.after, update.before);
+        clearDecisionAttachment();
+        evidenceForm.reset();
+      }));
+      replayForm.addEventListener('submit', (event) => handleDecision(event, () => {
+        renderDecision(decisionWorkspace.replay(new Date(replayForm.elements.asOf.value).toISOString()));
+      }));
+      deleteBtn.addEventListener('click', (event) => handleDecision(event, () => {
+        if (!window.confirm('Yerel görev ve teyit geçmişi silinsin mi?')) return;
+        decisionWorkspace.clear();
+        taskForm.reset();
+        refreshDecision();
+      }));
+      deleteUserDataBtn?.addEventListener('click', (event) => handleDecision(event, () => {
+        decisionWorkspace.clear();
+        taskForm.reset();
+        refreshDecision();
+      }));
+    }
+  }
+
+  const experimentPanel = document.getElementById('laa-experiment-workspace');
+  let experimentWorkspace;
+  if (experimentPanel && advMod?.createExperimentWorkspace) {
+    const protocolForm = experimentPanel.querySelector('#laa-experiment-protocol');
+    const observationForm = experimentPanel.querySelector('#laa-experiment-observation');
+    const deleteBtn = experimentPanel.querySelector('#laa-experiment-delete');
+    const status = experimentPanel.querySelector('#laa-experiment-status');
+    const output = experimentPanel.querySelector('#laa-experiment-output');
+    const bounds = (range) => range.low + ' – ' + range.high;
+
+    function renderExperiment(result) {
+      protocolForm.hidden = Boolean(result);
+      observationForm.hidden = !result || Boolean(result.record.observation);
+      deleteBtn.hidden = !result;
+      output.replaceChildren();
+      if (!result) return;
+      const { record, baselineMatched, compatibleHypotheses, predictionsOverlap, outcome } = result;
+      const { protocol, observation } = record;
+      const heading = document.createElement('p');
+      heading.textContent = protocol.question + ' · ' + protocol.measurement + ' · ' + protocol.intervention;
+      const list = document.createElement('ul');
+      const entries = [
+        'Ön kayıt: ' + record.createdAt + ' · Dayanak: ' + protocol.source,
+        'Temel tahmin: ' + bounds(protocol.baseline),
+        ...protocol.hypotheses.map((hypothesis) => hypothesis.name + ': ' + bounds(hypothesis.expected)),
+        predictionsOverlap ? 'Hipotez aralıkları kesişiyor. Bazı ölçümler ayrım sağlayamaz.' : 'Hipotez aralıkları ayrık.'
+      ];
+      if (observation) {
+        entries.push(
+          'Gözlem: ' + observation.value + ' · Kaynak: ' + observation.source + ' · ' + observation.receivedAt,
+          baselineMatched ? 'Gözlem temel tahmin aralığında.' : 'Gözlem temel tahmin aralığı dışında.',
+          outcome === 'ONE_COMPATIBLE' ? 'Bu gözlemle uyumlu tek hipotez: ' + compatibleHypotheses[0] :
+            outcome === 'INCONCLUSIVE' ? 'Bu gözlem iki hipotezi ayıramıyor.' : 'Gözlem iki hipotezin de tahmini dışında.'
+        );
+      }
+      for (const entry of entries) {
+        const item = document.createElement('li');
+        item.textContent = entry;
+        list.append(item);
+      }
+      output.append(heading, list);
+    }
+
+    async function runExperiment(event, action) {
+      event?.preventDefault();
+      status.textContent = '';
+      try { await action(); } catch (error) { status.textContent = error.message; }
+    }
+
+    runExperiment(null, async () => {
+      experimentWorkspace = advMod.createExperimentWorkspace(window.localStorage, window.crypto);
+      renderExperiment(await experimentWorkspace.load());
+    });
+    protocolForm.addEventListener('submit', (event) => runExperiment(event, async () => {
+      if (!experimentWorkspace) throw new Error('Yerel deney kaydı kullanılamıyor.');
+      const v = protocolForm.elements;
+      const interval = (prefix) => ({ low: v[prefix + 'Low'].valueAsNumber, high: v[prefix + 'High'].valueAsNumber });
+      renderExperiment(await experimentWorkspace.register({
+        question: v.question.value, measurement: v.measurement.value,
+        intervention: v.intervention.value, source: v.source.value,
+        baseline: interval('baseline'),
+        hypotheses: [
+          { name: v.firstName.value, expected: interval('first') },
+          { name: v.secondName.value, expected: interval('second') }
+        ]
+      }));
+    }));
+    observationForm.addEventListener('submit', (event) => runExperiment(event, async () => {
+      const v = observationForm.elements;
+      renderExperiment(await experimentWorkspace.observe({ value: v.value.valueAsNumber, source: v.source.value }));
+    }));
+    function clearExperiment() {
+      experimentWorkspace?.clear();
+      protocolForm.reset();
+      observationForm.reset();
+      renderExperiment(null);
+    }
+    deleteBtn.addEventListener('click', (event) => runExperiment(event, () => {
+      if (window.confirm('Yerel deney kaydı ve ölçüm silinsin mi?')) clearExperiment();
+    }));
+    deleteUserDataBtn?.addEventListener('click', (event) => runExperiment(event, clearExperiment));
+  }
+
+  const researchPanel = document.getElementById('laa-research-notebook');
+  if (researchPanel && advMod?.createResearchNotebook) {
+    const upload = researchPanel.querySelector('#laa-research-import');
+    const search = researchPanel.querySelector('#laa-research-search');
+    const claims = researchPanel.querySelector('#laa-research-claims');
+    const sourceList = researchPanel.querySelector('#laa-research-sources');
+    const results = researchPanel.querySelector('#laa-research-hits');
+    const status = researchPanel.querySelector('#laa-research-status');
+    const output = researchPanel.querySelector('#laa-research-output');
+    let notebook;
+    let hits = [];
+    let generation = 0;
+
+    function listItem(text) {
+      const item = document.createElement('li');
+      item.textContent = text;
+      return item;
+    }
+
+    function renderSources() {
+      sourceList.replaceChildren(...notebook.list().map((source) => listItem(source.title)));
+    }
+
+    function renderHits() {
+      results.replaceChildren(...hits.map((hit) => listItem(researchCitationLabel(hit) + ' · ' + hit.quote)));
+      for (const select of [claims.elements.first, claims.elements.second]) {
+        select.replaceChildren(...hits.map((hit, index) => new Option(researchCitationLabel(hit), String(index))));
+      }
+      if (hits.length > 1) claims.elements.second.selectedIndex = 1;
+      claims.hidden = hits.length === 0;
+      claims.querySelector('[value=compare]').disabled = hits.length < 2;
+    }
+
+    async function runResearch(event, action) {
+      event?.preventDefault();
+      status.textContent = '';
+      try { await action(); } catch (error) { status.textContent = error.message; }
+    }
+
+    runResearch(null, () => {
+      notebook = advMod.createResearchNotebook(window.localStorage);
+      renderSources();
+    });
+    upload.addEventListener('submit', (event) => runResearch(event, async () => {
+      if (!notebook) throw new Error('Yerel araştırma defteri kullanılamıyor.');
+      const files = Array.from(upload.elements.documents.files);
+      if (files.length > 20 || files.some((file) => !/\.(txt|md|csv|tsv|docx)$/i.test(file.name) ||
+          file.size > (/\.docx$/i.test(file.name) ? 2000000 : 400000))) {
+        throw new Error('En fazla 20 TXT, Markdown, CSV, TSV veya DOCX belgesi seçin. Word dosyası başına sınır 2 MB.');
+      }
+      const pendingGeneration = generation;
+      const documents = await Promise.all(files.map(async (file) => {
+        const bytes = await file.arrayBuffer();
+        if (/\.docx$/i.test(file.name)) {
+          const readDocx = window.CaelusFirstRealTaskEngine?.readOpenXmlDocxText;
+          if (!readDocx) throw new Error('Word belge okuyucusu yüklenemedi.');
+          try {
+            return { title: file.name, ...readDocx(bytes) };
+          } catch (error) {
+            throw new Error(file.name + ': ' + error.message);
+          }
+        }
+        return { title: file.name, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
+      }));
+      if (pendingGeneration !== generation) return;
+      const added = notebook.addSources(documents);
+      renderSources();
+      upload.reset();
+      status.textContent = added + ' yeni belge eklendi.';
+    }));
+    search.addEventListener('submit', (event) => runResearch(event, () => {
+      output.replaceChildren();
+      claims.reset();
+      hits = notebook.search(search.elements.question.value);
+      renderHits();
+      status.textContent = hits.length ? hits.length + ' kaynak satırı bulundu.' : 'Eşleşen kaynak satırı yok.';
+    }));
+    claims.addEventListener('submit', (event) => runResearch(event, () => {
+      const form = claims.elements;
+      const first = hits[Number(form.first.value)];
+      if (event.submitter?.value === 'draft' || event.submitter?.value === 'attach') {
+        const draft = notebook.draft(first, form.subject.value, form.firstValue.value);
+        if (event.submitter.value === 'attach') {
+          if (!stageDecisionResearchClaim) throw new Error('Karar görevi kullanılamıyor.');
+          stageDecisionResearchClaim(draft.assumption);
+          status.textContent = 'Alıntı karar görevi formuna eklendi.';
+          return;
+        }
+        const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'caelus-senaryo-taslagi.json';
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        status.textContent = 'İnceleme gerektiren senaryo taslağı indirildi.';
+        return;
+      }
+      const result = notebook.compare(first, hits[Number(form.second.value)], form.subject.value,
+        form.firstValue.value, form.secondValue.value);
+      const heading = document.createElement('p');
+      heading.textContent = result.status === 'SAME_VALUE' ? 'Seçilen değerler eşleşiyor.' :
+        'Olası çelişki. Tarih, birim ve kapsamı kaynaktan doğrulayın.';
+      const list = document.createElement('ul');
+      list.append(...result.claims.map((claim) => listItem(claim.subject + ': ' + claim.value +
+        ' · ' + researchCitationLabel(claim.evidence))));
+      output.replaceChildren(heading, list);
+    }));
+    function clearResearch() {
+      notebook?.clear();
+      generation += 1;
+      hits = [];
+      renderHits();
+      sourceList.replaceChildren();
+      output.replaceChildren();
+      claims.reset();
+      upload.reset();
+      search.reset();
+    }
+    researchPanel.querySelector('#laa-research-clear').addEventListener('click', (event) => runResearch(event, () => {
+      if (window.confirm('Bu tarayıcıdaki araştırma defteri silinsin mi?')) clearResearch();
+    }));
+    deleteUserDataBtn?.addEventListener('click', (event) => runResearch(event, clearResearch));
+  }
+
   const askInput = document.getElementById('inp-laa-advisor-question');
   const askBtn = document.getElementById('btn-laa-advisor-ask');
+  const replayBtn = document.getElementById('btn-laa-advisor-replay');
+  const replayStatus = document.getElementById('laa-advisor-replay-status');
+  const replayComparison = document.getElementById('laa-advisor-replay-comparison');
+  if (replayBtn && replayStatus && replayComparison && advisorSession) {
+    const clearReplayComparison = () => {
+      replayComparison.hidden = true;
+      replayComparison.replaceChildren();
+      replayStatus.textContent = '';
+    };
+    replayBtn.addEventListener('click', () => {
+      clearReplayComparison();
+      const question = askInput?.value.trim();
+      const asOf = document.getElementById('inp-laa-advisor-as-of')?.value;
+      if (!question || !asOf) {
+        replayStatus.textContent = 'Soruyu ve geçmiş bilgi kesitini girin.';
+        return;
+      }
+      try {
+        const compareAsOf = document.getElementById('inp-laa-advisor-compare-as-of')?.value;
+        const comparison = compareAsOf ? advisorSession.compareAdvisorReplayCuts(question, asOf, compareAsOf) : null;
+        const result = comparison ? comparison.after : advisorSession.replayAdvisorTurn(question, asOf);
+        if (comparison) {
+          const previousAnswer = document.createElement('p');
+          previousAnswer.textContent = 'İlk kesitteki yanıt: ' + comparison.before.answerText;
+          const changes = document.createElement('ul');
+          for (const change of comparison.evidenceChanges) {
+            const item = document.createElement('li');
+            item.textContent = (change.kind === 'REVISED' ? 'Güncellendi: ' : 'Eklendi: ') +
+              change.title + ' · ' + change.receivedAt + ' · ' + change.sourceUrl;
+            changes.append(item);
+          }
+          if (!changes.childElementCount) {
+            const item = document.createElement('li');
+            item.textContent = 'İki kesit arasında kaynak değişikliği yok.';
+            changes.append(item);
+          }
+          replayComparison.append(previousAnswer, changes);
+          replayComparison.hidden = false;
+        }
+        const count = result.answerPassport.availableWorldRecordCount;
+        renderAdvisorTurnOutput(result);
+        replayStatus.textContent = 'Geçmiş bilgi kesiti: ' + (compareAsOf || asOf).replace('T', ' ') + ' · ' + count + ' kaynak kaydı';
+      } catch (error) {
+        replayStatus.textContent = error instanceof RangeError ? error.message : 'Geçmiş bilgi kesiti değerlendirilemedi.';
+      }
+    });
+    askBtn?.addEventListener('click', clearReplayComparison);
+    drawer.querySelectorAll('.laa-advisor-quick-q, #btn-laa-reset-dialogue-state').forEach((button) => {
+      button.addEventListener('click', clearReplayComparison);
+    });
+  }
+
   if (askBtn && advisorSession) {
     askBtn.addEventListener('click', () => {
       const q = askInput ? askInput.value.trim() : '';

@@ -1,18 +1,20 @@
 @echo off
 setlocal EnableDelayedExpansion
-chcp 65001 > nul 2>&1
 
 :: ----------------------------------------------------------------------------
 ::  CAELUS OS - Yerel ve GitHub Actions MSVC/GCC CI Betigi (ci.bat)
 ::
-::  Yedi zorunlu kapi (0 Hata / 0 Uyari / Fail-Closed):
-::    1. Rust calisma alani kapisi (no_std core check + tum workspace testleri)
+::  Zorunlu Kapilar (0 Hata / 0 Uyari / Fail-Closed):
+::    1. Clean-checkout Dataset Provenance + Python Neural/Audit/UI Testleri
+::       + Rust no_std izole cekirdek + caelus_network & caelus_core testleri
 ::    2. C++ birim testleri (/W4 /WX, utf-8, NOMINMAX, ws2_32)
 ::    3. Connector smoke (MQTT + Zapier + FIELD-IDENTITY v1/v2) + pure Blake3
 ::    4. CAELUS_PRODUCTION=1 derleme + <50 MB siniri + dev-bypass bayt taramasi
-::    5. Izole (%TEMP%\caelus_ci_audit) determinizm cift-kosumu + caelus_verify_audit
-::       zincir/SEAL pini + negatif UNTRUSTED_SEAL_SIGNER kapisi
-::    6. Negatif senaryo imzasi kapisi (SIGNATURE_MISMATCH -> blank slate 1.000000)
+::       + Neural V1 C++/Rust exact diferansiyel + BS-01 neural demo
+::       + Sidecar Airlock Ege Pilotu + War Room 4-Ajan AG-UI Master Kapilari
+::    5. Izole determinizm cift-kosumu + caelus_verify_audit & verify_audit_log.py
+::       SEAL pini + UNTRUSTED_SEAL_SIGNER + run_security_negative.py
+::    6. Negatif senaryo imzasi kapisi (SIG-CI -> blank slate 1.000000)
 ::    7. C++ golden + caelus_core_repl canli diferansiyel golden + Verus/Z3 ispatlari
 :: ----------------------------------------------------------------------------
 
@@ -21,12 +23,16 @@ set "ROOT=%ROOT:~0,-1%"
 set "EXE=%ROOT%\dist\caelus_os.exe"
 set "VERIFY_BIN=%ROOT%\target\release\caelus_verify_audit.exe"
 set "AIRLOCK_BIN=%ROOT%\target\release\caelus_sidecar_airlock.exe"
-set "REPL_BIN=%ROOT%\target\release\caelus_core_repl.exe"
+set "MODEL_SIGNER=%ROOT%\target\release\caelus_sign_model.exe"
+set "REPL_BIN=%ROOT%\caelus_core\target\release\caelus_core_repl.exe"
 set "TEST_EXE=%ROOT%\build_tests\caelus_cpp_tests.exe"
+set "NEURAL_CPP_EXE=%ROOT%\build_tests\neural_cpp_reference.exe"
+set "NEURAL_RUST_EXE=%ROOT%\tests\neural_reference\target\release\caelus_neural_reference.exe"
 set "DET_SIGNER_PUBKEY=acdcc8494d458f44a7aaac1d6a84ec624daee88436db2ae26e67ba645a106228"
 set "SAMPLE_SIGNER_PUBKEY=2dd8b43ecba8eff73b1aa25250de676f4f8a0be072b1f96a7eda7355648ca0d1"
 set "CXX_TOOL="
 set "PYTHON_CMD="
+set "CI_RUST_TARGET="
 
 set "SKIP_BUILD=0"
 set "ONLY_DET=0"
@@ -48,7 +54,7 @@ echo ------------------------------------------------------------
 echo.
 
 :: ----------------------------------------------------------------------------
-:: ADIM 0: On kontroller (etkilesimsiz - cl.exe /? pager KULLANILMAZ)
+:: ADIM 0: On kontroller
 :: ----------------------------------------------------------------------------
 echo [CI] On kontrol: araclar...
 
@@ -70,6 +76,18 @@ if not defined PYTHON_CMD (
     exit /b 1
 )
 echo [CI OK] Python: !PYTHON_CMD!
+
+!PYTHON_CMD! -c "import importlib.util,sys; sys.exit(0 if (importlib.util.find_spec('cryptography') or importlib.util.find_spec('nacl')) else 1)"
+if errorlevel 1 (
+    echo [CI HATA] Python Ed25519 dogrulayicisi eksik ^(cryptography veya PyNaCl gerekli^).
+    exit /b 1
+)
+
+powershell -NoProfile -Command "$PSVersionTable.PSVersion.ToString()" > nul 2>&1
+if errorlevel 1 (
+    echo [CI HATA] PowerShell bulunamadi.
+    exit /b 1
+)
 
 if "%ONLY_DET%"=="0" (
     set "GCC_OK=0"
@@ -108,7 +126,12 @@ if "%ONLY_DET%"=="0" (
         echo [CI HATA] Kullanilabilir C++ derleyici bulunamadi ^(cl.exe veya g++ gerekli^).
         exit /b 1
     )
-    echo [CI OK] C++ derleyici: !CXX_TOOL!
+    if "!CXX_TOOL!"=="GCC" (
+        set "CI_RUST_TARGET=x86_64-pc-windows-gnu"
+    ) else (
+        set "CI_RUST_TARGET=x86_64-pc-windows-msvc"
+    )
+    echo [CI OK] C++ derleyici: !CXX_TOOL! ^| Rust target: !CI_RUST_TARGET!
 )
 
 certutil -? > nul 2>&1
@@ -119,32 +142,66 @@ if errorlevel 1 (
 echo.
 
 :: ----------------------------------------------------------------------------
-:: ADIM 1: Rust no_std kontrolu ve tum calisma alani birim/mulkiyet testleri
+:: ADIM 1: Clean-checkout Dataset Provenance + Python + Rust no_std & Testler
 :: ----------------------------------------------------------------------------
 if "%ONLY_DET%"=="0" (
     echo ------------------------------------------------------------
-    echo [CI] ADIM 1/7 - Rust no_std Check + Workspace Testleri
+    echo [CI] ADIM 1/7 - Dataset Provenance + Python + Rust Testleri
     echo ------------------------------------------------------------
+    del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
     pushd "%ROOT%"
-    cargo check -p caelus_core --no-default-features
+    cargo fetch --locked --manifest-path "%ROOT%\caelus_core\Cargo.toml"
+    cargo build --release --locked --bin caelus_sign_model
+    set "SIGNER_EC=!errorlevel!"
+    popd
+    if "!SIGNER_EC!" NEQ "0" (
+        echo [CI FAIL] caelus_sign_model derlenemedi ^(exit=!SIGNER_EC!^)
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_SIGNER_BUILD"
+    ) else (
+        !PYTHON_CMD! "%ROOT%\tests\run_neural_toolchain_smoke.py" --signer-binary "%MODEL_SIGNER%"
+        if errorlevel 1 (
+            echo [CI FAIL] Offline dataset/export/sign/verify smoke BASARISIZ.
+            set "CI_PASS=1"
+            set "STEP_FAIL=!STEP_FAIL! NEURAL_TOOLCHAIN"
+        ) else (
+            echo [CI OK] Offline dataset/export/sign/verify smoke gecti
+        )
+    )
+
+    !PYTHON_CMD! -m unittest -v tests.test_caelus_blake3 tests.test_verify_audit_neural tests.test_neural_war_room_contract caelus_ml.test_pipeline
+    if errorlevel 1 (
+        echo [CI FAIL] Python neural/audit/UI/training testleri BASARISIZ.
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! PYTHON_NEURAL_TESTS"
+    ) else (
+        echo [CI OK] Python neural/audit/UI/training testleri gecti
+    )
+
+    pushd "%ROOT%"
+    cargo check --locked --manifest-path "%ROOT%\caelus_core\Cargo.toml" --no-default-features
     set "RUST_NOSTD_EC=!errorlevel!"
     if "!RUST_NOSTD_EC!"=="0" (
-        !PYTHON_CMD! -c "import subprocess,sys; r=subprocess.run(['cargo','tree','-p','caelus_core','--no-default-features','--edges','normal'],capture_output=True,text=True); ls=[x.strip() for x in r.stdout.splitlines() if x.strip()]; ok=(r.returncode==0 and len(ls)==1 and ls[0].startswith('caelus_core ')); print('[CI OK] caelus_core sifir dis bagimlilik dogrulandi:', ls[0] if ls else '') if ok else print('[CI FAIL] caelus_core bagimlilik agaci beklenmeyen:', r.stdout, r.stderr, file=sys.stderr); sys.exit(0 if ok else 1)"
+        !PYTHON_CMD! -c "import subprocess,sys; r=subprocess.run(['cargo','tree','--locked','--manifest-path',sys.argv[1],'--no-default-features','--edges','normal'],capture_output=True,text=True); ls=[x.strip() for x in r.stdout.splitlines() if x.strip()]; allowed={'caelus_core','blake3','arrayref','arrayvec','cfg-if','constant_time_eq','libc'}; toks=[[t for t in l.replace('├──',' ').replace('└──',' ').replace('│',' ').split() if t and not t.startswith('(')] for l in ls]; bad=[t[0] for t in toks if t and t[0] not in allowed]; ok=(r.returncode==0 and bool(ls) and ls[0].startswith('caelus_core ') and not bad); print('[CI OK] caelus_core no_std izolasyonu dogrulandi') if ok else print('[CI FAIL] caelus_core beklenmeyen bagimlilik:', bad, r.stdout, r.stderr, file=sys.stderr); sys.exit(0 if ok else 1)" "%ROOT%\caelus_core\Cargo.toml"
         set "RUST_NOSTD_EC=!errorlevel!"
     )
     if "!RUST_NOSTD_EC!"=="0" (
-        cargo test --workspace --all-targets
+        cargo test --locked
         set "RUST_EC=!errorlevel!"
     ) else (
         set "RUST_EC=!RUST_NOSTD_EC!"
     )
+    if "!RUST_EC!"=="0" (
+        cargo test --locked --manifest-path "%ROOT%\caelus_core\Cargo.toml" --features std
+        set "RUST_EC=!errorlevel!"
+    )
     popd
     if "!RUST_EC!" NEQ "0" (
-        echo [CI FAIL] Rust workspace/no_std kapisi BASARISIZ ^(exit=!RUST_EC!^)
+        echo [CI FAIL] Rust no_std / network / core testleri BASARISIZ ^(exit=!RUST_EC!^)
         set "CI_PASS=1"
         set "STEP_FAIL=!STEP_FAIL! RUST_TESTS"
     ) else (
-        echo [CI OK] Rust no_std + workspace testleri gecti
+        echo [CI OK] Rust no_std + network + core testleri gecti
     )
     echo.
 )
@@ -216,21 +273,24 @@ if "%ONLY_DET%"=="0" (
 )
 
 :: ----------------------------------------------------------------------------
-:: ADIM 4: Taze CAELUS_PRODUCTION=1 derlemesi + <50 MB + Bypass String Scan
+:: ADIM 4: CAELUS_PRODUCTION=1 + Neural V1 + Sidecar Airlock + War Room AG-UI
 :: ----------------------------------------------------------------------------
 if "%ONLY_DET%"=="0" (
     echo ------------------------------------------------------------
-    echo [CI] ADIM 4/7 - Uretim Derlemesi ^(CAELUS_PRODUCTION=1^) + Guvenlik Taramasi
+    echo [CI] ADIM 4/7 - Uretim Derlemesi + Neural V1 + Airlock + War Room
     echo ------------------------------------------------------------
     if "%SKIP_BUILD%"=="0" (
         set "OLD_PROD=%CAELUS_PRODUCTION%"
         set "OLD_CXX=%CAELUS_CXX%"
+        set "OLD_RUST_TARGET=%CAELUS_RUST_TARGET%"
         set "CAELUS_PRODUCTION=1"
         set "CAELUS_CXX=!CXX_TOOL!"
+        set "CAELUS_RUST_TARGET=!CI_RUST_TARGET!"
         call "%ROOT%\build.bat"
         set "BUILD_EC=!errorlevel!"
         if defined OLD_PROD (set "CAELUS_PRODUCTION=!OLD_PROD!") else (set "CAELUS_PRODUCTION=")
         if defined OLD_CXX (set "CAELUS_CXX=!OLD_CXX!") else (set "CAELUS_CXX=")
+        if defined OLD_RUST_TARGET (set "CAELUS_RUST_TARGET=!OLD_RUST_TARGET!") else (set "CAELUS_RUST_TARGET=")
         if "!BUILD_EC!" NEQ "0" (
             echo [CI FAIL] CAELUS_PRODUCTION=1 derlemesi BASARISIZ ^(exit=!BUILD_EC!^)
             set "CI_PASS=1"
@@ -258,13 +318,64 @@ if "%ONLY_DET%"=="0" (
         set "CI_PASS=1"
         set "STEP_FAIL=!STEP_FAIL! PROD_BYPASS_SCAN"
     )
+
+    if not exist "%ROOT%\build_tests" mkdir "%ROOT%\build_tests"
+    set "NEURAL_RUST_LIB="
+    if "!CXX_TOOL!"=="GCC" (
+        set "NEURAL_RUST_LIB=%ROOT%\target\!CI_RUST_TARGET!\release\libcaelus_network.a"
+        if not exist "!NEURAL_RUST_LIB!" set "NEURAL_RUST_LIB=%ROOT%\target\release\libcaelus_network.a"
+    ) else (
+        set "NEURAL_RUST_LIB=%ROOT%\target\!CI_RUST_TARGET!\release\caelus_network.lib"
+        if not exist "!NEURAL_RUST_LIB!" set "NEURAL_RUST_LIB=%ROOT%\target\release\caelus_network.lib"
+    )
+    if not exist "!NEURAL_RUST_LIB!" (
+        echo [CI FAIL] Neural C++ referansi icin Rust staticlib bulunamadi: !NEURAL_RUST_LIB!
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEURAL_RUST_LIB"
+    ) else (
+        if "!CXX_TOOL!"=="GCC" (
+            g++ -std=c++17 -O2 -I"%ROOT%" -I"%ROOT%\include" -I"%ROOT%\src" "%ROOT%\tests\neural_cpp_reference.cpp" -o "%NEURAL_CPP_EXE%" "!NEURAL_RUST_LIB!" -static -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll -lcrypt32
+        ) else (
+            cl.exe /nologo /std:c++17 /O2 /EHsc /utf-8 /I"%ROOT%" /I"%ROOT%\include" /I"%ROOT%\src" "%ROOT%\tests\neural_cpp_reference.cpp" /Fo:"%ROOT%\build_tests\\" /Fe:"%NEURAL_CPP_EXE%" /link /INCREMENTAL:NO "!NEURAL_RUST_LIB!" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
+        )
+        if errorlevel 1 (
+            echo [CI FAIL] Neural C++ referans binary derlenemedi.
+            set "CI_PASS=1"
+            set "STEP_FAIL=!STEP_FAIL! NEURAL_CPP_REFERENCE"
+        ) else (
+            cargo build --release --locked --manifest-path "%ROOT%\tests\neural_reference\Cargo.toml"
+            if errorlevel 1 (
+                echo [CI FAIL] Neural Rust referans binary derlenemedi.
+                set "CI_PASS=1"
+                set "STEP_FAIL=!STEP_FAIL! NEURAL_RUST_REFERENCE"
+            ) else (
+                !PYTHON_CMD! "%ROOT%\tests\run_neural_differential.py" --cpp-binary "%NEURAL_CPP_EXE%" --rust-binary "%NEURAL_RUST_EXE%" --model-dir "%ROOT%\models\assurance_v1" --golden "%ROOT%\tests\golden\neural_v1_differential.json"
+                if errorlevel 1 (
+                    echo [CI FAIL] Neural C++/Rust exact diferansiyel BASARISIZ.
+                    set "CI_PASS=1"
+                    set "STEP_FAIL=!STEP_FAIL! NEURAL_DIFFERENTIAL"
+                ) else (
+                    echo [CI OK] Neural C++/Rust exact diferansiyel gecti
+                )
+            )
+        )
+    )
+
+    !PYTHON_CMD! "%ROOT%\tests\run_bs01_neural_demo.py" --binary "%EXE%" --model-dir "%ROOT%\models\assurance_v1"
+    if errorlevel 1 (
+        echo [CI FAIL] BS-01 neural assurance/negative guvenlik demosu BASARISIZ.
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! BS01_NEURAL_DEMO"
+    ) else (
+        echo [CI OK] BS-01 neural assurance ve fail-closed negatifleri gecti
+    )
     echo.
 )
 
 :: Ensure standalone Rust audit verifier & Sidecar Airlock CLI exist (for --skip-build / --only-det)
 if not exist "%VERIFY_BIN%" (
     pushd "%ROOT%"
-    cargo build --release -p caelus_network --bin caelus_verify_audit
+    cargo build --release --locked --bin caelus_verify_audit
     popd
     if errorlevel 1 (
         echo [CI FAIL] caelus_verify_audit derlenemedi.
@@ -275,7 +386,7 @@ if not exist "%VERIFY_BIN%" (
 )
 if not exist "%AIRLOCK_BIN%" (
     pushd "%ROOT%"
-    cargo build --release -p caelus_network --bin caelus_sidecar_airlock
+    cargo build --release --locked --bin caelus_sidecar_airlock
     popd
     if errorlevel 1 (
         echo [CI FAIL] caelus_sidecar_airlock derlenemedi.
@@ -287,7 +398,7 @@ if not exist "%AIRLOCK_BIN%" (
 
 if "%ONLY_DET%"=="0" (
     echo ------------------------------------------------------------
-    echo [CI] Sidecar Airlock PR-1 Izolasyon, Ege Feribot Pilotu ve MCP 64-Bit Kapisi
+    echo [CI] Sidecar Airlock PR-1 Izolasyon, Ege Feribot Pilotu ve War Room Kapilari
     echo ------------------------------------------------------------
     !PYTHON_CMD! -W error "%ROOT%\tests\test_airlock_ferry_pilot.py"
     if errorlevel 1 (
@@ -312,7 +423,7 @@ if "%ONLY_DET%"=="0" (
 )
 
 :: ----------------------------------------------------------------------------
-:: ADIM 5: Izole Deterministik Cift-Kosum + Adli Muhur + UNTRUSTED_SEAL_SIGNER
+:: ADIM 5: Izole Deterministik Cift-Kosum + Adli Muhur + Negatif Guvenlik
 :: ----------------------------------------------------------------------------
 echo ------------------------------------------------------------
 echo [CI] ADIM 5/7 - Deterministik Cikti ve Adli Muhur Dogrulamasi
@@ -399,7 +510,6 @@ if /I not "!PRINTED_SIGNER!"=="%DET_SIGNER_PUBKEY%" (
     set "STEP_FAIL=!STEP_FAIL! AUDIT_PRINT_SIGNER"
 )
 
-:: Negatif pin testi: farkli guven capasi verildiginde UNTRUSTED_SEAL_SIGNER + sifir-disi cikis ZORUNLU
 set "NEG_PIN_OUT=%AUDIT_DIR%\neg_pin.out"
 "%VERIFY_BIN%" --expect-signer "%ROOT%\tools\caelus_trusted_pubkey.txt" "%AUD2%" > "%NEG_PIN_OUT%" 2>&1
 set "NEG_PIN_EC=!errorlevel!"
@@ -421,13 +531,32 @@ if "!NEG_PIN_EC!"=="0" (
 
 !PYTHON_CMD! "%ROOT%\tools\verify_audit_log.py" --expect-signer "%DET_SIGNER_PUBKEY%" "%AUD2%"
 if errorlevel 1 (
-    echo [CI FAIL] verify_audit_log.py capraz dogrulamasi BASARISIZ.
+    echo [CI FAIL] verify_audit_log.py --expect-signer capraz dogrulamasi BASARISIZ.
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! AUDIT_VERIFY_PY"
+)
+!PYTHON_CMD! "%ROOT%\tools\verify_audit_log.py" "%AUD2%" --trusted-pubkey-hex "%DET_SIGNER_PUBKEY%"
+if errorlevel 1 (
+    echo [CI FAIL] verify_audit_log.py --trusted-pubkey-hex dogrulamasi BASARISIZ.
+    set "CI_PASS=1"
+    set "STEP_FAIL=!STEP_FAIL! AUDIT_VERIFY_PY_ALIAS"
 )
 
 :cleanup_step5
 if exist "%AUDIT_DIR%" rd /s /q "%AUDIT_DIR%" > nul 2>&1
+
+if "%ONLY_DET%"=="0" (
+    echo [CI] Negatif guvenlik suiti ^(tamper / dev-signed / audit forgery fail-closed^)...
+    !PYTHON_CMD! "%ROOT%\tests\run_security_negative.py" --binary "%EXE%"
+    if errorlevel 1 (
+        echo [CI FAIL] Negatif guvenlik suiti BASARISIZ.
+        set "CI_PASS=1"
+        set "STEP_FAIL=!STEP_FAIL! NEGATIVE_SECURITY"
+    ) else (
+        echo [CI OK] Negatif guvenlik suiti gecti
+    )
+    del /q "%ROOT%\caelus_audit_0000000000000000.log" > nul 2>&1
+)
 echo.
 
 :: ----------------------------------------------------------------------------
@@ -449,6 +578,7 @@ if errorlevel 1 (
     echo [CI FAIL] SIG-CI negatif fixture uretilemedi.
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! SIG_CI_FIXTURE"
+    goto :report
 )
 
 pushd "%SIG_DIR%"
@@ -518,11 +648,8 @@ if errorlevel 1 (
 )
 
 echo [CI] caelus_core_repl release derlemesi...
-pushd "%ROOT%"
-cargo build --release -p caelus_core --features std --bin caelus_core_repl --quiet
-set "REPL_BUILD_EC=!errorlevel!"
-popd
-if "!REPL_BUILD_EC!" NEQ "0" (
+cargo build --release --locked --manifest-path "%ROOT%\caelus_core\Cargo.toml" --features std --bin caelus_core_repl --quiet
+if errorlevel 1 (
     echo [CI FAIL] caelus_core_repl derlenemedi.
     set "CI_PASS=1"
     set "STEP_FAIL=!STEP_FAIL! CORE_HARNESS_BUILD"

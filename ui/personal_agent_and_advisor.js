@@ -2222,6 +2222,85 @@
     // sahte kullanıcı tercihleri gerçek veri yerine otomatik yüklenmez!
     var initialRealWorldRecords = [];
     var initialTrainingSampleRecords = [];
+    var receivedVersionsById = new Map();
+
+    function rememberReceivedVersion(record, receivedAt) {
+      if (record.isSampleFixture || record.epistemic_status === 'UNVERIFIED_CLAIM') return;
+      // Keep a copy independent of both the connector and live advisor memory.
+      var snapshot = JSON.parse(JSON.stringify(record));
+      var signature = JSON.stringify(snapshot, function (key, value) {
+        return key === 'ingested_at' || key === 'last_checked_at' ? undefined : value;
+      });
+      var versions = receivedVersionsById.get(record.record_id) || [];
+      if (versions.length && versions[versions.length - 1].signature === signature) return;
+      versions.push({ receivedAt: receivedAt, signature: signature, record: snapshot });
+      receivedVersionsById.set(record.record_id, versions);
+    }
+
+    function getReplayCut(knowledgeAsOf) {
+      var cutoff = Date.parse(knowledgeAsOf);
+      if (!Number.isFinite(cutoff) || cutoff > Date.now()) {
+        throw new RangeError('Geçerli ve geçmiş bir bilgi kesiti seçin.');
+      }
+      var records = [];
+      receivedVersionsById.forEach(function (versions) {
+        for (var i = versions.length - 1; i >= 0; i--) {
+          if (versions[i].receivedAt <= cutoff) {
+            records.push(versions[i]);
+            break;
+          }
+        }
+      });
+      records.sort(function (a, b) { return b.receivedAt - a.receivedAt; });
+      return { cutoff: cutoff, records: records };
+    }
+
+    function answerReplayCut(userUtterance, cut) {
+      var replay = createConversationalAdvisorSession({
+        worldRecords: cut.records.map(function (entry) {
+          return Object.assign({}, entry.record, { ingested_at: new Date(entry.receivedAt).toISOString() });
+        }),
+        language: opts.language
+      });
+      var result = replay.processAdvisorTurn(userUtterance);
+      result.answerPassport.knowledgeAsOf = new Date(cut.cutoff).toISOString();
+      result.answerPassport.availableWorldRecordCount = cut.records.length;
+      return result;
+    }
+
+    function replayAdvisorTurn(userUtterance, knowledgeAsOf) {
+      return answerReplayCut(userUtterance, getReplayCut(knowledgeAsOf));
+    }
+
+    function compareAdvisorReplayCuts(userUtterance, beforeAsOf, afterAsOf) {
+      var before = getReplayCut(beforeAsOf);
+      var after = getReplayCut(afterAsOf);
+      if (after.cutoff <= before.cutoff) {
+        throw new RangeError('İkinci bilgi kesiti ilk kesitten sonra olmalı.');
+      }
+      var previousById = new Map(before.records.map(function (entry) {
+        return [entry.record.record_id, entry];
+      }));
+      var evidenceChanges = [];
+      after.records.forEach(function (entry) {
+        var record = entry.record;
+        var previous = previousById.get(record.record_id);
+        if (previous && previous.signature === entry.signature) return;
+        evidenceChanges.push({
+          kind: previous ? 'REVISED' : 'ADDED',
+          recordId: record.record_id,
+          title: record.title,
+          sourceUrl: record.source_url,
+          eventTime: record.event_time,
+          receivedAt: new Date(entry.receivedAt).toISOString()
+        });
+      });
+      return {
+        before: answerReplayCut(userUtterance, before),
+        after: answerReplayCut(userUtterance, after),
+        evidenceChanges: evidenceChanges
+      };
+    }
 
     if (Array.isArray(opts.worldRecords) && opts.worldRecords.length > 0) {
       for (var wIdx = 0; wIdx < opts.worldRecords.length; wIdx++) {
@@ -2230,6 +2309,7 @@
           initialTrainingSampleRecords.push(normW);
         } else if (normW.epistemic_status !== 'USER_PREFERENCE') {
           initialRealWorldRecords.push(normW);
+          rememberReceivedVersion(normW, Date.now());
         }
       }
     } else if (trainingSampleModeActive) {
@@ -3168,6 +3248,7 @@
     function addWorldRecordsToAdvisorMemory(records, addOptions) {
       var aOpts = addOptions || {};
       if (!Array.isArray(records)) return memoryStore.C_SOURCED_WORLD_MEMORY.length;
+      var receivedAt = Date.now();
       for (var i = 0; i < records.length; i++) {
         var raw = records[i];
         if (!raw || !raw.record_id) continue;
@@ -3188,6 +3269,7 @@
         if (norm.epistemic_status === 'UNVERIFIED_CLAIM' && aOpts.allowUnverifiedInWorldMemory !== true) {
           continue;
         }
+        rememberReceivedVersion(norm, receivedAt);
         var exists = memoryStore.C_SOURCED_WORLD_MEMORY.some(function (ex) {
           return ex.record_id === norm.record_id;
         });
@@ -3211,6 +3293,8 @@
 
     return {
       processAdvisorTurn: processAdvisorTurn,
+      replayAdvisorTurn: replayAdvisorTurn,
+      compareAdvisorReplayCuts: compareAdvisorReplayCuts,
       updateUserPreferences: updateUserPreferences,
       clearDialogueState: clearDialogueState,
       deleteUserPreferences: deleteUserPreferences,
@@ -4675,6 +4759,480 @@
     };
   }
 
+  function createDecisionWorkspace(storageAdapter) {
+    var storageKey = 'caelus_decision_workspace_v1';
+    if (!storageAdapter || typeof storageAdapter.getItem !== 'function' ||
+        typeof storageAdapter.setItem !== 'function' || typeof storageAdapter.removeItem !== 'function') {
+      throw new Error('Kalıcı görev için yerel depolama gerekli.');
+    }
+
+    function integer(value, minimum, name) {
+      if (!Number.isSafeInteger(value) || value < minimum) throw new TypeError(name + ' geçersiz.');
+      return value;
+    }
+
+    function label(value, name) {
+      if (typeof value !== 'string' || !value.trim() || value.length > 250) {
+        throw new TypeError(name + ' boş veya çok uzun.');
+      }
+      return value.trim();
+    }
+
+    function timestamp(value) {
+      if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) ||
+          !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) {
+        throw new TypeError('UTC zaman damgası geçersiz.');
+      }
+      return value;
+    }
+
+    function cleanTask(input) {
+      if (!input || !Array.isArray(input.options) || !input.options.length || input.options.length > 20) {
+        throw new TypeError('Bir ila yirmi seçenek girin.');
+      }
+      var names = new Set();
+      var options = input.options.map(function (option) {
+        var name = label(option.name, 'Seçenek');
+        if (names.has(name)) throw new TypeError('Seçenek adları benzersiz olmalı.');
+        names.add(name);
+        return {
+          name: name,
+          units: integer(option.units, 0, 'Kapasite'),
+          cost: integer(option.cost, 0, 'Maliyet'),
+          deadline: timestamp(option.deadline),
+          condition: option.condition ? label(option.condition, 'Teyit koşulu') : null
+        };
+      });
+      return {
+        goal: label(input.goal, 'Hedef'),
+        minUnits: integer(input.minUnits, 1, 'Asgari kapasite'),
+        maxCost: integer(input.maxCost, 0, 'Bütçe'),
+        options: options
+      };
+    }
+
+    function cleanResearchClaim(claim) {
+      var evidence = claim && claim.evidence;
+      if (!evidence || typeof evidence.sha256 !== 'string' || evidence.sha256.length !== 64 ||
+          !/^[a-f0-9]{64}$/.test(evidence.sha256) || typeof evidence.quote !== 'string' || evidence.quote.length > 4096) {
+        throw new TypeError('Araştırma alıntısı geçersiz veya 4.096 karakterden uzun.');
+      }
+      var value = label(claim.value, 'Kaynakta geçen değer');
+      if (!evidence.quote.includes(value)) throw new TypeError('Değer kaynak alıntısında bulunamadı.');
+      var source = {
+        title: label(evidence.title, 'Kaynak adı'),
+        line: integer(evidence.line, 1, 'Kaynak konumu'),
+        sha256: evidence.sha256,
+        quote: evidence.quote
+      };
+      if (evidence.locatorKind !== undefined || evidence.originalSha256 !== undefined) {
+        if (!validDocxSource(evidence)) throw new TypeError('Word kaynak kimliği geçersiz.');
+        source.locatorKind = evidence.locatorKind;
+        source.originalSha256 = evidence.originalSha256;
+      }
+      return { subject: label(claim.subject, 'Konu veya ölçüt'), value: value, evidence: source };
+    }
+
+    function cleanEvidence(entry, task) {
+      var condition = label(entry.condition, 'Teyit koşulu');
+      if (!task.options.some(function (option) { return option.condition === condition; })) {
+        throw new TypeError('Bu koşul göreve ait değil.');
+      }
+      if (!['CONFIRMED', 'DENIED', 'CONFLICTING'].includes(entry.status)) {
+        throw new TypeError('Teyit durumu geçersiz.');
+      }
+      var cleaned = {
+        condition: condition,
+        status: entry.status,
+        reference: label(entry.reference, 'Kaynak veya belge referansı'),
+        receivedAt: timestamp(entry.receivedAt)
+      };
+      if (entry.researchClaim !== undefined) cleaned.researchClaim = cleanResearchClaim(entry.researchClaim);
+      return cleaned;
+    }
+
+    function evaluate(task, evidence, cutoff) {
+      var latestByCondition = new Map();
+      evidence.forEach(function (entry) {
+        if (entry.receivedAt <= cutoff) latestByCondition.set(entry.condition, entry);
+      });
+      var options = task.options.map(function (option) {
+        var confirmation = latestByCondition.get(option.condition) || null;
+        var status = 'AVAILABLE';
+        if (option.units < task.minUnits || option.cost > task.maxCost) status = 'OUTSIDE_LIMITS';
+        else if (option.deadline < cutoff) status = 'EXPIRED';
+        else if (confirmation && confirmation.status === 'DENIED') status = 'DENIED';
+        else if (option.condition && (!confirmation || confirmation.status !== 'CONFIRMED')) status = 'WAITING';
+        return Object.assign({}, option, { status: status, evidence: confirmation });
+      });
+      var available = options.filter(function (option) { return option.status === 'AVAILABLE'; });
+      available.sort(function (a, b) { return a.cost - b.cost || b.units - a.units; });
+      return {
+        asOf: cutoff,
+        goal: task.goal,
+        status: available.length ? 'PLAN_AVAILABLE' : options.some(function (option) {
+          return option.status === 'WAITING';
+        }) ? 'WAITING_FOR_EVIDENCE' : 'NO_FEASIBLE_PLAN',
+        recommended: available[0] || null,
+        options: options
+      };
+    }
+
+    function load() {
+      var raw = storageAdapter.getItem(storageKey);
+      if (!raw) return null;
+      var state = JSON.parse(raw);
+      if (!state || state.schema !== 1 || !Array.isArray(state.evidence) || state.evidence.length > 200) {
+        throw new Error('Görev kaydı okunamadı.');
+      }
+      var task = cleanTask(state.task);
+      var createdAt = timestamp(state.createdAt);
+      var previousAt = createdAt;
+      var evidence = state.evidence.map(function (entry) {
+        var cleaned = cleanEvidence(entry, task);
+        if (cleaned.receivedAt < previousAt) throw new Error('Kanıt zaman sırası geçersiz.');
+        previousAt = cleaned.receivedAt;
+        return cleaned;
+      });
+      return { schema: 1, task: task, createdAt: createdAt, evidence: evidence };
+    }
+
+    function save(state) {
+      storageAdapter.setItem(storageKey, JSON.stringify(state));
+    }
+
+    return {
+      create: function (input) {
+        if (load()) throw new Error('Yeni görev açmadan önce mevcut görevi silin.');
+        var state = { schema: 1, task: cleanTask(input), createdAt: new Date().toISOString(), evidence: [] };
+        save(state);
+        return state;
+      },
+      load: load,
+      recordEvidence: function (input) {
+        var state = load();
+        if (!state) throw new Error('Önce bir görev kaydedin.');
+        if (state.evidence.length >= 200) throw new Error('Bu görev kanıt kayıt sınırına ulaştı.');
+        var now = new Date().toISOString();
+        var previous = state.evidence.at(-1);
+        if (now < (previous ? previous.receivedAt : state.createdAt)) {
+          throw new Error('Cihaz saati önceki kayıt zamanından geride.');
+        }
+        var entry = cleanEvidence(Object.assign({}, input, { receivedAt: now }), state.task);
+        var before = evaluate(state.task, state.evidence, now);
+        state.evidence.push(entry);
+        var after = evaluate(state.task, state.evidence, now);
+        save(state);
+        return { before: before, after: after, evidence: entry };
+      },
+      replay: function (asOf) {
+        var state = load();
+        if (!state) return null;
+        var cutoff = asOf === undefined ? new Date().toISOString() : timestamp(asOf);
+        if (cutoff < state.createdAt || cutoff > new Date().toISOString()) {
+          throw new RangeError('Bilgi kesiti görevin başlangıcı ile şimdi arasında olmalı.');
+        }
+        return evaluate(state.task, state.evidence, cutoff);
+      },
+      clear: function () {
+        storageAdapter.removeItem(storageKey);
+      }
+    };
+  }
+
+  function createExperimentWorkspace(storageAdapter, cryptoAdapter) {
+    var storageKey = 'caelus_experiment_workspace_v1';
+    var clearGeneration = 0;
+    if (!storageAdapter || !cryptoAdapter || !cryptoAdapter.subtle) {
+      throw new Error('Deney kaydı için yerel depolama ve Web Crypto gerekli.');
+    }
+
+    function textField(value, field) {
+      if (typeof value !== 'string' || !value.trim() || value.length > 250) {
+        throw new TypeError(field + ' boş veya çok uzun.');
+      }
+      return value.trim();
+    }
+
+    function finite(value, field) {
+      if (!Number.isFinite(value)) throw new TypeError(field + ' geçersiz.');
+      return value;
+    }
+
+    function interval(input) {
+      var low = finite(input.low, 'Alt sınır');
+      var high = finite(input.high, 'Üst sınır');
+      if (low > high) throw new RangeError('Alt sınır üst sınırı aşamaz.');
+      return { low: low, high: high };
+    }
+
+    function protocol(input) {
+      if (!input || !Array.isArray(input.hypotheses) || input.hypotheses.length !== 2) {
+        throw new TypeError('Tam iki rakip hipotez gerekli.');
+      }
+      var hypotheses = input.hypotheses.map(function (hypothesis) {
+        return { name: textField(hypothesis.name, 'Hipotez'), expected: interval(hypothesis.expected) };
+      });
+      if (hypotheses[0].name === hypotheses[1].name) throw new TypeError('Hipotez adları farklı olmalı.');
+      return {
+        question: textField(input.question, 'Soru'),
+        measurement: textField(input.measurement, 'Ölçüm ve birim'),
+        intervention: textField(input.intervention, 'Deney adımı'),
+        baseline: interval(input.baseline),
+        source: textField(input.source, 'Ön kayıt dayanağı'),
+        hypotheses: hypotheses
+      };
+    }
+
+    function iso(value) {
+      if (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) ||
+          new Date(value).toISOString() !== value) throw new TypeError('Deney zaman damgası geçersiz.');
+      return value;
+    }
+
+    async function digest(record) {
+      var bytes = new TextEncoder().encode(JSON.stringify(record));
+      var hash = await cryptoAdapter.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hash), function (value) {
+        return value.toString(16).padStart(2, '0');
+      }).join('');
+    }
+
+    function readRaw() {
+      return storageAdapter.getItem(storageKey);
+    }
+
+    async function read(raw) {
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || parsed.schema !== 1) throw new Error('Deney kayıt şeması geçersiz.');
+      var snapshot = { schema: 1, createdAt: iso(parsed.createdAt), protocol: protocol(parsed.protocol) };
+      if (await digest(snapshot) !== parsed.digest) throw new Error('Deney ön kaydının bütünlüğü doğrulanamadı.');
+      var observation = null;
+      if (parsed.observation !== null) {
+        var item = parsed.observation;
+        observation = { value: finite(item.value, 'Ölçülen değer'), source: textField(item.source, 'Gözlem kaynağı'), receivedAt: iso(item.receivedAt) };
+        if (observation.receivedAt < snapshot.createdAt) throw new Error('Ölçüm ön kayıttan önce olamaz.');
+        if (await digest({ protocolDigest: parsed.digest, observation: observation }) !== parsed.observationDigest) {
+          throw new Error('Deney gözleminin bütünlüğü doğrulanamadı.');
+        }
+      }
+      return Object.assign({}, snapshot, { digest: parsed.digest, observation: observation, observationDigest: parsed.observationDigest || null });
+    }
+
+    function matches(bounds, value) { return bounds.low <= value && value <= bounds.high; }
+
+    function result(record) {
+      if (!record) return null;
+      var hypotheses = record.protocol.hypotheses;
+      var overlap = Math.max(hypotheses[0].expected.low, hypotheses[1].expected.low) <=
+        Math.min(hypotheses[0].expected.high, hypotheses[1].expected.high);
+      var observation = record.observation;
+      var fitting = observation ? hypotheses.filter(function (hypothesis) {
+        return matches(hypothesis.expected, observation.value);
+      }).map(function (hypothesis) { return hypothesis.name; }) : [];
+      return {
+        record: record,
+        predictionsOverlap: overlap,
+        baselineMatched: observation ? matches(record.protocol.baseline, observation.value) : null,
+        compatibleHypotheses: fitting,
+        outcome: !observation ? 'AWAITING_OBSERVATION' :
+          fitting.length === 1 ? 'ONE_COMPATIBLE' : fitting.length ? 'INCONCLUSIVE' : 'NONE_COMPATIBLE'
+      };
+    }
+
+    return {
+      load: async function () { return result(await read(readRaw())); },
+      register: async function (input) {
+        if (readRaw()) throw new Error('Mevcut deney ön kaydı zaten var.');
+        var generation = clearGeneration;
+        var snapshot = { schema: 1, createdAt: new Date().toISOString(), protocol: protocol(input) };
+        var hash = await digest(snapshot);
+        var record = Object.assign({}, snapshot, { digest: hash, observation: null, observationDigest: null });
+        if (generation !== clearGeneration || readRaw()) throw new Error('Yerel deney alanı başka bir işlemle değişti.');
+        storageAdapter.setItem(storageKey, JSON.stringify(record));
+        return result(record);
+      },
+      observe: async function (input) {
+        var raw = readRaw();
+        var record = await read(raw);
+        if (!record) throw new Error('Önce deney protokolünü kaydedin.');
+        if (record.observation) throw new Error('Bu deney için ölçüm zaten kaydedildi.');
+        var receivedAt = new Date().toISOString();
+        if (receivedAt < record.createdAt) throw new Error('Cihaz saati ön kayıttan geride.');
+        record.observation = { value: finite(input.value, 'Ölçülen değer'), source: textField(input.source, 'Gözlem kaynağı'), receivedAt: receivedAt };
+        record.observationDigest = await digest({ protocolDigest: record.digest, observation: record.observation });
+        if (readRaw() !== raw) throw new Error('Deney kaydı başka bir işlemle değişti.');
+        storageAdapter.setItem(storageKey, JSON.stringify(record));
+        return result(record);
+      },
+      clear: function () {
+        storageAdapter.removeItem(storageKey);
+        clearGeneration += 1;
+      }
+    };
+  }
+
+  function validDocxSource(source) {
+    return source.locatorKind === 'DOCX_BODY_PARAGRAPH' && typeof source.originalSha256 === 'string' &&
+      source.originalSha256.length === 64 && /^[a-f0-9]{64}$/.test(source.originalSha256);
+  }
+
+  function createResearchNotebook(storageAdapter) {
+    var key = 'caelus_research_notebook_v1';
+    var sourceLimit = 20;
+    var documentLimit = 100000;
+    var totalLimit = 400000;
+    var engine = getFirstRealTaskEngine();
+    if (!engine || typeof engine.computeSha256Hex !== 'function') {
+      throw new Error('Araştırma defteri kaynak özeti hesaplayıcısı yüklenemedi.');
+    }
+
+    function required(value, field, limit) {
+      if (typeof value !== 'string' || !value.trim() || value.length > limit) {
+        throw new TypeError(field + ' boş veya izin verilen uzunluğu aşıyor.');
+      }
+      return value.trim();
+    }
+
+    function normalize(value) {
+      return value.toLocaleLowerCase('tr-TR').normalize('NFD').replace(/\p{M}/gu, '').replace(/ı/g, 'i');
+    }
+
+    var stopWords = new Set(['bu', 'bir', 'ile', 'icin', 'veya', 'mi', 'mu', 'ne', 'nedir',
+      'nasil', 'hangi', 'hakkinda', 'olarak', 'var', 'yok', 'the', 'and', 'what', 'which', 'about']);
+    function terms(value) {
+      return new Set((normalize(value).match(/[\p{L}\p{N}]+/gu) || []).filter(function (token) {
+        return token.length >= 2 && !stopWords.has(token);
+      }));
+    }
+
+    function load() {
+      var raw = storageAdapter.getItem(key);
+      if (!raw) return [];
+      var saved = JSON.parse(raw);
+      if (!saved || saved.schema !== 1 || !Array.isArray(saved.sources) ||
+          saved.sources.length > sourceLimit || saved.sources.some(function (source) {
+            return !source || typeof source.title !== 'string' || typeof source.content !== 'string' ||
+              source.content.length > documentLimit || !/^[a-f0-9]{64}$/.test(source.sha256) ||
+              ((source.locatorKind !== undefined || source.originalSha256 !== undefined) && !validDocxSource(source));
+          })) throw new Error('Yerel araştırma defteri okunamadı.');
+      return saved.sources;
+    }
+
+    function citation(source, number) {
+      var lines = source.content.split('\n');
+      if (!Number.isSafeInteger(number) || number < 1 || number > lines.length || !lines[number - 1].trim()) {
+        throw new RangeError('Kaynak satırı bulunamadı.');
+      }
+      return sourceReference(source, number, lines[number - 1]);
+    }
+
+    function sourceReference(source, number, quote) {
+      var reference = { title: source.title, sha256: source.sha256, line: number, quote: quote };
+      if (source.locatorKind) {
+        reference.locatorKind = source.locatorKind;
+        reference.originalSha256 = source.originalSha256;
+      }
+      return reference;
+    }
+
+    function identity(source) {
+      return source.originalSha256 ? 'docx:' + source.originalSha256 + ':' + source.sha256 : 'text:' + source.sha256;
+    }
+
+    function claim(reference, subject, value, sources) {
+      if (!reference) throw new TypeError('Önce bir alıntı seçin.');
+      var source = sources.find(function (entry) { return identity(entry) === identity(reference); });
+      if (!source || engine.computeSha256Hex(source.content) !== source.sha256) {
+        throw new Error('Kaynak kaldırılmış veya içeriği değişmiş.');
+      }
+      var evidence = citation(source, reference.line);
+      var field = required(subject, 'Konu veya ölçüt', 250);
+      var quotedValue = required(value, 'Kaynakta geçen değer', 250);
+      if (!evidence.quote.includes(quotedValue)) throw new Error('Değeri alıntıdaki biçimiyle girin.');
+      return { subject: field, value: quotedValue, evidence: evidence };
+    }
+
+    return {
+      addSources: function (documents) {
+        if (!Array.isArray(documents) || !documents.length || documents.length > sourceLimit) {
+          throw new TypeError('Bir ila yirmi belge seçin.');
+        }
+        var sources = load();
+        var seen = new Set(sources.map(identity));
+        var added = 0;
+        documents.forEach(function (document) {
+          var title = required(document.title, 'Belge adı', 250);
+          // Preserve source line numbers and quoted whitespace.
+          required(document.content, 'Belge metni', documentLimit);
+          var content = document.content.replace(/\r\n?/g, '\n');
+          var source = { title: title, content: content, sha256: engine.computeSha256Hex(content) };
+          if (document.locatorKind !== undefined || document.originalSha256 !== undefined) {
+            if (!validDocxSource(document)) throw new TypeError('Word kaynak kimliği geçersiz.');
+            source.locatorKind = document.locatorKind;
+            source.originalSha256 = document.originalSha256;
+          }
+          var id = identity(source);
+          if (!seen.has(id)) {
+            sources.push(source);
+            seen.add(id);
+            added += 1;
+          }
+        });
+        if (sources.length > sourceLimit || sources.reduce(function (size, source) {
+          return size + source.content.length;
+        }, 0) > totalLimit) throw new RangeError('Defter en fazla 20 belge ve toplam 400.000 karakter saklar.');
+        storageAdapter.setItem(key, JSON.stringify({ schema: 1, sources: sources }));
+        return added;
+      },
+      list: function () {
+        return load().map(function (source) {
+          return { title: source.title, sha256: source.sha256 };
+        });
+      },
+      search: function (question) {
+        var query = terms(required(question, 'Soru', 500));
+        var hits = [];
+        if (query.size === 0) return hits;
+        load().forEach(function (source) {
+          if (engine.computeSha256Hex(source.content) !== source.sha256) {
+            throw new Error('Bir kaynağın içeriği değişmiş. Defteri yeniden oluşturun.');
+          }
+          source.content.split('\n').forEach(function (quote, index) {
+            var tokens = terms(quote);
+            var score = 0;
+            query.forEach(function (term) { if (tokens.has(term)) score += 1; });
+            if (score > 0) {
+              hits.push(Object.assign(sourceReference(source, index + 1, quote), { score: score }));
+            }
+          });
+        });
+        return hits.sort(function (a, b) { return b.score - a.score; }).slice(0, 12);
+      },
+      compare: function (first, second, subject, firstValue, secondValue) {
+        var sources = load();
+        var a = claim(first, subject, firstValue, sources);
+        var b = claim(second, subject, secondValue, sources);
+        if (identity(a.evidence) === identity(b.evidence) && a.evidence.line === b.evidence.line) {
+          throw new Error('Karşılaştırmak için iki farklı satır seçin.');
+        }
+        return {
+          status: normalize(a.value) === normalize(b.value) ? 'SAME_VALUE' : 'POTENTIAL_CONFLICT',
+          claims: [a, b]
+        };
+      },
+      draft: function (reference, subject, value) {
+        return {
+          schema: 'CAELUS_RESEARCH_SCENARIO_DRAFT_V1',
+          status: 'REQUIRES_REVIEW',
+          assumption: claim(reference, subject, value, load())
+        };
+      },
+      clear: function () { storageAdapter.removeItem(key); }
+    };
+  }
+
   var CaelusWorldDataGate = {
     LOGICAL_DATA_ZONES_5: LOGICAL_DATA_ZONES_5,
     WORLD_GATE_MODES_3: WORLD_GATE_MODES_3,
@@ -4688,6 +5246,9 @@
   };
 
   var CaelusConversationalAdvisor = {
+    createDecisionWorkspace: createDecisionWorkspace,
+    createExperimentWorkspace: createExperimentWorkspace,
+    createResearchNotebook: createResearchNotebook,
     ANSWER_PASSPORT_CLASSES_10: ANSWER_PASSPORT_CLASSES_10,
     EPISTEMIC_STATES_12: EPISTEMIC_STATES_12,
     EMPTY_WORLD_DATA_MESSAGE_TR: EMPTY_WORLD_DATA_MESSAGE_TR,

@@ -32,6 +32,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -66,10 +67,12 @@ inline constexpr uint64_t fp_abs_u64(int64_t v) noexcept {
 }
 
 inline constexpr uint64_t fp_sat_add_u64(uint64_t a, uint64_t b, uint64_t cap) noexcept {
+    if (a >= cap || b >= cap) return cap;
     return a > cap - b ? cap : a + b;
 }
 
 inline constexpr uint64_t fp_sat_double_u64(uint64_t v, uint64_t cap) noexcept {
+    if (v >= cap) return cap;
     return v > cap - v ? cap : v + v;
 }
 
@@ -211,6 +214,16 @@ struct Node {
     int64_t     deadline_min_state_fp = 0LL;  ///< >0 ise yalnız state_fp >= deadline_min_state_fp iken deadline kaçırılır (0=koşulsuz)
     bool        deadline_missed       = false;
     bool        irrecoverable         = false; ///< true → düğüm geri kazanılamaz
+};
+
+/**
+ * A bounded, pre-validated trust adjustment submitted to the symbolic
+ * authority.  The neural layer can propose these values, but only
+ * CausalEngine applies them after atomically re-checking every adjustment.
+ */
+struct BoundedTrustAdjustment {
+    uint32_t node_index = 0;
+    int64_t  delta_fp   = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,6 +374,48 @@ struct EngineSnapshot {
     double clamped_friction_d() const noexcept { return fp_to_d(clamped_friction_fp); }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EngineStateV1 — tam motor durumu (checkpoint/restore sözleşmesi)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * EngineStateV1
+ *
+ * Complete, versioned copy of every field that determines future engine
+ * behaviour: the full graph (nodes, edges, loops, levers, hysteresis) plus
+ * runtime scalars including the PRNG seed.  Used by host checkpoint layers
+ * (mobile suspension/restore) — the tick path itself never reads this type,
+ * so exporting/restoring cannot change simulation semantics.
+ *
+ * Restoring replaces engine state wholesale.  Trust-boundary validation
+ * (topology binding against the signed scenario, integrity hashes) is the
+ * responsibility of the host checkpoint layer; the engine itself only
+ * enforces structural sanity so that a restored state cannot break engine
+ * invariants that the tick path relies on.
+ */
+struct EngineStateV1 {
+    static constexpr size_t kMaxNodes      = 4096;
+    static constexpr size_t kMaxEdges      = 16384;
+    static constexpr size_t kMaxLoops      = 1024;
+    static constexpr size_t kMaxLevers     = 1024;
+    static constexpr size_t kMaxHysteresis = 1024;
+
+    std::vector<Node>         nodes;
+    std::vector<Edge>         edges;
+    std::vector<FeedbackLoop> loops;
+    std::vector<Lever>        levers;
+    std::vector<Hysteresis>   hysteresis;
+
+    uint64_t tick                  = 0;
+    int64_t  friction_fp           = FP_ONE;
+    int64_t  permanent_friction_fp = 0LL;
+    bool     regime_exceeded       = false;
+    bool     outage                = false;
+    uint64_t prng_seed             = 0;
+    int64_t  last_intel_risk_fp    = 0LL;
+    bool     has_intel_risk        = false;
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CausalEngine — nedensel graf motoru
@@ -438,6 +493,8 @@ public:
         intel_bindings_.clear();
         tick_ = 0; friction_fp_ = FP_ONE; regime_exceeded_ = false; outage_ = false;
         permanent_friction_fp_ = 0LL;
+        last_intel_risk_fp_ = 0LL;
+        has_intel_risk_ = false;
 
         // ── Evrensel iskelet düğümler (state=0 → sıfır akış, sürtünme 1.0x) ──
         // weight_fp atanır ama state_fp=0 olduğu için katkı = 0'dır. Ağırlıklar
@@ -488,6 +545,8 @@ public:
     size_t inject_intel_fp(int64_t field_coeff_fp, int crisis_level, const char* memo) noexcept {
         field_coeff_fp = fp_clamp(field_coeff_fp, 0LL, FP_ONE);
         crisis_level = crisis_level < 0 ? 0 : (crisis_level > 3 ? 3 : crisis_level);
+        last_intel_risk_fp_ = field_coeff_fp;
+        has_intel_risk_ = true;
         size_t applied = 0;
 
         if (!intel_bindings_.empty()) {
@@ -652,6 +711,8 @@ public:
         permanent_friction_fp_= 0LL;
         regime_exceeded_      = false;
         outage_               = false;
+        last_intel_risk_fp_    = 0LL;
+        has_intel_risk_        = false;
         // prng_seed_ intentionally preserved
     }
 
@@ -659,9 +720,152 @@ public:
     int64_t  friction_fp()      const noexcept { return friction_fp_; }
     bool     regime_exceeded()  const noexcept { return regime_exceeded_; }
     bool     outage_active()    const noexcept { return outage_; }
+    bool     has_intel_risk()   const noexcept { return has_intel_risk_; }
+    int64_t  last_intel_risk_fp() const noexcept { return last_intel_risk_fp_; }
+
+    // Stable scenario insertion order is the neural feature/index order.
+    // These are read-only views; they do not grant mutation authority.
+    const std::vector<FeedbackLoop>& feedback_loops() const noexcept {
+        return loops_;
+    }
+    const std::vector<Hysteresis>& hysteresis_list() const noexcept {
+        return hysts_;
+    }
+
+    /**
+     * Atomically apply a bounded set of trust deltas.
+     *
+     * All indices, duplicate constraints, policy bounds, current trust values,
+     * and post-addition values are checked before the first mutation.  This is
+     * the only neural-authority write path in V1; state, reported state,
+     * deadlines, hysteresis, and outage latches are not writable here.
+     */
+    [[nodiscard]] bool apply_bounded_trust_adjustments(
+        const std::vector<BoundedTrustAdjustment>& adjustments,
+        int64_t maximum_abs_delta_fp) noexcept {
+        static constexpr int64_t kAbsoluteV1Limit = 50'000LL;
+        if (maximum_abs_delta_fp < 0 ||
+            maximum_abs_delta_fp > kAbsoluteV1Limit ||
+            adjustments.size() > nodes_.size() ||
+            adjustments.size() > 64u) {
+            return false;
+        }
+        for (size_t i = 0; i < adjustments.size(); ++i) {
+            const auto& adjustment = adjustments[i];
+            if (adjustment.node_index >= nodes_.size() ||
+                adjustment.delta_fp < -maximum_abs_delta_fp ||
+                adjustment.delta_fp > maximum_abs_delta_fp) {
+                return false;
+            }
+            for (size_t prior = 0; prior < i; ++prior) {
+                if (adjustments[prior].node_index == adjustment.node_index) {
+                    return false;
+                }
+            }
+            const int64_t current = nodes_[adjustment.node_index].trust_fp;
+            if (current < 0 || current > FP_ONE ||
+                (adjustment.delta_fp > 0 &&
+                 current > FP_ONE - adjustment.delta_fp) ||
+                (adjustment.delta_fp < 0 &&
+                 current < -adjustment.delta_fp)) {
+                return false;
+            }
+        }
+        for (const auto& adjustment : adjustments) {
+            Node& node = nodes_[adjustment.node_index];
+            node.trust_fp = fp_add_saturating(node.trust_fp, adjustment.delta_fp);
+        }
+        return true;
+    }
 
     double friction_multiplier() const noexcept {
         return fp_to_d(fp_clamp(friction_fp_, FRICTION_MIN_FP, FRICTION_MAX_FP));
+    }
+
+    // ── Checkpoint state export / restore (host persistence layers) ─────────
+
+    /** Complete copy of graph + runtime state, including the PRNG seed. */
+    [[nodiscard]] EngineStateV1 export_state() const {
+        EngineStateV1 state;
+        state.nodes                 = nodes_;
+        state.edges                 = edges_;
+        state.loops                 = loops_;
+        state.levers                = levers_;
+        state.hysteresis            = hysts_;
+        state.tick                  = tick_;
+        state.friction_fp           = friction_fp_;
+        state.permanent_friction_fp = permanent_friction_fp_;
+        state.regime_exceeded       = regime_exceeded_;
+        state.outage                = outage_;
+        state.prng_seed             = prng_seed_;
+        state.last_intel_risk_fp    = last_intel_risk_fp_;
+        state.has_intel_risk        = has_intel_risk_;
+        return state;
+    }
+
+    /**
+     * restore_state — validated wholesale state replacement.
+     *
+     * Rejects (returns false, engine unchanged) when the state violates the
+     * structural invariants the tick path relies on:
+     *   • collection sizes above EngineStateV1 hard caps
+     *   • empty node / lever / loop / hysteresis identifiers
+     *   • duplicate node identifiers
+     *   • trust outside [0, FP_ONE]
+     *   • negative capacity, or state/reported outside [0, capacity]
+     *   • negative lever lockout counters
+     *
+     * Deliberately does NOT verify scenario provenance — the host checkpoint
+     * layer must bind the restored topology to a signed scenario before
+     * calling this.
+     */
+    [[nodiscard]] bool restore_state(const EngineStateV1& state) {
+        if (state.nodes.size()      > EngineStateV1::kMaxNodes  ||
+            state.edges.size()      > EngineStateV1::kMaxEdges  ||
+            state.loops.size()      > EngineStateV1::kMaxLoops  ||
+            state.levers.size()     > EngineStateV1::kMaxLevers ||
+            state.hysteresis.size() > EngineStateV1::kMaxHysteresis) {
+            return false;
+        }
+        for (size_t i = 0; i < state.nodes.size(); ++i) {
+            const Node& n = state.nodes[i];
+            if (n.id.empty() || n.capacity_fp < 0LL) return false;
+            if (n.state_fp < 0LL || n.state_fp > n.capacity_fp) return false;
+            if (n.reported_state_fp < 0LL ||
+                n.reported_state_fp > n.capacity_fp) {
+                return false;
+            }
+            if (n.trust_fp < 0LL || n.trust_fp > FP_ONE) return false;
+            for (size_t prior = 0; prior < i; ++prior) {
+                if (state.nodes[prior].id == n.id) return false;
+            }
+        }
+        for (const Edge& e : state.edges) {
+            if (e.from.empty()) return false;
+        }
+        for (const FeedbackLoop& l : state.loops) {
+            if (l.id.empty()) return false;
+        }
+        for (const Lever& lv : state.levers) {
+            if (lv.id.empty() || lv.remaining_lockout < 0) return false;
+        }
+        for (const Hysteresis& h : state.hysteresis) {
+            if (h.id.empty()) return false;
+        }
+        nodes_                 = state.nodes;
+        edges_                 = state.edges;
+        loops_                 = state.loops;
+        levers_                = state.levers;
+        hysts_                 = state.hysteresis;
+        tick_                  = state.tick;
+        friction_fp_           = state.friction_fp;
+        permanent_friction_fp_ = state.permanent_friction_fp;
+        regime_exceeded_       = state.regime_exceeded;
+        outage_                = state.outage;
+        prng_seed_             = state.prng_seed;
+        last_intel_risk_fp_    = state.last_intel_risk_fp;
+        has_intel_risk_        = state.has_intel_risk;
+        return true;
     }
 
     Node* get_node(const std::string& id) noexcept {
@@ -761,6 +965,8 @@ private:
     bool     regime_exceeded_       = false;
     bool     outage_                = false;  ///< Throughput = 0 sentinel
     uint64_t prng_seed_             = 0;
+    int64_t  last_intel_risk_fp_    = 0LL;
+    bool     has_intel_risk_        = false;
 
     // ── Özel hesaplama fonksiyonları ─────────────────────────────────────────
 

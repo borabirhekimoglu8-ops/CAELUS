@@ -1,5 +1,15 @@
 target/
 caelus_core/target/
+*.py[cod]
+
+# Private signing material must be generated/stored outside the repository.
+tools/caelus_neural_signing.key
+
+# Full synthetic datasets and unsigned training outputs stay external.
+caelus_ml/generated/
+
+# SwiftPM build artifacts and host-built native archives.
+platforms/ios/CAELUSMobile/.build/
 *.log
 caelus_audit_*.log*
 *.tmp
@@ -47,7 +57,9 @@ caelus_identity.key
 
 # WASM ve yardımcı araç build çıktıları (üretilmiş)
 caelus_wasm/target/
+tests/neural_reference/target/
 tools/caelus_xlsx_engine/target/
+tools/verus/
 
 # Yerel yedekleme klasörleri ve geçici arşivler
 backups/

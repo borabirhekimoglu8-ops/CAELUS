@@ -20,8 +20,11 @@ esac
 EXE="$ROOT/dist/caelus_os${EXE_EXT}"
 VERIFY_BIN="$ROOT/target/release/caelus_verify_audit${EXE_EXT}"
 AIRLOCK_BIN="$ROOT/target/release/caelus_sidecar_airlock${EXE_EXT}"
-REPL_BIN="$ROOT/target/release/caelus_core_repl${EXE_EXT}"
+MODEL_SIGNER="$ROOT/target/release/caelus_sign_model${EXE_EXT}"
+REPL_BIN="$ROOT/caelus_core/target/release/caelus_core_repl${EXE_EXT}"
 TEST_EXE="$ROOT/build_tests/caelus_cpp_tests${EXE_EXT}"
+NEURAL_CPP_EXE="$ROOT/build_tests/neural_cpp_reference${EXE_EXT}"
+NEURAL_RUST_EXE="$ROOT/tests/neural_reference/target/release/caelus_neural_reference${EXE_EXT}"
 DET_SIGNER_PUBKEY="acdcc8494d458f44a7aaac1d6a84ec624daee88436db2ae26e67ba645a106228"
 SAMPLE_SIGNER_PUBKEY="2dd8b43ecba8eff73b1aa25250de676f4f8a0be072b1f96a7eda7355648ca0d1"
 
@@ -58,16 +61,64 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$ROOT"
+for tool in cargo wc cmp mktemp; do
+    command -v "$tool" >/dev/null 2>&1 || die "missing required tool: $tool"
+done
+if [[ "$IS_WINDOWS_BASH" != "1" ]]; then
+    command -v g++ >/dev/null 2>&1 || command -v clang++ >/dev/null 2>&1 || die "missing C++ compiler (g++ or clang++)"
+fi
+"${PYTHON_CMD[@]}" - <<'PY' || die "Python Ed25519 verifier missing (install cryptography or PyNaCl)"
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    import nacl  # noqa: F401
+PY
+
 mkdir -p "$ROOT/build_tests"
+rm -f "$ROOT/caelus_audit_0000000000000000.log"
 
-log "Rust no_std core gate & zero-dependency isolation check"
-cargo check -p caelus_core --no-default-features
-core_tree="$(cargo tree -p caelus_core --no-default-features --edges normal | sed '/^[[:space:]]*$/d')"
-core_tree_lines="$(printf '%s\n' "$core_tree" | wc -l | tr -d '[:space:]')"
-[[ "$core_tree_lines" == "1" ]] || die "caelus_core --no-default-features must have zero external dependencies, got: $core_tree"
+log "Offline dataset, export, signing, and model-verification smoke (clean checkout gate)"
+cargo fetch --locked --manifest-path "$(host_path "$ROOT/caelus_core/Cargo.toml")"
+cargo build --release --locked --bin caelus_sign_model
+"${PYTHON_CMD[@]}" "$(host_path "$ROOT/tests/run_neural_toolchain_smoke.py")" \
+    --signer-binary "$(host_path "$MODEL_SIGNER")"
 
-log "Rust workspace unit & property tests"
-cargo test --workspace --all-targets
+log "Python neural, audit, UI, and training-tool tests"
+"${PYTHON_CMD[@]}" -m unittest -v \
+    tests.test_caelus_blake3 \
+    tests.test_verify_audit_neural \
+    tests.test_neural_war_room_contract \
+    caelus_ml.test_pipeline
+
+log "Rust no_std core gate & dependency isolation check"
+cargo check --locked --manifest-path "$(host_path "$ROOT/caelus_core/Cargo.toml")" --no-default-features
+"${PYTHON_CMD[@]}" - "$(host_path "$ROOT/caelus_core/Cargo.toml")" <<'PY'
+import subprocess, sys
+manifest = sys.argv[1]
+r = subprocess.run(
+    ["cargo", "tree", "--locked", "--manifest-path", manifest, "--no-default-features", "--edges", "normal"],
+    capture_output=True, text=True, check=False,
+)
+if r.returncode != 0:
+    print(r.stderr, file=sys.stderr)
+    sys.exit(1)
+lines = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+if not lines or not lines[0].startswith("caelus_core "):
+    print(f"unexpected caelus_core tree:\n{r.stdout}", file=sys.stderr)
+    sys.exit(1)
+allowed = {"caelus_core", "blake3", "arrayref", "arrayvec", "cfg-if", "constant_time_eq", "libc"}
+for ln in lines:
+    toks = [t for t in ln.replace("├──", " ").replace("└──", " ").replace("│", " ").split() if t and not t.startswith("(")]
+    if toks and toks[0] not in allowed:
+        print(f"forbidden dependency in caelus_core no_std tree: {toks[0]}\n{r.stdout}", file=sys.stderr)
+        sys.exit(1)
+PY
+
+log "Rust network & host crate tests"
+cargo test --locked
+
+log "Rust core unit & property tests"
+cargo test --locked --manifest-path "$(host_path "$ROOT/caelus_core/Cargo.toml")" --features std
 
 log "C++ unit tests"
 if [[ "$IS_WINDOWS_BASH" == "1" ]]; then
@@ -75,7 +126,7 @@ if [[ "$IS_WINDOWS_BASH" == "1" ]]; then
         MSYS2_ARG_CONV_EXCL="*" cl.exe /nologo /std:c++17 /O2 /EHsc /utf-8 /W4 /WX \
             /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /DCAELUS_CPP_UNIT_TEST=1 \
             "/I$(host_path "$ROOT")" "/I$(host_path "$ROOT/include")" "/I$(host_path "$ROOT/src")" "/I$(host_path "$ROOT/tests")" \
-            "$(host_path "$ROOT/tests/test_causal_engine.cpp")" "/Fe:$(host_path "$TEST_EXE")" \
+            "$(host_path "$ROOT/tests/test_causal_engine.cpp")" "/Fo:$(host_path "$ROOT/build_tests")/" "/Fe:$(host_path "$TEST_EXE")" \
             /link /INCREMENTAL:NO ws2_32.lib
     else
         g++ -std=c++17 -O2 -Wall -Wextra -DCAELUS_CPP_UNIT_TEST=1 \
@@ -124,12 +175,50 @@ if found:
     sys.exit(1)
 PY
 
-if [[ ! -f "$VERIFY_BIN" ]]; then
-    cargo build --release -p caelus_network --bin caelus_verify_audit
+if [[ ! -f "$VERIFY_BIN" || ! -f "$AIRLOCK_BIN" ]]; then
+    cargo build --release --locked --bin caelus_verify_audit --bin caelus_sidecar_airlock
 fi
-if [[ ! -f "$AIRLOCK_BIN" ]]; then
-    cargo build --release -p caelus_network --bin caelus_sidecar_airlock
+
+log "Neural reference builds"
+cargo build --release --locked \
+    --manifest-path "$(host_path "$ROOT/tests/neural_reference/Cargo.toml")"
+if [[ "$IS_WINDOWS_BASH" == "1" ]]; then
+    if [[ "${CAELUS_CXX:-}" == "MSVC" ]] && command -v cl.exe >/dev/null 2>&1; then
+        NEURAL_RUST_LIB="$ROOT/target/x86_64-pc-windows-msvc/release/caelus_network.lib"
+        [[ -f "$NEURAL_RUST_LIB" ]] || NEURAL_RUST_LIB="$ROOT/target/release/caelus_network.lib"
+        MSYS2_ARG_CONV_EXCL="*" cl.exe /nologo /std:c++17 /O2 /EHsc /utf-8 \
+            "/I$(host_path "$ROOT")" "/I$(host_path "$ROOT/include")" "/I$(host_path "$ROOT/src")" \
+            "$(host_path "$ROOT/tests/neural_cpp_reference.cpp")" "/Fo:$(host_path "$ROOT/build_tests")/" "/Fe:$(host_path "$NEURAL_CPP_EXE")" \
+            /link /INCREMENTAL:NO "$(host_path "$NEURAL_RUST_LIB")" advapi32.lib ws2_32.lib userenv.lib bcrypt.lib ntdll.lib crypt32.lib
+    else
+        NEURAL_RUST_LIB="$ROOT/target/x86_64-pc-windows-gnu/release/libcaelus_network.a"
+        [[ -f "$NEURAL_RUST_LIB" ]] || NEURAL_RUST_LIB="$ROOT/target/release/libcaelus_network.a"
+        g++ -std=c++17 -O2 -I"$ROOT" -I"$ROOT/include" -I"$ROOT/src" \
+            "$ROOT/tests/neural_cpp_reference.cpp" -o "$NEURAL_CPP_EXE" "$NEURAL_RUST_LIB" \
+            -static -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll -lcrypt32
+    fi
+elif [[ "$OS_UNAME" == "Darwin" ]]; then
+    g++ -std=c++17 -O2 -I"$ROOT" -I"$ROOT/include" -I"$ROOT/src" \
+        "$ROOT/tests/neural_cpp_reference.cpp" -o "$NEURAL_CPP_EXE" \
+        "$ROOT/target/release/libcaelus_network.a"
+else
+    g++ -std=c++17 -O2 -I"$ROOT" -I"$ROOT/include" -I"$ROOT/src" \
+        "$ROOT/tests/neural_cpp_reference.cpp" -o "$NEURAL_CPP_EXE" \
+        "$ROOT/target/release/libcaelus_network.a" \
+        -ldl -lpthread -lm
 fi
+
+log "Neural C++/Rust exact differential and reviewed golden"
+"${PYTHON_CMD[@]}" "$(host_path "$ROOT/tests/run_neural_differential.py")" \
+    --cpp-binary "$(host_path "$NEURAL_CPP_EXE")" \
+    --rust-binary "$(host_path "$NEURAL_RUST_EXE")" \
+    --model-dir "$(host_path "$ROOT/models/assurance_v1")" \
+    --golden "$(host_path "$ROOT/tests/golden/neural_v1_differential.json")"
+
+log "BS-01 live neural assurance and fail-closed model negatives"
+"${PYTHON_CMD[@]}" "$(host_path "$ROOT/tests/run_bs01_neural_demo.py")" \
+    --binary "$(host_path "$EXE")" \
+    --model-dir "$(host_path "$ROOT/models/assurance_v1")"
 
 log "Sidecar Airlock PR-1 isolation, Aegean ferry pilot & MCP 64-bit string gate"
 "${PYTHON_CMD[@]}" -W error "$(host_path "$ROOT/tests/test_airlock_ferry_pilot.py")"
@@ -175,6 +264,11 @@ fi
 grep -q "UNTRUSTED_SEAL_SIGNER" "$neg_pin_out" || die "missing UNTRUSTED_SEAL_SIGNER diagnostic"
 
 "${PYTHON_CMD[@]}" "$(host_path "$ROOT/tools/verify_audit_log.py")" --expect-signer "$DET_SIGNER_PUBKEY" "$(host_path "$aud2")"
+"${PYTHON_CMD[@]}" "$(host_path "$ROOT/tools/verify_audit_log.py")" "$(host_path "$aud2")" --trusted-pubkey-hex "$DET_SIGNER_PUBKEY"
+
+log "Negative security suite (tamper / dev-signed / audit forgery must fail closed)"
+"${PYTHON_CMD[@]}" "$(host_path "$ROOT/tests/run_security_negative.py")" --binary "$(host_path "$EXE")"
+rm -f "$ROOT/caelus_audit_0000000000000000.log"
 
 log "Negative scenario signature rejection gate (SIG-CI)"
 mkdir -p "$SIG_DIR/scenarios"
@@ -195,9 +289,36 @@ log "Golden runner against C++ binary"
 "${PYTHON_CMD[@]}" "$(host_path "$ROOT/tests/run_bs_exec_golden.py")" --binary "$(host_path "$EXE")"
 
 log "Rust core REPL live differential against C++"
-cargo build --release -p caelus_core --features std --bin caelus_core_repl
+cargo build --release --locked --manifest-path "$(host_path "$ROOT/caelus_core/Cargo.toml")" --features std --bin caelus_core_repl
 "${PYTHON_CMD[@]}" "$(host_path "$ROOT/tests/run_bs_exec_golden.py")" \
     --binary "$(host_path "$REPL_BIN")" \
     --reference-binary "$(host_path "$EXE")"
+
+if [[ "$IS_WINDOWS_BASH" != "1" ]]; then
+    log "Mobile C ABI bridge: host build + C++ bridge test suite"
+    "$ROOT/tools/build_host_bridge.sh" --with-tests
+
+    if command -v swift >/dev/null 2>&1; then
+        log "Mobile Swift package: build + XCTest against the real native core"
+        (cd "$ROOT/platforms/ios/CAELUSMobile" && swift build && swift test)
+
+        log "Mobile BS-01 end-to-end demo (Swift -> C ABI -> shared core)"
+        mobile_export="$(mktemp -d)"
+        (cd "$ROOT/platforms/ios/CAELUSMobile" \
+            && CAELUS_DEMO_EXPORT_DIR="$mobile_export" swift run caelus-mobile-demo)
+        [[ -s "$mobile_export/audit_export.ndjson" ]] \
+            || { rm -rf "$mobile_export"; die "mobile demo produced no audit export"; }
+
+        log "Mobile demo audit chain + SEAL + neural identity verification"
+        NEURAL_PUBKEY="c8527f9105465967aea81d07514ea11f597f32fedc7d6f8f9e7d182f999fc51f"
+        "${PYTHON_CMD[@]}" "$ROOT/tools/verify_audit_log.py" \
+            "$mobile_export/audit_export.ndjson" \
+            --neural-model-dir "$ROOT/models/assurance_v1" \
+            --trusted-neural-pubkey-hex "$NEURAL_PUBKEY"
+        rm -rf "$mobile_export"
+    else
+        log "SKIP (no swift toolchain): mobile Swift package tests + BS-01 mobile demo"
+    fi
+fi
 
 log "All checks passed"

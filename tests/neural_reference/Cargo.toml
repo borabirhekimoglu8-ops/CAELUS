@@ -1,0 +1,17 @@
+[package]
+name = "caelus_neural_reference"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[dependencies]
+blake3 = { version = "=1.8.2", default-features = false, features = ["std"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "=0.2.186", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

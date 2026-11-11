@@ -551,7 +551,8 @@ test('P1 (Bölüm 5): Danışman Yerel Dosya Sorgulama (Satır Numaralı Kanıt)
   assert.ok(poemTurn.answerText.includes('kurgusal metin, şiir veya hikâye üretmez'));
 });
 
-test('P2 & P3 (Bölüm 6 & 7): Kişisel Ajan Varsayılan Kapalı İzinler, Kalıcı Saklama (Storage), Çalışma Zamanı Sınırları, Kaçırılan Zamanlama ve Cedar/Datalog/ProvSQL/Z3 Prototipleri', () => {
+test('P2 & P3 (Bölüm 6 & 7): Kişisel Ajan Varsayılan Kapalı İzinler, Kalıcı Saklama (Storage), Çalışma Zamanı Sınırları, Kaçırılan Zamanlama ve Cedar/Datalog/ProvSQL/Z3 Prototipleri', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-10T00:00:00Z') });
   // Bellek içi localStorage taklidi (sayfa yenileme kalıcılık testi için)
   const memoryStorageMap = new Map();
   const storageAdapter = {
@@ -794,3 +795,232 @@ test('Bölüm 9: Egemen Dijital Alan Arayüzü (ui/index.html & ui/app.js) — 6
 
 
 
+
+test('Historical replay uses receipt time, preserves revisions, and isolates live dialogue', (t) => {
+  const early = '2026-11-10T08:00:00Z';
+  const late = '2026-11-10T11:40:00Z';
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(early) });
+  const advisor = CaelusConversationalAdvisor.createConversationalAdvisorSession();
+  const source = {
+    record_id: 'notice-1',
+    source_id: 'official',
+    source_url: 'https://example.org/notice-1',
+    source_published_at: early,
+    ingested_at: early,
+    event_time: early,
+    title: 'Sakız limanı',
+    summary: 'İlk kayıtta rıhtım açık.',
+    entities: ['Sakız']
+  };
+  advisor.ingestWorldRecord(source);
+  t.mock.timers.setTime(Date.parse(late));
+  advisor.ingestWorldRecord({ ...source, summary: 'Düzeltme kaydında rıhtım kapalı.' });
+  advisor.ingestWorldRecord({ ...source, record_id: 'notice-2', title: 'Sakız yeni duyuru' });
+
+  const question = 'Sakız hakkında ne değişti?';
+  const earlyReplay = advisor.replayAdvisorTurn(question, '2026-11-10T09:00:00Z');
+  assert.equal(earlyReplay.answerPassport.availableWorldRecordCount, 1);
+  assert.match(earlyReplay.answerText, /rıhtım açık/);
+  assert.doesNotMatch(earlyReplay.answerText, /rıhtım kapalı/);
+  const lateReplay = advisor.replayAdvisorTurn(question, late);
+  assert.equal(lateReplay.answerPassport.availableWorldRecordCount, 2);
+  assert.match(lateReplay.answerText, /rıhtım kapalı/);
+  const comparison = advisor.compareAdvisorReplayCuts(question, '2026-11-10T09:00:00Z', late);
+  assert.match(comparison.before.answerText, /rıhtım açık/);
+  assert.match(comparison.after.answerText, /rıhtım kapalı/);
+  assert.deepEqual(
+    comparison.evidenceChanges.map(({ kind, recordId, receivedAt }) => [kind, recordId, receivedAt]),
+    [['REVISED', 'notice-1', '2026-11-10T11:40:00.000Z'], ['ADDED', 'notice-2', '2026-11-10T11:40:00.000Z']]
+  );
+  assert.throws(() => advisor.compareAdvisorReplayCuts(question, late, late), RangeError);
+  assert.equal(advisor.processAdvisorTurn(question).turnIndex, 1);
+  assert.throws(() => advisor.replayAdvisorTurn(question, 'invalid'), RangeError);
+});
+
+test('A decision task survives restart and replays a recommendation before and after evidence', (t) => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const start = '2026-11-10T08:00:00.000Z';
+  const deadline = '2026-11-10T15:00:00.000Z';
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const original = CaelusConversationalAdvisor.createDecisionWorkspace(adapter);
+  original.create({
+    goal: 'Çeşme–Sakız', minUnits: 300, maxCost: 100000,
+    options: [
+      { name: 'İkinci sefer', units: 305, cost: 60000, deadline, condition: 'Yanaşma' },
+      { name: 'Yedek gemi', units: 320, cost: 85000, deadline },
+      { name: 'Kapasite yetersiz', units: 299, cost: 50000, deadline }
+    ]
+  });
+  const resumed = CaelusConversationalAdvisor.createDecisionWorkspace(adapter);
+  assert.equal(resumed.replay().recommended.name, 'Yedek gemi');
+  assert.equal(resumed.replay().options[2].status, 'OUTSIDE_LIMITS');
+  t.mock.timers.setTime(Date.parse('2026-11-10T11:40:00Z'));
+  assert.throws(() => resumed.recordEvidence({ condition: 'Yanlış koşul', status: 'CONFIRMED', reference: 'Belge A' }));
+  const update = resumed.recordEvidence({ condition: 'Yanaşma', status: 'CONFIRMED', reference: 'Belge A' });
+  assert.equal(update.before.recommended.name, 'Yedek gemi');
+  assert.equal(update.after.recommended.name, 'İkinci sefer');
+  assert.equal(update.after.recommended.evidence.reference, 'Belge A');
+  assert.equal(resumed.replay(start).recommended.name, 'Yedek gemi');
+  t.mock.timers.setTime(Date.parse('2026-11-10T12:00:00Z'));
+  const disputed = resumed.recordEvidence({ condition: 'Yanaşma', status: 'CONFLICTING', reference: 'Belge B' });
+  assert.equal(disputed.after.options[0].status, 'WAITING');
+  assert.equal(disputed.after.recommended.name, 'Yedek gemi');
+  assert.equal(resumed.replay(update.after.asOf).recommended.name, 'İkinci sefer');
+  t.mock.timers.setTime(Date.parse('2026-11-10T15:01:00Z'));
+  assert.equal(resumed.replay().status, 'NO_FEASIBLE_PLAN');
+  resumed.clear();
+  assert.equal(original.load(), null);
+});
+
+test('Experiment keeps its prior prediction and reports compatibility without claiming causation', async (t) => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const crypto = (await import('node:crypto')).webcrypto;
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-10T08:00:00Z') });
+  const workspace = CaelusConversationalAdvisor.createExperimentWorkspace(adapter, crypto);
+  const protocol = {
+    question: 'Sevkiyat neden bekliyor?', measurement: 'gecikme, dakika',
+    intervention: 'Deneme aracını bir saat erken çıkar', source: 'Ön kayıt A',
+    baseline: { low: 0, high: 10 },
+    hypotheses: [
+      { name: 'Sınır kuyruğu', expected: { low: 0, high: 10 } },
+      { name: 'Yazılım kaydı', expected: { low: 25, high: 40 } }
+    ]
+  };
+  const pending = await workspace.register(protocol);
+  assert.equal(pending.outcome, 'AWAITING_OBSERVATION');
+  assert.equal(pending.predictionsOverlap, false);
+  const resumed = CaelusConversationalAdvisor.createExperimentWorkspace(adapter, crypto);
+  t.mock.timers.setTime(Date.parse('2026-11-10T11:40:00Z'));
+  const observed = await resumed.observe({ value: 35, source: 'Sevkiyat kaydı B' });
+  assert.equal(observed.record.digest, pending.record.digest);
+  assert.equal(observed.baselineMatched, false);
+  assert.deepEqual(observed.compatibleHypotheses, ['Yazılım kaydı']);
+  assert.equal(observed.outcome, 'ONE_COMPATIBLE');
+  await assert.rejects(resumed.observe({ value: 3, source: 'Kayıt C' }), /zaten/);
+  assert.equal((await resumed.load()).record.observation.value, 35);
+  const [key, raw] = storage.entries().next().value;
+  const changed = JSON.parse(raw);
+  changed.observation.value = 3;
+  storage.set(key, JSON.stringify(changed));
+  await assert.rejects(resumed.load(), /gözleminin bütünlüğü/);
+
+  resumed.clear();
+  protocol.hypotheses[0].expected.high = 30;
+  const overlapping = await resumed.register(protocol);
+  assert.equal(overlapping.predictionsOverlap, true);
+  assert.equal((await resumed.observe({ value: 27, source: 'Kayıt D' })).outcome, 'INCONCLUSIVE');
+});
+
+test('Research notebook restores source lines, flags candidate conflicts and exports reviewable evidence', () => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const first = { title: 'Liman duyurusu.md', content: '# Duyuru\r\n\r\n  Yanaşma saati: 14.00. ' };
+  const second = { title: 'Acentenin notu.txt', content: 'Yanaşma saati: 15.00.' };
+  const notebook = CaelusConversationalAdvisor.createResearchNotebook(adapter);
+  assert.equal(notebook.addSources([first, second, { ...first, title: 'Aynı kaydın kopyası.txt' }]), 2);
+  const restored = CaelusConversationalAdvisor.createResearchNotebook(adapter);
+  assert.deepEqual(restored.search('Buzlanma bekleniyor mu?'), []);
+  const hits = restored.search('YANAŞMA saati ne?');
+  assert.equal(hits.length, 2);
+  assert.equal(hits[0].line, 3);
+  assert.equal(hits[0].quote, '  Yanaşma saati: 14.00. ');
+  const compared = restored.compare(hits[0], hits[1], 'Yanaşma saati', '14.00', '15.00');
+  assert.equal(compared.status, 'POTENTIAL_CONFLICT');
+  assert.equal(compared.claims[1].evidence.title, second.title);
+  assert.throws(() => restored.compare(hits[0], hits[0], 'Yanaşma saati', '14.00', '14.00'), /farklı satır/);
+  assert.throws(() => restored.draft(hits[0], 'Yanaşma saati', '16.00'), /alıntıdaki/);
+  const draft = restored.draft(hits[0], 'Yanaşma saati', '14.00');
+  assert.equal(draft.status, 'REQUIRES_REVIEW');
+  assert.equal(draft.assumption.evidence.line, 3);
+  assert.match(draft.assumption.evidence.sha256, /^[a-f0-9]{64}$/);
+  const [key, raw] = storage.entries().next().value;
+  storage.set(key, raw.replace('14.00', '16.00'));
+  assert.throws(() => restored.search('yanaşma'), /içeriği değişmiş/);
+  restored.clear();
+  assert.deepEqual(notebook.list(), []);
+});
+
+test('A notebook citation changes a decision only after explicit assessment and survives replay', (t) => {
+  const storage = new Map();
+  const adapter = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key)
+  };
+  const start = '2026-11-10T08:00:00.000Z';
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const { createResearchNotebook, createDecisionWorkspace } = CaelusConversationalAdvisor;
+  const notebook = createResearchNotebook(adapter);
+  notebook.addSources([{ title: 'Duyuru.md', content: '# Liman\nYanaşma saati 14.00 olarak teyit edildi.' }]);
+  const citation = notebook.search('yanaşma saati')[0];
+  const draft = notebook.draft(citation, 'Yanaşma saati', '14.00');
+  const workspace = createDecisionWorkspace(adapter);
+  workspace.create({
+    goal: 'Ek sefer', minUnits: 300, maxCost: 100000,
+    options: [{ name: 'İkinci sefer', units: 305, cost: 60000, deadline: '2026-11-10T14:00:00.000Z', condition: 'Yanaşma' }]
+  });
+  const input = { condition: 'Yanaşma', reference: 'Duyuru.md:2', researchClaim: draft.assumption };
+  assert.equal(workspace.replay().status, 'WAITING_FOR_EVIDENCE');
+  assert.throws(() => workspace.recordEvidence(input), /Teyit durumu/);
+  assert.throws(() => workspace.recordEvidence({
+    ...input, status: 'CONFIRMED', researchClaim: { ...input.researchClaim, value: '15.00' }
+  }), /alıntısında/);
+  assert.equal(workspace.load().evidence.length, 0);
+
+  t.mock.timers.setTime(Date.parse('2026-11-10T11:40:00Z'));
+  const result = workspace.recordEvidence({ ...input, status: 'CONFIRMED' });
+  assert.equal(result.before.status, 'WAITING_FOR_EVIDENCE');
+  assert.equal(result.after.recommended.name, 'İkinci sefer');
+  notebook.clear();
+  const restored = createDecisionWorkspace(adapter);
+  assert.equal(restored.replay(start).status, 'WAITING_FOR_EVIDENCE');
+  assert.deepEqual(restored.replay().recommended.evidence.researchClaim, draft.assumption);
+});
+
+test('Word paragraph provenance stays distinct from an identical text source and survives decision storage', (t) => {
+  const memory = new Map();
+  const storage = {
+    getItem: (key) => memory.get(key) ?? null,
+    setItem: (key, value) => memory.set(key, value),
+    removeItem: (key) => memory.delete(key)
+  };
+  const { createResearchNotebook, createDecisionWorkspace } = CaelusConversationalAdvisor;
+  const notebook = createResearchNotebook(storage);
+  const content = 'Başlık\n\nYanaşma 14.00 olarak bildirildi.';
+  const metadata = { locatorKind: 'DOCX_BODY_PARAGRAPH', originalSha256: 'a'.repeat(64) };
+  assert.equal(notebook.addSources([
+    { title: 'Duyuru.docx', content, ...metadata },
+    { title: 'Duyuru.txt', content }
+  ]), 2);
+  const [word, text] = notebook.search('yanaşma');
+  assert.equal(word.line, 3);
+  assert.equal(word.sha256, text.sha256);
+  assert.equal(word.locatorKind, 'DOCX_BODY_PARAGRAPH');
+  assert.equal(text.locatorKind, undefined);
+  const { assumption } = notebook.draft(word, 'Yanaşma saati', '14.00');
+  assert.equal(assumption.evidence.originalSha256, metadata.originalSha256);
+  assert.equal(notebook.draft(text, 'Yanaşma saati', '14.00').assumption.evidence.title, 'Duyuru.txt');
+
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-10T08:00:00.000Z') });
+  const task = createDecisionWorkspace(storage);
+  task.create({
+    goal: 'Ek sefer', minUnits: 100, maxCost: 100,
+    options: [{ name: 'Sefer', units: 100, cost: 100, deadline: '2026-11-10T15:00:00.000Z', condition: 'Yanaşma' }]
+  });
+  task.recordEvidence({ condition: 'Yanaşma', status: 'CONFIRMED', reference: 'Duyuru.docx ¶3', researchClaim: assumption });
+  assert.deepEqual(createDecisionWorkspace(storage).replay().recommended.evidence.researchClaim, assumption);
+});

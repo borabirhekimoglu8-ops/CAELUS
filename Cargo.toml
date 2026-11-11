@@ -1,14 +1,9 @@
-[workspace]
-members = [".", "caelus_core", "caelus_wasm"]
-exclude = ["tools/caelus_xlsx_engine", "tools/verus"]
-resolver = "2"
-
 [package]
 name = "caelus_network"
 version = "0.1.0"
 edition = "2021"
 
-# CAELUS OS — Shadow-Mesh P2P Network Layer
+# CAELUS OS — Shadow-Mesh P2P Network & Sidecar Airlock Host Layer
 # Air-Gapped, No Cloud, 100% Deterministic
 # Compiled as a C-compatible static library for C++ FFI linkage
 
@@ -37,6 +32,10 @@ name = "caelus_sign_scenario"
 path = "src/bin/caelus_sign_scenario.rs"
 
 [[bin]]
+name = "caelus_sign_model"
+path = "src/bin/caelus_sign_model.rs"
+
+[[bin]]
 name = "caelus_verify_audit"
 path = "src/bin/caelus_verify_audit.rs"
 
@@ -45,7 +44,7 @@ name = "caelus_sidecar_airlock"
 path = "src/bin/caelus_sidecar_airlock.rs"
 
 [dependencies]
-# Isolated deterministic fixed-point kernel (no_std + alloc, zero external deps)
+# Isolated deterministic fixed-point kernel (no_std + alloc)
 caelus_core = { path = "caelus_core" }
 
 # Cryptographic identity: ed25519 signing & verification
@@ -64,8 +63,20 @@ subtle = "2.5"
 # Zero-on-drop for sensitive key material
 zeroize = { version = "1.7", features = ["derive"] }
 
-# Blake3 for fast deterministic hashing of OTP slots
-blake3 = "1.5"
+# Blake3 commitments persist in audit/neural artifacts; keep both Rust crates
+# on the same exact implementation version.
+blake3 = "=1.8.2"
+
+# O_NOFOLLOW for race-resistant offline private-key opening on Unix.
+libc = "=0.2.186"
+
+# iOS/iPadOS: force the pure-Rust Blake3 backend.  The default NEON backend
+# compiles C sources through `cc`, dragging an Apple C toolchain into every
+# Rust build of the mobile core.  The pure backend is the same algorithm with
+# identical output (Blake3 is fully specified), removes the cross-toolchain
+# dependency, and keeps the audit-chain code path 100% Rust on device.
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "watchos"))'.dependencies]
+blake3 = { version = "=1.8.2", features = ["pure"] }
 
 [dev-dependencies]
 proptest = "1.5"

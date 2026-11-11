@@ -115,7 +115,7 @@ embed_file() {
     else
         # POSIX od fallback
         printf "static const unsigned char %s[] = {" "$var_name" >> "$PAYLOAD_H"
-        od -An -tx1 "$src_path" | tr -s ' ' '\n' | grep -v '^$' | \
+        od -An -v -tx1 "$src_path" | tr -s ' ' '\n' | grep -v '^$' | \
             awk '{printf "0x%s, ", $1}' >> "$PAYLOAD_H"
         printf "0x00};\n" >> "$PAYLOAD_H"
     fi
@@ -169,7 +169,7 @@ pushd "$ROOT" > /dev/null
 if [[ "${CAELUS_SKIP_RUST:-0}" == "1" && -f "$RUST_LIB" ]]; then
     inf "CAELUS_SKIP_RUST=1 — mevcut $RUST_LIB yeniden kullanılıyor."
 else
-    cargo build --release -p caelus_network 2>&1 | sed 's/^/   /'
+    cargo build --release --locked 2>&1 | sed 's/^/   /'
 fi
 if [[ ! -f "$RUST_LIB" ]]; then
     die "Beklenen statik kütüphane bulunamadı: $RUST_LIB"
@@ -248,7 +248,7 @@ echo -e "${BOLD}═════════════════════�
 echo -e "Çıktı   : ${CYAN}$OUT_EXE${RESET}"
 echo -e "Boyut   : ${EXE_SIZE_KB} KB  (~${EXE_SIZE_MB} MB)"
 
-if (( EXE_SIZE_MB < 50 )); then
+if (( EXE_SIZE_BYTES < 50 * 1024 * 1024 )); then
     echo -e "Hedef   : ${GREEN}<50 MB ✓  BAŞARILI${RESET}"
 else
     echo -e "Hedef   : ${RED}<50 MB ✗  AŞILDI${RESET} — UPX sıkıştırması deneyin: upx --best $OUT_EXE"

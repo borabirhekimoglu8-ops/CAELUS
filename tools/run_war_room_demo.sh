@@ -37,7 +37,7 @@ echo "  Mod: ${MODE} | Bağlantı: http://127.0.0.1:${PORT} (WS /ws)"
 echo "=================================================================="
 
 echo "[1/4] Rust Sidecar Airlock ve Denetim Doğrulayıcı derleniyor..."
-cargo build --release -p caelus_network --bin caelus_sidecar_airlock --bin caelus_verify_audit
+cargo build --release --locked --bin caelus_sidecar_airlock --bin caelus_verify_audit
 
 echo "[2/4] Ege Feribot Pilot veri seti ve Manifest v2.0 mühürleri doğrulanıyor..."
 if [[ ! -f "$ROOT/configs/source_manifest.json" || ! -f "$ROOT/scenarios/pilot_aegean_ferry_airlock/events.airlock.ndjson" ]]; then
@@ -46,7 +46,7 @@ fi
 
 echo "[3/4] WASM çekirdeği ve Hava Boşluklu Standalone/PWA paketi güncelleniyor..."
 if rustup target list --installed 2>/dev/null | grep -q "wasm32-unknown-unknown"; then
-  cargo build --release --locked --target wasm32-unknown-unknown -p caelus_wasm
+  cargo build --release --locked --manifest-path "$ROOT/caelus_wasm/Cargo.toml" --target wasm32-unknown-unknown
 fi
 python3 -W error "$ROOT/tools/build_standalone.py"
 

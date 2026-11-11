@@ -39,7 +39,7 @@ echo ==================================================================
 pushd "%ROOT%"
 
 echo [1/4] Building Rust Sidecar Airlock and Audit Verifier...
-cargo build --release -p caelus_network --bin caelus_sidecar_airlock --bin caelus_verify_audit
+cargo build --release --locked --bin caelus_sidecar_airlock --bin caelus_verify_audit
 if errorlevel 1 (
     popd
     exit /b 1
@@ -55,7 +55,7 @@ if not exist "%ROOT%\configs\source_manifest.json" (
 )
 
 echo [3/4] Updating WASM core and Air-Gapped Standalone/PWA bundle...
-cargo build --release --locked --target wasm32-unknown-unknown -p caelus_wasm
+cargo build --release --locked --manifest-path "%ROOT%\caelus_wasm\Cargo.toml" --target wasm32-unknown-unknown
 if errorlevel 1 (
     popd
     exit /b 1

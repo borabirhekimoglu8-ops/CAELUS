@@ -124,6 +124,7 @@ pub struct DeviceIdentity {
 }
 
 const KEY_FILE_MAGIC: &[u8] = b"CAELUSKEY1\0";
+#[cfg(windows)]
 const KEY_FILE_SCHEME_WIN_DPAPI: &[u8] = b"WIN-DPAPI\0";
 /// Container scheme tag for a seed sealed with memory-hard RFC 9106 Argon2id (POSIX/cross-platform).
 const KEY_FILE_SCHEME_ARGON2ID: &[u8] = b"ARGON2ID-V1\0";

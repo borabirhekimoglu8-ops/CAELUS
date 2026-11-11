@@ -23,6 +23,10 @@ pub mod airlock;
 pub mod det_rng;
 pub mod engine;
 pub mod fp;
+pub mod neural_contract;
+pub mod neural_gate;
+pub mod neural_hash;
+pub mod neural_runtime;
 
 pub use airlock::{
     apply_slice_to_causal_engine, format_i64_decimal_ascii, format_u64_decimal_ascii,

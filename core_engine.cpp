@@ -7,6 +7,7 @@
  */
 
 #include <iostream>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -30,6 +31,8 @@
 #include "causal_engine.h"
 #include "scenario_pack.h"
 #include "audit_log.h"
+#include "neural_host.h"
+#include "neural_tick_runner.h"
 
 // ─── Cross-platform env-var setter (for --det-mode seed injection) ───────────
 static inline void caelus_setenv(const char* name, const char* value) {
@@ -536,6 +539,80 @@ static std::string json_escape(const std::string& s) {
 
 static bool g_json_stdout = false;
 
+static bool ComputeScenarioHash(
+    const caelus::ScenarioPack& pack,
+    std::array<uint8_t, CAELUS_NEURAL_HASH_BYTES_V1>& out_hash) {
+    const std::string& canonical_payload = pack.verified_canonical_payload();
+    if (canonical_payload.empty() ||
+        caelus_blake3_hash(
+            reinterpret_cast<const uint8_t*>(canonical_payload.data()),
+            canonical_payload.size(), out_hash.data()) != 1u) {
+        std::cerr << "[NEURAL] Senaryo Blake3 commitment üretilemedi.\n";
+        return false;
+    }
+    return true;
+}
+
+static bool ProcessNeuralTick(
+    caelus::neural::NeuralControllerV1& controller,
+    caelus::causal::CausalEngine& engine,
+    uint64_t audit_session_id,
+    bool det_mode) {
+    if (!controller.enabled()) return true;
+
+    caelus::neural::NeuralTickEvidenceV1 evidence;
+    const auto outcome = caelus::neural::run_neural_tick(
+        controller, engine, g_audit, audit_session_id, !det_mode,
+        [](const std::string& event_json) { g_emitter.emit(event_json); },
+        [](const std::string& message) {
+            std::cerr << "[NEURAL] " << message << "\n";
+        },
+        &evidence);
+
+    if (outcome == caelus::neural::NeuralTickOutcome::FatalRollbackFailed) {
+        std::cerr << "[NEURAL] FATAL: symbolic pre-state could not be "
+                     "restored; fail-stop prevents execution with "
+                     "unaudited neural mutation.\n";
+        if (g_audit.is_open()) g_audit.seal();
+        g_emitter.stop();
+        std::abort();
+    }
+    if (outcome != caelus::neural::NeuralTickOutcome::Committed) {
+        return false;
+    }
+
+    std::cout << "[NEURAL] tick=" << evidence.tick
+              << " model=" << caelus::neural::model_load_status_name(
+                     controller.model().status())
+              << " gate=" << caelus::neural::neural_gate_decision_name(
+                     evidence.gate.decision)
+              << " fallback="
+              << (caelus::neural::neural_gate_accepted(evidence.gate.decision) &&
+                          (!evidence.authority_record_required ||
+                           evidence.authority_committed)
+                      ? "false" : "true")
+              << "\n";
+    if (evidence.output.node_count > 0u) {
+        for (uint32_t i = 0; i < evidence.output.node_count; ++i) {
+            const auto& input = evidence.nodes[i];
+            const auto& output = evidence.output.nodes[i];
+            std::cout << "[NEURAL] node=" << input.node_id
+                      << " reported_fp=" << input.reported_state_fp
+                      << " estimated_fp=" << output.estimated_true_state_fp
+                      << " authoritative_fp=" << input.authoritative_state_fp
+                      << " anomaly_fp=" << output.telemetry_anomaly_score_fp
+                      << " confidence_fp=" << output.confidence_fp
+                      << " ood_fp=" << output.out_of_distribution_score_fp
+                      << "\n";
+        }
+    }
+    if (!evidence.selected_lever_id.empty()) {
+        std::cout << "[NEURAL] advisory_lever=" << evidence.selected_lever_id
+                  << " (symbolic counterfactual validated; not auto-applied)\n";
+    }
+    return true;
+}
+
 static void audit_repl_event(const std::string& command,
                              const caelus::causal::CausalEngine& engine,
                              const char* result) {
@@ -968,17 +1045,37 @@ static void print_repl_levers(const caelus::ScenarioPack& pack, bool pack_loaded
 }
 
 static caelus::causal::EngineSnapshot run_repl_tick(
-    caelus::causal::CausalEngine& engine) {
+    caelus::causal::CausalEngine& engine,
+    const std::string& scenario_id,
+    bool scenario_active,
+    caelus::neural::NeuralControllerV1* neural_controller,
+    uint64_t audit_session_id,
+    bool det_mode) {
     const uint64_t tick_before = engine.current_tick();
     g_tick_ctr.store(tick_before, std::memory_order_relaxed);
     DispatchConnectorsReported(engine, tick_before);
     audit_intel_rejections();
 
     caelus::causal::EngineSnapshot snap = engine.run_ticks(1);
+    if (neural_controller != nullptr && neural_controller->enabled()) {
+        if (!neural_controller->observe_tick(engine)) {
+            std::cerr << "[NEURAL] Graph history observation failed; "
+                         "symbolic-only fallback is now active.\n";
+            neural_controller->force_symbolic_fallback();
+        } else {
+            ProcessNeuralTick(
+                *neural_controller, engine, audit_session_id, det_mode);
+        }
+    }
     g_emitter.emit(caelus::ws_json::friction(
         snap.clamped_friction_d(),
         snap.outage_active ? 3 : (snap.regime_exceeded ? 2 : 0),
         engine.current_tick()));
+    g_emitter.emit(caelus::ws_json::engine_state(
+        scenario_active ? "SCENARIO_ACTIVE" : "AWAITING_SCENARIO_INJECTION",
+        scenario_id, engine.current_tick(),
+        snap.clamped_friction_d(), snap.throughput_ratio,
+        snap.outage_active, snap.any_hysteresis_flip));
 
     if (g_audit.is_open()) {
         std::ostringstream ss;
@@ -1015,8 +1112,18 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
     bool& pack_loaded,
     std::string& scenario_id,
     caelus::causal::EngineSnapshot last_snap,
+    caelus::neural::NeuralControllerV1* neural_controller,
+    uint64_t audit_session_id,
+    bool det_mode,
     caelus::CsvReplayConnector* scenario_replay,
     std::string& scenario_replay_path) {
+    const auto run_tick = [&]() {
+        if (pack_loaded && scenario_replay_path.empty()) {
+            pack.inject_intel_at(engine, engine.current_tick());
+        }
+        return run_repl_tick(engine, scenario_id, pack_loaded, neural_controller,
+                             audit_session_id, det_mode);
+    };
     std::cout << "\n[REPL] Senaryo REPL basladi. Yardim icin 'help', cikis icin 'quit'.\n";
     print_repl_snapshot(engine, last_snap);
 
@@ -1146,10 +1253,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
             }
 
             for (uint64_t i = 0; i < n; ++i) {
-                if (pack_loaded && scenario_replay_path.empty()) {
-                    pack.inject_intel_at(engine, engine.current_tick());
-                }
-                last_snap = run_repl_tick(engine);
+                last_snap = run_tick();
             }
             std::cout << "[REPL] " << n << " tick tamamlandi.\n";
             print_repl_snapshot(engine, last_snap);
@@ -1181,10 +1285,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
             std::cout << "[REPL] Lever sonucu: " << (success ? "BASARILI" : "BASARISIZ/KILITLI")
                       << " | cost_ticks=" << meta->cost_ticks
                       << " (tam maliyet icin ek tick: " << remaining_cost << ")\n";
-            if (pack_loaded && scenario_replay_path.empty()) {
-                pack.inject_intel_at(engine, engine.current_tick());
-            }
-            last_snap = run_repl_tick(engine);
+            last_snap = run_tick();
             print_repl_snapshot(engine, last_snap);
             if (g_emitter.connected()) {
                 // Gözlenen (karşı-olgusal DEĞİL) önce/sonra motor durumu.
@@ -1365,7 +1466,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
                 } else if (scenario_replay_path.empty()) {
                     pack.inject_intel_at(engine, engine.current_tick());
                 }
-                last_snap = run_repl_tick(engine);
+                last_snap = run_tick();
                 print_repl_snapshot(engine, last_snap);
                 if (g_emitter.connected()) emit_ws_scenario_model(pack, pack_loaded);
                 audit_repl_event(command_line, engine, "ok");
@@ -1412,6 +1513,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
             caelus::ScenarioPack next_pack;
             const std::string next_path = "scenarios/" + new_id + ".json";
             if (next_pack.load(next_path)) {
+                if (neural_controller) neural_controller->force_symbolic_fallback();
                 pack = std::move(next_pack);
                 pack_loaded = true;
                 scenario_id = pack.id;
@@ -1430,7 +1532,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
                 }
                 emit_ws_scenario_loaded(pack);
                 if (g_emitter.connected()) emit_ws_scenario_model(pack, pack_loaded);
-                last_snap = run_repl_tick(engine);
+                last_snap = run_tick();
                 print_repl_snapshot(engine, last_snap);
                 audit_repl_event(command_line, engine, "ok");
             } else {
@@ -1450,6 +1552,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
             }
             caelus::ScenarioPack next_pack;
             if (next_pack.load_from_string(json_payload, "<ws_json>", /*allow_interactive_unsigned=*/true)) {
+                if (neural_controller) neural_controller->force_symbolic_fallback();
                 pack = std::move(next_pack);
                 pack_loaded = true;
                 scenario_id = pack.id;
@@ -1462,7 +1565,7 @@ static caelus::causal::EngineSnapshot RunScenarioRepl(
                 emit_ws_scenario_loaded(pack);
                 if (g_emitter.connected()) emit_ws_scenario_model(pack, pack_loaded);
                 pack.inject_intel_at(engine, engine.current_tick());
-                last_snap = run_repl_tick(engine);
+                last_snap = run_tick();
                 print_repl_snapshot(engine, last_snap);
                 audit_repl_event("load_json " + pack.id, engine, "ok");
             } else {
@@ -1711,9 +1814,11 @@ int main(int argc, char* argv[]) {
     std::string print_payload_path;
     std::string sign_scenario_path;
     std::string sign_key_path;
+    std::string neural_model_directory;
     std::vector<std::string> plugin_paths;   // --plugin (tekrarlanabilir, sira korunur)
     bool        interactive = false;
     bool        det_mode    = false;
+    bool        neural_assurance = false;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--scenario" && i + 1 < argc) {
@@ -1732,6 +1837,14 @@ int main(int argc, char* argv[]) {
             g_json_stdout = true;
         } else if (arg == "--det-mode") {
             det_mode = true;
+        } else if (arg == "--neural-assurance") {
+            neural_assurance = true;
+        } else if (arg == "--neural-model") {
+            if (i + 1 >= argc) {
+                std::cerr << "[ENGINE] '--neural-model' icin dizin argumani eksik.\n";
+                return 2;
+            }
+            neural_model_directory = argv[++i];
         } else if (arg == "--plugin") {
             // Tekrarlanabilir: --plugin a.dll --plugin b.so ... Path'ler verildikleri
             // (deterministik) sirada saklanir ve ayni sirada yuklenir.
@@ -1742,7 +1855,7 @@ int main(int argc, char* argv[]) {
             }
             plugin_paths.emplace_back(argv[++i]);
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Kullanim: caelus_os [--scenario <id>] [--intel-replay <path>] [--plugin <path> ...] [--interactive|--repl] [--det-mode]\n"
+            std::cout << "Kullanim: caelus_os [--scenario <id>] [--intel-replay <path>] [--plugin <path> ...] [--interactive|--repl] [--det-mode] [--neural-assurance --neural-model <dir>]\n"
                       << "  --scenario <id>   Senaryo profil kimligini belirtir "
                          "(varsayilan: UNIVERSAL_BASELINE)\n"
                       << "  --intel-replay <path> CSV/JSONL kriz kaydini tick-zamanli oynatir\n"
@@ -1760,7 +1873,11 @@ int main(int argc, char* argv[]) {
                       << "  --repl            Senaryo REPL'i baslatir\n"
                       << "  --json-stdout     snapshot --json icin prefixsiz saf JSON satiri basar\n"
                       << "  --det-mode        Deterministik CI modu: sanal saat + tohumlu PRNG,\n"
-                      << "                    CDET: bloku stdout'a basilir, agi atlar.\n";
+                      << "                    CDET: bloku stdout'a basilir, agi atlar.\n"
+                      << "  --neural-assurance Imzali INT8 sabit-nokta Neural V1 yolunu etkinlestirir;\n"
+                      << "                    tum ciktilar Neural Gate ve sembolik otoriteden gecer.\n"
+                      << "  --neural-model <dir> manifest.json, weights.bin ve model.sig dizini\n"
+                      << "                    (varsayilan: models/assurance_v1).\n";
             return 0;
         }
     }
@@ -1802,6 +1919,53 @@ int main(int argc, char* argv[]) {
         std::cout << "[DET] Deterministik mod aktif — tohumlu PRNG + sanal saat(0)\n";
     }
 
+    // Load the requested operational profile before opening the audit session.
+    // A signed ScenarioPack may replace these values later, but no causal state
+    // transition or plugin action is allowed to precede audit initialization.
+    caelus::intel::ProfileManager intel_mgr;
+    auto profile = intel_mgr.LoadProfile(scenario_id);
+
+    const std::string key_path = "caelus_identity.key";
+    CaelusIdentityHandle* local_id = caelus_identity_load_or_create(
+        reinterpret_cast<const uint8_t*>(key_path.data()), key_path.size());
+    if (!local_id) {
+        std::cout << "[WARN] Persistent identity unavailable; using ephemeral identity.\n";
+        local_id = caelus_identity_new();
+    }
+    if (!local_id) {
+        std::cerr << "[AUDIT] FATAL: device identity unavailable; session cannot start.\n";
+        return 5;
+    }
+
+    // Production uses wall time for forensic uniqueness. Deterministic mode
+    // fixes the session id because it participates in the chain commitment.
+    const uint64_t audit_session_id =
+        det_mode ? 0ULL : static_cast<uint64_t>(std::time(nullptr));
+    const std::string audit_path =
+        caelus::AuditLog::make_log_path(audit_session_id);
+    if (g_audit.open(local_id, audit_session_id, audit_path)) {
+        uint8_t fp[32] = {};
+        caelus_identity_fingerprint(local_id, fp);
+        std::ostringstream ss_start;
+        ss_start << std::hex << std::setfill('0');
+        ss_start << "{\"type\":\"SESSION_START\",\"scenario\":\""
+                 << json_escape(scenario_id)
+                 << "\",\"sector\":\"" << json_escape(profile->region)
+                 << "\",\"fingerprint\":\"";
+        for (int i = 0; i < 32; ++i)
+            ss_start << std::setw(2) << static_cast<unsigned>(fp[i]);
+        ss_start << "\",\"det_mode\":" << (det_mode ? "true" : "false") << "}";
+        if (!g_audit.append(ss_start.str())) {
+            std::cerr << "[AUDIT] FATAL: SESSION_START could not be committed.\n";
+            caelus_identity_free(local_id);
+            return 5;
+        }
+    } else {
+        std::cerr << "[AUDIT] Session log unavailable; neural authority will remain disabled.\n";
+    }
+
+    // ── Start War Room WebSocket emitter (127.0.0.1:47809, loopback only) ──
+    // Skipped in --det-mode (not needed for CI; avoids port contention).
     // ── Start War Room WebSocket emitter ───────────────────────────────────
     // Varsayılan: 127.0.0.1 (air-gapped, loopback). Opsiyonel UZAK MOD:
     // CAELUS_WARROOM_REMOTE=1 → LAN'a (0.0.0.0) bağlanır ve embedded UI'ı aynı
@@ -1963,6 +2127,17 @@ int main(int argc, char* argv[]) {
                 g_emitter.stop();   // baslamadiysa no-op; baslamissa loopback soketini kapatir
                 return 4;            // eklenti guvenli-yukleme hatasi
             }
+            if (g_audit.is_open()) {
+                std::ostringstream ss_plugin;
+                ss_plugin << "{\"type\":\"PLUGIN_LOADED\",\"path\":\""
+                          << json_escape(plugin_path) << "\",\"result\":\"ok\"}";
+                if (!g_audit.append(ss_plugin.str())) {
+                    std::cerr << "[AUDIT] FATAL: plugin load evidence could not be committed.\n";
+                    g_emitter.stop();
+                    caelus_identity_free(local_id);
+                    return 5;
+                }
+            }
         }
         std::cout << "[PLUGIN] " << plugin_loader.loaded_count()
                   << " dinamik eklenti basariyla kaydedildi (T-18 imza gate gecti).\n";
@@ -1992,10 +2167,6 @@ int main(int argc, char* argv[]) {
     if (!det_mode) {
         RunShadowMeshHandshake();
     }
-
-    // Phase 1.5: Operational risk profiling — profil yükleme.
-    caelus::intel::ProfileManager intel_mgr;
-    auto profile = intel_mgr.LoadProfile(scenario_id);
 
     // ── Causal Engine v2 — Graf tabanlı sürtünme (R1) ─────────────────────
     // Ağırlıklı doğrusal toplam (CalculateFrictionMultiplier) artık kullanılmıyor.
@@ -2065,6 +2236,7 @@ int main(int argc, char* argv[]) {
         awaiting_state_json = caelus::ws_json::engine_state(
             "AWAITING_SCENARIO_INJECTION", scenario_id, causal_engine.current_tick(), 1.0);
         g_emitter.emit(awaiting_state_json);
+        if (g_audit.is_open()) g_audit.append(awaiting_state_json);
         std::cout << "[STATE] AWAITING SCENARIO INJECTION — blank slate active, "
                   << "friction=1.000000x, no crisis flow.\n";
     }
@@ -2092,11 +2264,108 @@ int main(int argc, char* argv[]) {
         std::cout << "[CONNECTOR] Replay kaydı bekletildi: önce geçerli imzalı senaryo gerekir.\n";
     }
 
+    // ── Neural V1 host configuration ───────────────────────────────────────
+    // Symbolic-only remains the default. Assurance is an explicit opt-in and
+    // still requires a verified scenario plus a signed data-only model package.
+    caelus::neural::NeuralControllerV1 neural_controller;
+    std::array<uint8_t, CAELUS_NEURAL_HASH_BYTES_V1> neural_scenario_hash{};
+    bool neural_scenario_hash_valid = false;
+    const bool neural_scenario_trusted =
+        pack_loaded && scenario_pack.sig_status == "VERIFIED";
+    if (neural_scenario_trusted) {
+        neural_scenario_hash_valid =
+            ComputeScenarioHash(scenario_pack, neural_scenario_hash);
+    }
+    if (neural_assurance && neural_model_directory.empty()) {
+#ifdef CAELUS_PRODUCTION
+        neural_model_directory = "models/assurance_v1";
+#else
+        const char* configured_model = std::getenv("CAELUS_NEURAL_MODEL_DIR");
+        neural_model_directory =
+            configured_model && configured_model[0]
+                ? std::string(configured_model)
+                : std::string("models/assurance_v1");
+#endif
+    }
+    if (!neural_assurance && !neural_model_directory.empty()) {
+        std::cout << "[NEURAL] --neural-model, --neural-assurance olmadan "
+                     "yok sayildi; symbolic-only aktif.\n";
+    }
+    const bool neural_prerequisites =
+        neural_assurance && neural_scenario_trusted && neural_scenario_hash_valid &&
+        g_audit.is_open();
+    neural_controller.configure(
+        neural_assurance
+            ? CAELUS_NEURAL_MODE_ASSURANCE
+            : CAELUS_NEURAL_MODE_SYMBOLIC_ONLY,
+        neural_prerequisites ? neural_model_directory : std::string(),
+        scenario_id,
+        neural_scenario_hash);
+    if (neural_assurance) {
+        if (!pack_loaded) {
+            std::cerr << "[NEURAL] Gecerli imzali senaryo yok; model yuklenmedi. "
+                         "Sembolik fallback devam ediyor.\n";
+        } else if (!neural_scenario_trusted) {
+            std::cerr << "[NEURAL] Senaryo pinli uretim guveniyle dogrulanmadi; "
+                         "dev bypass neural assurance yetkisi vermez.\n";
+        } else if (!neural_scenario_hash_valid) {
+            std::cerr << "[NEURAL] Senaryo commitment hatasi; model yuklenmedi. "
+                         "Sembolik fallback devam ediyor.\n";
+        } else if (!g_audit.is_open()) {
+            std::cerr << "[NEURAL] Audit zinciri acik degil; model yuklenmedi. "
+                         "Sembolik fallback devam ediyor.\n";
+        }
+        std::cout << "[NEURAL] Mode=ASSURANCE model_status="
+                  << caelus::neural::model_load_status_name(
+                         neural_controller.model().status())
+                  << " model_dir=" << neural_model_directory << "\n";
+        if (!neural_controller.model().trusted()) {
+            std::cout << "[NEURAL] Model reddi: "
+                      << neural_controller.model().error()
+                      << " | sembolik fallback etkin.\n";
+        }
+    } else {
+        std::cout << "[NEURAL] Mode=SYMBOLIC_ONLY (model yuklenmedi).\n";
+    }
+    if (neural_controller.enabled() &&
+        !neural_controller.initialise_history(causal_engine)) {
+        if (neural_assurance) {
+            std::cerr << "[NEURAL] Baslangic graf gecmisi olusturulamadi; "
+                         "symbolic-only fallback etkin.\n";
+        }
+        neural_controller.force_symbolic_fallback();
+    }
+    if (pack_loaded && g_audit.is_open()) {
+        std::ostringstream scenario_event;
+        scenario_event << "{\"type\":\"SCENARIO_ACTIVATED\",\"scenario_id\":\""
+                       << json_escape(scenario_pack.id)
+                       << "\",\"signature_status\":\""
+                       << json_escape(scenario_pack.sig_status)
+                       << "\",\"signature_scheme\":\""
+                       << json_escape(scenario_pack.sig_scheme)
+                       << "\",\"neural_assurance_authorized\":"
+                       << (neural_prerequisites ? "true" : "false")
+                       << ",\"scenario_hash\":\"";
+        if (neural_scenario_hash_valid) {
+            scenario_event << caelus::neural::host_detail::hex(
+                neural_scenario_hash.data(), neural_scenario_hash.size());
+        }
+        scenario_event << "\"}";
+        g_audit.append(scenario_event.str());
+    }
+
     auto run_causal_tick = [&]() noexcept -> caelus::causal::EngineSnapshot {
         const uint64_t tick = causal_engine.current_tick();
         g_tick_ctr.store(tick, std::memory_order_relaxed);
         DispatchConnectorsReported(causal_engine, tick);
-        return causal_engine.tick();
+        auto snapshot = causal_engine.tick();
+        if (neural_controller.enabled() &&
+            !neural_controller.observe_tick(causal_engine)) {
+            std::cerr << "[NEURAL] Graph history observation failed; "
+                         "symbolic-only fallback is now active.\n";
+            neural_controller.force_symbolic_fallback();
+        }
+        return snapshot;
     };
 
     caelus::causal::EngineSnapshot causal_snap = run_causal_tick();
@@ -2132,54 +2401,15 @@ int main(int argc, char* argv[]) {
         g_audit.append(re_json);
     }
 
-    // Phase 1.6: Persistent local device identity (stable fingerprint across boots).
-    const std::string key_path = "caelus_identity.key";
-    CaelusIdentityHandle* local_id = caelus_identity_load_or_create(
-        reinterpret_cast<const uint8_t*>(key_path.data()), key_path.size());
-    if (!local_id) {
-        std::cout << "[WARN] Persistent identity unavailable; using ephemeral identity.\n";
-        local_id = caelus_identity_new();
+    if (neural_controller.enabled()) {
+        ProcessNeuralTick(
+            neural_controller, causal_engine, audit_session_id, det_mode);
     }
-
-    // ── Denetim Günlüğü Açılışı (R6) ─────────────────────────────────────────
-    // Production: session_id gerçek duvar saatiyle adli benzersizlik sağlar.
-    // --det-mode: genesis hash CDET audit_chain_head'e girdiği için session_id
-    // sabitlenir; aksi halde iki CI koşumu farklı zincir başı üretir.
-    const uint64_t audit_session_id =
-        det_mode ? 0ULL : static_cast<uint64_t>(std::time(nullptr));
-    const std::string audit_path    = caelus::AuditLog::make_log_path(audit_session_id);
-    if (g_audit.open(local_id, audit_session_id, audit_path)) {
-        // SESSION_START: kimlik parmak izi + senaryo bilgisi
-        uint8_t fp[32] = {};
-        caelus_identity_fingerprint(local_id, fp);
-        std::ostringstream ss_start;
-        ss_start << std::hex << std::setfill('0');
-        ss_start << "{\"type\":\"SESSION_START\",\"scenario\":\"" << json_escape(scenario_id)
-                 << "\",\"sector\":\"" << json_escape(profile->region)
-                 << "\",\"fingerprint\":\"";
-        for (int i = 0; i < 32; ++i)
-            ss_start << std::setw(2) << static_cast<unsigned>(fp[i]);
-        ss_start << "\",\"det_mode\":" << (det_mode ? "true" : "false") << "}";
-        g_audit.append(ss_start.str());
-        if (awaiting_scenario && !awaiting_state_json.empty()) {
-            g_audit.append(awaiting_state_json);
-        }
-        // T-17: Yuklenen dinamik eklentileri denetim zincirine deterministik
-        // olarak isle. Buraya ulasildiysa fail-closed geregi tum '--plugin'
-        // istekleri basariyla yuklenmistir (sonuc daima "ok"). Yalniz path +
-        // sonuc kaydedilir; duvar saati/rastgelelik EKLENMEZ (T-10 korunur).
-        for (const std::string& plugin_path : plugin_paths) {
-            std::ostringstream ss_plugin;
-            ss_plugin << "{\"type\":\"PLUGIN_LOADED\",\"path\":\""
-                      << json_escape(plugin_path) << "\",\"result\":\"ok\"}";
-            g_audit.append(ss_plugin.str());
-        }
-        if (pack_loaded) {
-            // Denetim zinciri açıldıktan sonra güncel audit_active=true ve
-            // audit_chain_head bilgisini WS tamponuna yayınla.
-            emit_ws_scenario_loaded(scenario_pack);
-            emit_ws_scenario_model(scenario_pack, pack_loaded);
-        }
+    if (pack_loaded) {
+        g_emitter.emit(caelus::ws_json::engine_state(
+            "SCENARIO_ACTIVE", scenario_id, causal_engine.current_tick(),
+            causal_snap.clamped_friction_d(), causal_snap.throughput_ratio,
+            causal_snap.outage_active, causal_snap.any_hysteresis_flip));
     }
 
     // Phase 1.7: Shadow-Mesh discovery + Intel Feed bridge.
@@ -2255,6 +2485,10 @@ int main(int argc, char* argv[]) {
         // Enjekte edilen verinin graf üzerindeki etkisini 2 tick boyunca yayılır.
         for (uint32_t i = 0; i < 2; ++i) {
             causal_snap = run_causal_tick();
+            if (neural_controller.enabled()) {
+                ProcessNeuralTick(
+                    neural_controller, causal_engine, audit_session_id, det_mode);
+            }
         }
         friction_mult  = causal_snap.clamped_friction_d();
         raw_friction   = causal_snap.raw_friction_d();
@@ -2279,6 +2513,12 @@ int main(int argc, char* argv[]) {
             causal_snap.outage_active ? 3 : (regime_exceeded ? 2 : 0),
             causal_engine.current_tick());
         g_emitter.emit(fr_json);
+        if (pack_loaded) {
+            g_emitter.emit(caelus::ws_json::engine_state(
+                "SCENARIO_ACTIVE", scenario_id, causal_engine.current_tick(),
+                friction_mult, causal_snap.throughput_ratio,
+                causal_snap.outage_active, causal_snap.any_hysteresis_flip));
+        }
         // Post-intel sürtünme denetim günlüğüne (friction JSON yeterli)
         {
             std::ostringstream ss;
@@ -2325,14 +2565,13 @@ int main(int argc, char* argv[]) {
     if (interactive) {
         causal_snap = RunScenarioRepl(
             causal_engine, scenario_pack, pack_loaded, scenario_id, causal_snap,
+            &neural_controller, audit_session_id, det_mode,
             &scenario_replay_connector, scenario_replay_path);
         friction_mult       = causal_snap.clamped_friction_d();
         raw_friction        = causal_snap.raw_friction_d();
         regime_exceeded     = causal_snap.regime_exceeded;
         causal_post_intel   = friction_mult;
     }
-
-    caelus_identity_free(local_id);
 
     std::cout << "\n[OK] CAELUS OS cycle complete.\n";
 
@@ -2384,6 +2623,7 @@ int main(int argc, char* argv[]) {
         g_audit.append(ss.str());
         g_audit.seal();  // ed25519 imzası + flush
     }
+    caelus_identity_free(local_id);
 
     // Restore wall-clock after audit SEAL so --det-mode audit logs stay 100% deterministic.
     if (det_mode) {
