@@ -25,6 +25,9 @@ option(CAELUS_STATIC_BINARY
 option(CAELUS_PRODUCTION
     "Compile out development bypasses and require pinned signatures"
     OFF)
+option(CAELUS_MSVC_STATIC_CRT
+    "Use static /MT CRT on MSVC (requires RUSTFLAGS='-C target-feature=+crt-static' on caelus_network.lib)"
+    OFF)
 
 # ─── Compiler & Linker Flags (Phase 3: size-first, single static binary) ──────
 # Compiler-conditional matrix — MSVC (cl.exe) vs GCC/Clang/MinGW. Both legs target
@@ -32,23 +35,24 @@ option(CAELUS_PRODUCTION
 # static linkage. The C++ standard (/std:c++17 resp. -std=c++17) is supplied by
 # CMAKE_CXX_STANDARD above for both toolchains.
 if(MSVC)
-    # Static CRT (/MT) → no VCRUNTIME140.dll / msvcp140.dll dependency, keeping a
-    # single portable file. Only takes effect with CMP0091 NEW (set at the top).
-    # NOTE: a fully clean /MT link expects the Rust MSVC staticlib to also be built
-    # with crt-static (RUSTFLAGS="-C target-feature=+crt-static"); the Rust side is
-    # out of this task's two-file scope — otherwise the linker reconciles the CRTs
-    # (LNK4098). See the integration note in the build report.
-    if(CAELUS_STATIC_BINARY)
+    # Match Rust x86_64-pc-windows-msvc's default /MD CRT to prevent LNK4098 /
+    # LNK2038 CRT conflicts unless CAELUS_MSVC_STATIC_CRT is explicitly enabled.
+    if(CAELUS_MSVC_STATIC_CRT)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    else()
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
     endif()
     # /O2 = speed (swap to /O1 for pure size), /GL = whole-program optimization
     # (LTO equivalent), /EHsc = standard C++ exception model, /DNDEBUG = drop
     # asserts in the release image.
     # NOTE: /GS (stack buffer-overflow canaries) is LEFT ON deliberately — the old
     # "/GS-" disabled stack canaries on a binary that parses untrusted input.
-    # /utf-8: sources are UTF-8 (Turkish string literals); /DNOMINMAX keeps
-    # windows.h from macro-clobbering std::min/max/numeric_limits.
-    add_compile_options(/O2 /GL /EHsc /utf-8 /DNOMINMAX /DNDEBUG)
+    # /utf-8: sources are UTF-8 (Turkish string literals); /DNOMINMAX +
+    # /DWIN32_LEAN_AND_MEAN keep windows.h clean and avoid winsock.h collisions.
+    add_compile_options(
+        /O2 /GL /EHsc /utf-8
+        /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /DNDEBUG
+    )
     # /LTCG pairs with /GL; /INCREMENTAL:NO + /OPT:REF + /OPT:ICF shrink the image
     # (drop unreferenced funcs/data and fold identical COMDATs).
     add_link_options(/LTCG /INCREMENTAL:NO /OPT:REF /OPT:ICF)

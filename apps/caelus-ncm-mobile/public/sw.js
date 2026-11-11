@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE = "caelus-evidence-mesh-mobile-v8";
-const CORE = ["/", "/manifest.webmanifest", "/caelus_wasm.wasm", "/favicon.svg"];
+const CORE = ["./", "./manifest.webmanifest", "./caelus_wasm.wasm", "./favicon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)).then(() => self.skipWaiting()));
@@ -29,10 +29,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok) caches.open(CACHE).then((cache) => cache.put("/", response.clone()));
+          if (response.ok) caches.open(CACHE).then((cache) => cache.put("./", response.clone()));
           return response;
         })
-        .catch(() => caches.match("/")),
+        .catch(() => caches.match("./")),
     );
     return;
   }

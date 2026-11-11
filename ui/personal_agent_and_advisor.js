@@ -4002,7 +4002,8 @@
      * Bölüm 6.5: Uygulama Kapalıyken Kaçırılan Zamanlı Çalışmaları Dürüstçe Tespit Et (`checkMissedScheduledRuns`)
      */
     function checkMissedScheduledRuns(nowIso) {
-      var nowMs = Date.parse(nowIso || new Date().toISOString()) || Date.now();
+      var fallbackNowIso = typeof opts.nowFn === 'function' ? opts.nowFn() : new Date().toISOString();
+      var nowMs = Date.parse(nowIso || fallbackNowIso) || Date.now();
       var summary = [];
       agentsById.forEach(function (ag) {
         if (!ag || ag.trigger.type !== 'APP_OPEN') return;
@@ -4040,7 +4041,10 @@
       if (!ag) throw new Error('Ajan bulunamadı: ' + agentId);
       var ctx = runContext || {};
       var startedAtMs = Date.now();
-      var startedAtIso = new Date(startedAtMs).toISOString();
+      var logicalNowMs = (typeof ctx.nowIso === 'string' && ctx.nowIso.trim().length > 0)
+        ? Date.parse(ctx.nowIso)
+        : (typeof opts.nowFn === 'function' ? Date.parse(opts.nowFn()) : NaN);
+      var startedAtIso = new Date(Number.isFinite(logicalNowMs) ? logicalNowMs : startedAtMs).toISOString();
       var auditSteps = [];
       var blockedPermissionAttempts = [];
       var securityAlerts = [];

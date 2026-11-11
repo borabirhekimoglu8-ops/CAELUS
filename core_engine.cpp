@@ -2371,8 +2371,6 @@ int main(int argc, char* argv[]) {
         std::cout << "CDET: audit_chain_head="    << g_audit.chain_head_hex()   << "\n";
         std::cout << "CDET: audit_entry_count="   << g_audit.entries()          << "\n";
         std::cout << "CDET: BLOCK_END\n";
-        // Restore wall-clock for any code that runs after this point.
-        caelus_clock_use_real();
     }
 
     // SESSION_END kaydı + denetim günlüğünü mühürle (ed25519 imzası + flush).
@@ -2385,6 +2383,11 @@ int main(int argc, char* argv[]) {
            << ",\"log_path\":\"" << json_escape(g_audit.path()) << "\"}";
         g_audit.append(ss.str());
         g_audit.seal();  // ed25519 imzası + flush
+    }
+
+    // Restore wall-clock after audit SEAL so --det-mode audit logs stay 100% deterministic.
+    if (det_mode) {
+        caelus_clock_use_real();
     }
 
     // Shutdown plugin registry (calls cleanup on all registered plugins),

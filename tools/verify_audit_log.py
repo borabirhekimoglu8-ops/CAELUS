@@ -258,6 +258,30 @@ def verify_genesis(
     return session_id, expected_hash
 
 
+def env_flag_enabled(name: str) -> bool:
+    import os
+
+    val = os.environ.get(name, "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def load_signer_spec(spec: str, flag_name: str) -> bytes:
+    cleaned = spec.strip()
+    if len(cleaned) == 64:
+        try:
+            return bytes.fromhex(cleaned)
+        except ValueError:
+            pass
+    candidate = Path(cleaned)
+    if candidate.is_file():
+        for raw in candidate.read_text(encoding="utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if line:
+                return bytes.fromhex(expect_hex(line, 64, f"{flag_name} ({candidate})"))
+        raise VerificationError(f"{flag_name}: pubkey file {candidate} contains no 64-hex key")
+    return bytes.fromhex(expect_hex(cleaned, 64, flag_name))
+
+
 def verify_seal_signature(
     blake3_module: Any,
     verifier: Callable[[bytes, bytes, bytes], None],
@@ -266,7 +290,7 @@ def verify_seal_signature(
     chain_head: bytes,
     where: str,
     trusted_pubkey: bytes | None,
-) -> None:
+) -> bytes:
     seq = parse_u64(obj.get("seq"), f"{where}: seq")
     pubkey = bytes.fromhex(expect_hex(obj.get("pubkey"), 64, f"{where}: pubkey"))
     fingerprint = bytes.fromhex(expect_hex(obj.get("fingerprint"), 64, f"{where}: fingerprint"))
@@ -274,7 +298,9 @@ def verify_seal_signature(
     if fingerprint != expected_fingerprint:
         raise VerificationError(f"{where}: SEAL fingerprint does not match pubkey")
     if trusted_pubkey is not None and pubkey != trusted_pubkey:
-        raise VerificationError(f"{where}: SEAL pubkey does not match trusted pubkey")
+        raise VerificationError(
+            f"{where}: UNTRUSTED_SEAL_SIGNER: expected {trusted_pubkey.hex()}, got {pubkey.hex()}"
+        )
     signature = bytes.fromhex(expect_hex(obj.get("sig"), 128, f"{where}: sig"))
     message = (
         AUDIT_SEAL_CTX
@@ -283,6 +309,7 @@ def verify_seal_signature(
         + chain_head
     )
     verifier(pubkey, signature, message)
+    return pubkey
 
 
 def verify_segment(
@@ -293,6 +320,7 @@ def verify_segment(
     chain_only: bool,
     verbose: bool,
     trusted_pubkey: bytes | None,
+    session_state: dict[str, Any],
 ) -> bytes:
     chain_head: bytes | None = None
     session_id: int | None = None
@@ -301,7 +329,11 @@ def verify_segment(
 
     with path.open("rb") as handle:
         for line_no, raw_line in enumerate(handle, start=1):
-            raw_line = raw_line.rstrip(b"\r\n")
+            if b"\r" in raw_line:
+                raise VerificationError(
+                    f"{path}:{line_no}: CRLF_DETECTED — audit logs must use pure LF ('\\n')"
+                )
+            raw_line = raw_line.rstrip(b"\n")
             if not raw_line:
                 continue
             where = f"{path}:{line_no}"
@@ -310,6 +342,10 @@ def verify_segment(
 
             if record_type == "GENESIS":
                 if saw_seal:
+                    if session_state["open_session"]:
+                        raise VerificationError(
+                            f"{where}: new session GENESIS before previous SESSION_START closed with SESSION_END"
+                        )
                     session_id, chain_head = verify_genesis(
                         blake3_module,
                         obj,
@@ -343,6 +379,28 @@ def verify_segment(
                 actual_hash = bytes.fromhex(expect_hex(obj.get("hash"), 64, f"{where}: hash"))
                 if actual_hash != expected_hash:
                     raise VerificationError(f"{where}: EVENT hash mismatch")
+                ev_payload = obj.get("event")
+                if isinstance(ev_payload, dict):
+                    ev_type = ev_payload.get("type")
+                    if ev_type == "SESSION_START":
+                        if session_state["open_session"]:
+                            raise VerificationError(
+                                f"{where}: nested SESSION_START before SESSION_END"
+                            )
+                        fp_val = ev_payload.get("fingerprint")
+                        session_state["open_session"] = True
+                        session_state["session_fp"] = (
+                            bytes.fromhex(expect_hex(fp_val, 64, f"{where}: SESSION_START.fingerprint"))
+                            if fp_val is not None
+                            else None
+                        )
+                    elif ev_type == "SESSION_END":
+                        if not session_state["open_session"]:
+                            raise VerificationError(
+                                f"{where}: SESSION_END without preceding SESSION_START"
+                            )
+                        session_state["open_session"] = False
+                        session_state["closed_sessions"] += 1
                 chain_head = expected_hash
                 event_count += 1
                 continue
@@ -358,10 +416,9 @@ def verify_segment(
                 if not chain_only:
                     if verifier is None:
                         raise VerificationError(
-                            "SEAL verification requires 'cryptography' or 'pynacl'. "
-                            "Use --chain-only to skip ed25519 signature verification."
+                            "SEAL verification requires 'cryptography' or 'pynacl' (or use Rust caelus_verify_audit)."
                         )
-                    verify_seal_signature(
+                    pubkey = verify_seal_signature(
                         blake3_module,
                         verifier,
                         obj,
@@ -370,6 +427,18 @@ def verify_segment(
                         where,
                         trusted_pubkey,
                     )
+                    if session_state["session_fp"] is not None:
+                        expected_fp = blake3_digest(blake3_module, pubkey)
+                        if session_state["session_fp"] != expected_fp:
+                            raise VerificationError(
+                                f"{where}: UNTRUSTED_SEAL_SIGNER: SEAL fingerprint does not match SESSION_START fingerprint"
+                            )
+                    prev_signer = session_state["signer"]
+                    if prev_signer is not None and prev_signer != pubkey:
+                        raise VerificationError(
+                            f"{where}: UNTRUSTED_SEAL_SIGNER: inconsistent signer across SEAL records"
+                        )
+                    session_state["signer"] = pubkey
                 saw_seal = True
                 continue
 
@@ -381,7 +450,7 @@ def verify_segment(
         raise VerificationError(f"{path}: missing SEAL record")
 
     if verbose:
-        print(f"ok: {path} events={event_count} chain_head={chain_head.hex()}")
+        print(f"ok: {path} events={event_count} chain_head={chain_head.hex()}", file=sys.stderr)
     return chain_head
 
 
@@ -390,28 +459,63 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("logfile", type=Path, help="base log file path")
     parser.add_argument("--chain-only", action="store_true", help="skip ed25519 SEAL signatures")
     parser.add_argument(
+        "--expect-signer",
+        dest="expect_signer",
+        help="32-byte ed25519 public key pin (64-hex or pubkey file path) expected in every SEAL",
+    )
+    parser.add_argument(
         "--trusted-pubkey-hex",
-        help="optional 32-byte ed25519 public key pin expected in every SEAL",
+        dest="trusted_pubkey_hex",
+        help="alias for --expect-signer (64-hex or pubkey file path)",
+    )
+    parser.add_argument(
+        "--print-signer",
+        action="store_true",
+        help="verify chain + SEAL signatures and print the 64-hex signer pubkey",
     )
     parser.add_argument("--verbose", action="store_true", help="print per-segment details")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str]) -> int:
+    import os
+
     args = parse_args(argv)
     try:
+        prod_mode = env_flag_enabled("CAELUS_PRODUCTION")
+        signer_spec = (
+            args.expect_signer
+            or args.trusted_pubkey_hex
+            or os.environ.get("CAELUS_AUDIT_EXPECT_SIGNER", "").strip()
+            or None
+        )
+        if prod_mode and args.chain_only:
+            raise VerificationError(
+                "UNTRUSTED_SEAL_SIGNER: --chain-only is forbidden when CAELUS_PRODUCTION=1"
+            )
+        if prod_mode and not args.print_signer and signer_spec is None:
+            raise VerificationError(
+                "UNTRUSTED_SEAL_SIGNER: --expect-signer pin is mandatory when CAELUS_PRODUCTION=1"
+            )
+        if args.print_signer and args.chain_only:
+            raise VerificationError("--print-signer cannot be combined with --chain-only")
+
         segments = discover_segments(args.logfile)
         blake3_module = load_blake3()
         verifier_info = load_ed25519_verifier()
         verifier = verifier_info[0] if verifier_info else None
         if verifier_info and args.verbose and not args.chain_only:
-            print(f"ed25519 verifier: {verifier_info[1]}")
+            print(f"ed25519 verifier: {verifier_info[1]}", file=sys.stderr)
         trusted_pubkey = None
-        if args.trusted_pubkey_hex:
-            trusted_pubkey = bytes.fromhex(
-                expect_hex(args.trusted_pubkey_hex, 64, "--trusted-pubkey-hex")
-            )
+        if signer_spec:
+            trusted_pubkey = load_signer_spec(signer_spec, "--expect-signer")
 
+        session_state: dict[str, Any] = {
+            "open_session": False,
+            "session_fp": None,
+            "closed_sessions": 0,
+            "signer": None,
+        }
         previous_head: bytes | None = None
         for segment in segments:
             previous_head = verify_segment(
@@ -422,12 +526,22 @@ def main(argv: list[str]) -> int:
                 args.chain_only,
                 args.verbose,
                 trusted_pubkey,
+                session_state,
             )
-        print(f"OK: verified {len(segments)} segment(s), final_chain_head={previous_head.hex()}")
+        if session_state["open_session"]:
+            raise VerificationError(
+                f"{args.logfile}: unclosed SESSION_START (missing SESSION_END before final SEAL)"
+            )
+        if args.print_signer:
+            if session_state["signer"] is None:
+                raise VerificationError("no SEAL signer verified")
+            print(session_state["signer"].hex())
+        else:
+            print(f"OK: verified {len(segments)} segment(s), final_chain_head={previous_head.hex()}")
         return 0
     except VerificationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        return 3 if "UNTRUSTED_SEAL_SIGNER" in str(exc) else 1
 
 
 if __name__ == "__main__":

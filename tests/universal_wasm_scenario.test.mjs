@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 await import('../ui/scenario_compiler.js');
 const compiler = globalThis.CaelusScenarioCompiler;
 
-const wasmPath = new URL('../caelus_wasm/target/wasm32-unknown-unknown/release/caelus_wasm.wasm', import.meta.url);
+const wasmCandidates = [
+  new URL('../target/wasm32-unknown-unknown/release/caelus_wasm.wasm', import.meta.url),
+  new URL('../caelus_wasm/target/wasm32-unknown-unknown/release/caelus_wasm.wasm', import.meta.url),
+  new URL('../dist/caelus_wasm.wasm', import.meta.url),
+];
+const wasmPath = wasmCandidates.find(url => existsSync(url)) ?? wasmCandidates[0];
 const wasmBytes = await readFile(wasmPath);
 
 async function bootWith(text, ticks) {

@@ -587,7 +587,7 @@ test('P2 & P3 (Bölüm 6 & 7): Kişisel Ajan Varsayılan Kapalı İzinler, Kalı
     allowed_sources: ['wikidata'],
     entities: ['TSMC']
   });
-  const firstRun = studio1.runAgent(savedAgent.agent_id, {});
+  const firstRun = studio1.runAgent(savedAgent.agent_id, { nowIso: '2026-11-10T00:01:00.000Z' });
   assert.equal(firstRun.status, 'COMPLETED');
 
   // Yeni stüdyo örneği aynı storageAdapter ile açıldığında ajan ve çalışma geçmişi korunmalı

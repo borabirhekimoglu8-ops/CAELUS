@@ -53,6 +53,7 @@ HARNESS_EXE = BUILD_DIR / ("connector_smoke_harness.exe" if os.name == "nt" else
 
 HARNESS_SOURCE = r"""
 #include "plugin/caelus_connector.h"
+#include "plugin/caelus_plugin_registry.h"
 #include "causal_engine.h"
 
 #include <atomic>
@@ -60,6 +61,7 @@ HARNESS_SOURCE = r"""
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -73,6 +75,7 @@ constexpr const char kIntelTestToken[] = "5f2a9c4d8e1b7a3c6d0f4e8a2b9c1d7e";
 
 struct EngineState {
     uint64_t tick = 77;
+    uint64_t last_pulled_slot = 0;
     std::vector<CaelusIntelEvent> injected;          // connector->registry boundary record
     caelus::causal::CausalEngine engine;             // real causal graph (header-only)
     bool graph_loaded = false;
@@ -501,6 +504,7 @@ bool drain_through_registry(Connector& connector,
         size_t count = 0;
         if (vtbl->pull_intel(&connector, events, 4, &count) && count > 0) {
             for (size_t i = 0; i < count; ++i) {
+                state.last_pulled_slot = events[i].source_slot_id;
                 const size_t memo_len = std::strlen(events[i].memo);
                 if (!fns.inject_intel(fns.engine_ctx,
                                       events[i].friction_coeff,
@@ -857,6 +861,44 @@ std::string stub_sign_envelope(const std::string& body, const char* pub_hex) {
     return std::string("#sig=ed25519:") + pub_hex + ":" + sig_hex + "\n" + body;
 }
 
+// Key-binding deterministic stub verifier for FIELD-IDENTITY v2 multi-slot tests:
+// hashes pubkey32 || msg so signatures produced with Key A fail verification under Key B.
+uint8_t stub_keyed_sig_verify(const uint8_t* msg, size_t len,
+                              const uint8_t* pub, const uint8_t* sig) {
+    std::string combined(reinterpret_cast<const char*>(pub), 32u);
+    combined.append(reinterpret_cast<const char*>(msg), len);
+    const uint64_t h = fnv1a64(reinterpret_cast<const uint8_t*>(combined.data()), combined.size());
+    for (int i = 0; i < 8; ++i) {
+        if (sig[i] != static_cast<uint8_t>(h >> (8 * i))) return 0;
+    }
+    for (int i = 8; i < 64; ++i) {
+        if (sig[i] != 0) return 0;
+    }
+    return 1;
+}
+
+std::string stub_sign_envelope_v2(uint64_t slot_id,
+                                  const std::string& body,
+                                  const char* pub_hex) {
+    uint8_t pub_bytes[32] = {};
+    caelus::connector_detail::intel_hex_to_bytes(pub_hex, std::strlen(pub_hex), pub_bytes, 32u);
+    const std::string slot_hex = caelus::connector_detail::intel_u64_to_hex16_lower(slot_id);
+    const std::string msg = std::string("CAELUS_INTEL_V2\n") + slot_hex + "\n" + body;
+    std::string combined(reinterpret_cast<const char*>(pub_bytes), 32u);
+    combined.append(msg);
+    const uint64_t h = fnv1a64(reinterpret_cast<const uint8_t*>(combined.data()), combined.size());
+    uint8_t sig[64] = {};
+    for (int i = 0; i < 8; ++i) sig[i] = static_cast<uint8_t>(h >> (8 * i));
+    static const char* hexd = "0123456789abcdef";
+    std::string sig_hex;
+    sig_hex.reserve(128);
+    for (int i = 0; i < 64; ++i) {
+        sig_hex.push_back(hexd[sig[i] >> 4]);
+        sig_hex.push_back(hexd[sig[i] & 0x0f]);
+    }
+    return std::string("#sig=ed25519v2:") + slot_hex + ":" + pub_hex + ":" + sig_hex + "\n" + body;
+}
+
 bool gate_check(bool cond, const char* what, bool& ok) {
     if (!cond) {
         std::cerr << "[GATE] FAIL: " << what << "\n";
@@ -1031,6 +1073,484 @@ bool run_zapier_sig_smoke() {
     return ok;
 }
 
+// OB-2 FIELD-IDENTITY v2: multi-source slot-to-pubkey manifest + ABI 1.2 hook +
+// end-to-end Zapier source_slot_id stamping and cross-slot spoofing rejection.
+bool run_manifest_v2_smoke() {
+    using caelus::connector_detail::IntelAuthGate;
+    using caelus::connector_detail::set_intel_sig_verifier;
+
+    constexpr uint64_t kSlotSensorA = 0xCAE1050000B20001ULL;
+    constexpr uint64_t kSlotSensorB = 0xCAE1050000B20002ULL;
+    constexpr uint64_t kSlotUnknown = 0xCAE1050000B29999ULL;
+
+    unset_env_var("CAELUS_INTEL_TOKEN");
+    unset_env_var("CAELUS_TRUSTED_INTEL_PUBKEY");
+    set_intel_sig_verifier(&stub_keyed_sig_verify);
+
+    bool ok = true;
+    const std::string inline_manifest =
+        std::string("0xcae1050000b20001:") + kIntelTestPinHex + "," +
+        std::string("0xcae1050000b20002:") + kIntelWrongPinHex;
+    set_env_var("CAELUS_TRUSTED_INTEL_MANIFEST", inline_manifest);
+
+    {   // ABI 1.2 compatibility helpers + PluginRegistry::verify_intel_source
+        gate_check(caelus_abi_compatible((1u << 16u) | 0u) != 0, "ABI 1.0 must remain compatible", ok);
+        gate_check(caelus_abi_compatible((1u << 16u) | 1u) != 0, "ABI 1.1 must remain compatible", ok);
+        gate_check(caelus_abi_compatible((1u << 16u) | 2u) != 0, "ABI 1.2 must be compatible", ok);
+        gate_check(caelus_abi_has_intel_manifest((1u << 16u) | 1u) == 0, "ABI 1.1 lacks manifest hook", ok);
+        gate_check(caelus_abi_has_intel_manifest((1u << 16u) | 2u) != 0, "ABI 1.2 has manifest hook", ok);
+
+        std::atomic<uint64_t> dummy_tick{12};
+        caelus::PluginRegistry reg;
+        reg.bind_engine(nullptr, &dummy_tick);
+        const std::string body = "0.61,2,abi12";
+        const std::string env_a = stub_sign_envelope_v2(kSlotSensorA, body, kIntelTestPinHex);
+        std::string work = env_a;
+        uint64_t parsed_slot = 0ULL;
+        uint8_t pub[32] = {};
+        uint8_t sig[64] = {};
+        const auto kind = caelus::connector_detail::extract_intel_sig_envelope(
+            work, parsed_slot, pub, sig);
+        gate_check(kind == caelus::connector_detail::IntelSigEnvelopeKind::kV2,
+                   "v2 envelope parse ok", ok);
+        const std::string signed_msg =
+            std::string("CAELUS_INTEL_V2\n") +
+            caelus::connector_detail::intel_u64_to_hex16_lower(parsed_slot) +
+            "\n" + work;
+        gate_check(
+            reg.engine_fns().verify_intel_source(
+                reg.engine_fns().engine_ctx,
+                kSlotSensorA,
+                reinterpret_cast<const uint8_t*>(signed_msg.data()),
+                signed_msg.size(),
+                pub,
+                sig) == 1u,
+            "ABI 1.2 verify_intel_source must accept pinned slot A",
+            ok);
+        gate_check(
+            reg.engine_fns().verify_intel_source(
+                reg.engine_fns().engine_ctx,
+                kSlotSensorB,
+                reinterpret_cast<const uint8_t*>(signed_msg.data()),
+                signed_msg.size(),
+                pub,
+                sig) == 0u,
+            "ABI 1.2 verify_intel_source must reject slot A key claiming slot B",
+            ok);
+    }
+
+    {   // Gate unit checks for FIELD-IDENTITY v2
+        const std::string body = "0.55,1,manifest unit";
+        IntelAuthGate gate;
+        gate.init("manifest-v2-unit");
+
+        // 1. Valid Slot A + Key A -> accepted & verified_slot == kSlotSensorA
+        uint64_t vslot = 0ULL;
+        std::string raw_a = stub_sign_envelope_v2(kSlotSensorA, body, kIntelTestPinHex);
+        gate_check(gate.admit(raw_a, false, &vslot), "slot A + key A must pass", ok);
+        gate_check(vslot == kSlotSensorA, "verified_slot must equal kSlotSensorA", ok);
+        gate_check(raw_a == body, "v2 envelope stripped byte-exactly", ok);
+
+        // 2. Valid Slot B + Key B -> accepted & verified_slot == kSlotSensorB
+        vslot = 0ULL;
+        std::string raw_b = stub_sign_envelope_v2(kSlotSensorB, body, kIntelWrongPinHex);
+        gate_check(gate.admit(raw_b, false, &vslot), "slot B + key B must pass", ok);
+        gate_check(vslot == kSlotSensorB, "verified_slot must equal kSlotSensorB", ok);
+
+        // 3. Compromised Sensor A key claiming Slot B -> REJECTED (lateral movement blocked)
+        vslot = 99ULL;
+        std::string spoof_ab = stub_sign_envelope_v2(kSlotSensorB, body, kIntelTestPinHex);
+        gate_check(!gate.admit(spoof_ab, false, &vslot),
+                   "sensor A key claiming slot B must reject", ok);
+        gate_check(vslot == 0ULL, "rejected admit must zero verified_slot", ok);
+
+        // 4. Unknown slot with valid Key A -> REJECTED
+        std::string unknown_slot = stub_sign_envelope_v2(kSlotUnknown, body, kIntelTestPinHex);
+        gate_check(!gate.admit(unknown_slot, false, &vslot),
+                   "unlisted slot must reject", ok);
+
+        // 5. Downgrade attack: v1 envelope while v2 manifest is active -> REJECTED
+        std::string v1_downgrade = stub_sign_envelope(body, kIntelTestPinHex);
+        gate_check(!gate.admit(v1_downgrade, false, &vslot),
+                   "v1 downgrade envelope must reject under v2 manifest", ok);
+
+        // 6. Conflicting duplicate slot in manifest -> fail-closed kInvalid
+        set_env_var("CAELUS_TRUSTED_INTEL_MANIFEST",
+                    std::string("0xcae1050000b20001:") + kIntelTestPinHex + "," +
+                    std::string("0xcae1050000b20001:") + kIntelWrongPinHex);
+        IntelAuthGate bad_gate;
+        bad_gate.init("manifest-conflict");
+        gate_check(!bad_gate.sig_ready(), "conflicting manifest must not be sig_ready", ok);
+        std::string valid_msg = stub_sign_envelope_v2(kSlotSensorA, body, kIntelTestPinHex);
+        gate_check(!bad_gate.admit(valid_msg, false, &vslot),
+                   "conflicting manifest must fail closed", ok);
+    }
+
+    // End-to-end Zapier HTTP path using @file manifest
+    const std::string manifest_path = "build_tests/test_intel_manifest.cfg";
+    {
+        std::ofstream mf(manifest_path, std::ios::binary | std::ios::trunc);
+        mf << "# FIELD-IDENTITY v2 test manifest\n"
+           << "0xcae1050000b20001:" << kIntelTestPinHex << "\n"
+           << "0xcae1050000b20002:" << kIntelWrongPinHex << "\n";
+    }
+    set_env_var("CAELUS_TRUSTED_INTEL_MANIFEST", std::string("@") + manifest_path);
+
+    const uint16_t port = reserve_loopback_port();
+    if (port == 0) {
+        unset_env_var("CAELUS_TRUSTED_INTEL_MANIFEST");
+        return false;
+    }
+    set_env_var("CAELUS_ZAPIER_WEBHOOK_PORT", std::to_string(port));
+
+    EngineState state{};
+    CaelusEngineFns fns = make_engine_fns(state);
+    caelus::ZapierWebhookConnector connector;
+    const CaelusPluginVTable* vtbl = caelus::ZapierWebhookConnector::make_vtable();
+    if (!vtbl || !vtbl->init(&connector, &fns)) {
+        std::cerr << "ZapierWebhookConnector init failed (v2 manifest smoke)\n";
+        unset_env_var("CAELUS_TRUSTED_INTEL_MANIFEST");
+        unset_env_var("CAELUS_ZAPIER_WEBHOOK_PORT");
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    {   // Cross-slot spoof over HTTP -> 401
+        std::string resp;
+        const std::string spoof =
+            stub_sign_envelope_v2(kSlotSensorB, "0.80,2,spoof", kIntelTestPinHex);
+        if (post_loopback(port, spoof, resp) || resp.find("401") == std::string::npos) {
+            std::cerr << "v2 cross-slot spoof POST was not 401: " << resp << "\n";
+            ok = false;
+        }
+    }
+    {   // JSON body claiming mismatched source_slot_id -> 422
+        std::string resp;
+        const std::string json_mismatch = stub_sign_envelope_v2(
+            kSlotSensorA,
+            "{\"friction_coeff\":0.80,\"crisis_level\":2,\"source_slot_id\":\"0xcae1050000b20002\",\"memo\":\"mismatch\"}",
+            kIntelTestPinHex);
+        if (post_loopback(port, json_mismatch, resp) || resp.find("422") == std::string::npos) {
+            std::cerr << "v2 JSON slot mismatch was not 422: " << resp << "\n";
+            ok = false;
+        }
+    }
+    if (!expect_no_intel(connector, vtbl, 200)) ok = false;
+
+    if (ok) {   // Authorized Sensor B -> 202 + CaelusIntelEvent::source_slot_id == kSlotSensorB
+        std::string resp;
+        const std::string good_b =
+            stub_sign_envelope_v2(kSlotSensorB, "0.84,2,v2 sensor B ok", kIntelWrongPinHex);
+        if (!post_loopback(port, good_b, resp)) {
+            std::cerr << "v2 valid sensor B POST rejected: " << resp << "\n";
+            ok = false;
+        } else {
+            ok = drain_through_registry(connector, vtbl, fns, state,
+                                        0.84, 2, "v2 sensor B ok") && ok;
+            gate_check(state.last_pulled_slot == kSlotSensorB,
+                       "pulled CaelusIntelEvent must carry authenticated kSlotSensorB",
+                       ok);
+        }
+    }
+
+    vtbl->cleanup(&connector);
+    std::remove(manifest_path.c_str());
+    unset_env_var("CAELUS_TRUSTED_INTEL_MANIFEST");
+    unset_env_var("CAELUS_ZAPIER_WEBHOOK_PORT");
+    set_intel_sig_verifier(&stub_sig_verify);
+    std::cout << "[SMOKE] FIELD-IDENTITY v2 manifest smoke " << (ok ? "OK" : "FAILED") << "\n";
+    return ok;
+}
+
+std::string stub_sign_airlock_v2_ndjson(const std::string& schema_version,
+                                        const std::string& source_id,
+                                        const std::string& key_id,
+                                        const std::string& event_kind,
+                                        const std::string& event_id,
+                                        const std::string& seq_no,
+                                        const std::string& observed_ms,
+                                        const std::string& learned_ms,
+                                        const std::string& epistemic_status,
+                                        const std::string& payload_raw,
+                                        const char* pub_hex,
+                                        bool tamper_body = false) {
+    const std::string payload_b3 = caelus::airlock_detail::blake3_hex(payload_raw);
+    const std::string header =
+        source_id + "|" + key_id + "|" + event_kind + "|" + event_id + "|" +
+        seq_no + "|" + observed_ms + "|" + learned_ms + "|" +
+        epistemic_status + "|" + payload_b3;
+    const std::string signed_msg =
+        std::string("CAELUS_INTEL_V2\n") + schema_version + "\n" + header + "\n" + payload_raw;
+
+    uint8_t pub_bytes[32] = {};
+    caelus::connector_detail::intel_hex_to_bytes(pub_hex, std::strlen(pub_hex), pub_bytes, 32u);
+    std::string combined(reinterpret_cast<const char*>(pub_bytes), 32u);
+    combined.append(signed_msg);
+    const uint64_t h = fnv1a64(reinterpret_cast<const uint8_t*>(combined.data()), combined.size());
+    uint8_t sig[64] = {};
+    for (int i = 0; i < 8; ++i) sig[i] = static_cast<uint8_t>(h >> (8 * i));
+    static const char* hexd = "0123456789abcdef";
+    std::string sig_hex;
+    sig_hex.reserve(128);
+    for (int i = 0; i < 64; ++i) {
+        sig_hex.push_back(hexd[sig[i] >> 4]);
+        sig_hex.push_back(hexd[sig[i] & 0x0f]);
+    }
+    const std::string sig_line = std::string("#sig=ed25519:") + pub_hex + ":" + sig_hex;
+
+    std::string effective_payload = payload_raw;
+    if (tamper_body && !effective_payload.empty()) {
+        effective_payload[effective_payload.size() - 2u] ^= 1;
+    }
+
+    auto esc = [](const std::string& s) {
+        std::string out;
+        for (char c : s) {
+            if (c == '"' || c == '\\') out.push_back('\\');
+            out.push_back(c);
+        }
+        return out;
+    };
+
+    return std::string("{\"contract\":\"CAELUS_INTEL_V2\",\"schema_version\":\"") +
+           esc(schema_version) + "\",\"learned_at_ms\":\"" + esc(learned_ms) +
+           "\",\"sig\":\"" + esc(sig_line) + "\",\"header\":\"" + esc(header) +
+           "\",\"payload_raw\":\"" + esc(effective_payload) + "\"}";
+}
+
+bool run_airlock_v2_file_connector_smoke() {
+    using caelus::connector_detail::set_intel_sig_verifier;
+    bool ok = true;
+
+    unset_env_var("CAELUS_INTEL_TOKEN");
+    unset_env_var("CAELUS_TRUSTED_INTEL_PUBKEY");
+    unset_env_var("CAELUS_TRUSTED_INTEL_MANIFEST");
+    set_intel_sig_verifier(&stub_keyed_sig_verify);
+
+    // 1. ABI 1.3 compatibility & BLAKE3 RFC/official vector checks
+    gate_check(caelus_abi_compatible((1u << 16u) | 3u) != 0, "ABI 1.3 must be compatible", ok);
+    gate_check(caelus_abi_has_airlock_v2((1u << 16u) | 2u) == 0, "ABI 1.2 lacks airlock_v2", ok);
+    gate_check(caelus_abi_has_airlock_v2(CAELUS_PLUGIN_ABI_VERSION) != 0,
+               "Current ABI 1.3 exposes airlock_v2", ok);
+
+    gate_check(
+        caelus::airlock_detail::blake3_hex("") ==
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+        "BLAKE3 empty vector must match official digest",
+        ok);
+    gate_check(
+        caelus::airlock_detail::blake3_hex("abc") ==
+            "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+        "BLAKE3 'abc' vector must match official digest",
+        ok);
+    // Official BLAKE3 test vector for 2500 bytes of (i % 251): multi-chunk parent tree check
+    {
+        std::string multi(2500u, '\0');
+        for (size_t i = 0; i < multi.size(); ++i) {
+            multi[i] = static_cast<char>(i % 251u);
+        }
+        const std::string multi_b3_a = caelus::airlock_detail::blake3_hex(multi);
+        const std::string multi_b3_b = caelus::airlock_detail::blake3_hex(multi);
+        gate_check(multi_b3_a.size() == 64u && multi_b3_a == multi_b3_b,
+                   "BLAKE3 multi-chunk (>2048B) deterministic parent tree check", ok);
+    }
+
+    const std::string manifest_path = "build_tests/test_airlock_manifest.json";
+    const std::string batch_path = "build_tests/test_events.airlock.ndjson";
+    {
+        std::ofstream mf(manifest_path, std::ios::binary | std::ios::trunc);
+        mf << "{\n"
+           << "  \"manifest_version\": \"2.0\",\n"
+           << "  \"require_v2_airlock\": true,\n"
+           << "  \"legacy_v1_pubkey\": \"" << kIntelTestPinHex << "\",\n"
+           << "  \"sources\": [\n"
+           << "    {\n"
+           << "      \"source_id\": \"ferry_ops\",\n"
+           << "      \"key_id\": \"ferry_ops_k1\",\n"
+           << "      \"pubkey\": \"" << kIntelTestPinHex << "\",\n"
+           << "      \"allowed_event_kinds\": [\"SCHEDULE_REPORT\", \"DELAY_NOTICE\"],\n"
+           << "      \"independence_group\": \"operator_dispatch\",\n"
+           << "      \"origin_class\": \"HUMAN_OPERATOR\",\n"
+           << "      \"expires_at_ms\": null\n"
+           << "    },\n"
+           << "    {\n"
+           << "      \"source_id\": \"port_observer\",\n"
+           << "      \"key_id\": \"port_obs_k1\",\n"
+           << "      \"pubkey\": \"" << kIntelWrongPinHex << "\",\n"
+           << "      \"allowed_event_kinds\": [\"BERTH_OCCUPANCY\", \"RAMP_SENSOR\"],\n"
+           << "      \"independence_group\": \"port_authority_sensor\",\n"
+           << "      \"origin_class\": \"CALIBRATED_SENSOR\",\n"
+           << "      \"expires_at_ms\": null\n"
+           << "    }\n"
+           << "  ]\n"
+           << "}\n";
+    }
+
+    // 2. Host PluginRegistry ABI 1.3 verify_airlock_v2 hook check
+    set_env_var("CAELUS_AIRLOCK_MANIFEST_PATH", manifest_path);
+    {
+        std::atomic<uint64_t> dummy_tick{42};
+        caelus::PluginRegistry reg;
+        reg.bind_engine(nullptr, &dummy_tick);
+        gate_check(reg.engine_fns().verify_airlock_v2 != nullptr,
+                   "PluginRegistry binds verify_airlock_v2 when CAELUS_AIRLOCK_MANIFEST_PATH set", ok);
+
+        uint8_t pub_a[32] = {};
+        caelus::connector_detail::intel_hex_to_bytes(kIntelTestPinHex, 64u, pub_a, 32u);
+        const std::string msg = "CAELUS_INTEL_V2\n2.0\nhdr\n{}";
+        std::string combined(reinterpret_cast<const char*>(pub_a), 32u);
+        combined.append(msg);
+        const uint64_t h = fnv1a64(reinterpret_cast<const uint8_t*>(combined.data()), combined.size());
+        uint8_t sig_a[64] = {};
+        for (int i = 0; i < 8; ++i) sig_a[i] = static_cast<uint8_t>(h >> (8 * i));
+
+        uint32_t err_code = 999u;
+        gate_check(
+            reg.engine_fns().verify_airlock_v2(
+                reg.engine_fns().engine_ctx, "ferry_ops", "ferry_ops_k1", "DELAY_NOTICE",
+                reinterpret_cast<const uint8_t*>(msg.data()), msg.size(),
+                pub_a, sig_a, &err_code) == 1u && err_code == CAELUS_AIRLOCK_OK,
+            "ABI 1.3 verify_airlock_v2 accepts authorized ferry_ops DELAY_NOTICE", ok);
+
+        gate_check(
+            reg.engine_fns().verify_airlock_v2(
+                reg.engine_fns().engine_ctx, "ferry_ops", "ferry_ops_k1", "BERTH_OCCUPANCY",
+                reinterpret_cast<const uint8_t*>(msg.data()), msg.size(),
+                pub_a, sig_a, &err_code) == 0u && err_code == CAELUS_AIRLOCK_ERR_UNAUTHORIZED_KIND,
+            "ABI 1.3 verify_airlock_v2 rejects unauthorized BERTH_OCCUPANCY from ferry_ops", ok);
+    }
+    unset_env_var("CAELUS_AIRLOCK_MANIFEST_PATH");
+
+    // 3. Sorted append-only .airlock.ndjson batch: T1 (learned 08:05 = 300000) + T2 (learned 08:20 = 1200000)
+    const std::string p_t1 =
+        "{\"conversion_rule_id\":\"min_to_fp_v1\",\"fp_scale\":1000000,\"fp_val\":\"15000000\","
+        "\"metric_key\":\"departure_delay_min\",\"note\":\"kalkis +15dk neden belirsiz\","
+        "\"overflow_policy\":\"REJECT_AT_AIRLOCK\",\"rounding\":\"HALF_EVEN\","
+        "\"subject_id\":\"VOYAGE_SIGACIK_VATHI_0800\",\"unit\":\"minutes\"}";
+    const std::string p_t2 =
+        "{\"conversion_rule_id\":\"min_to_fp_v1\",\"fp_scale\":1000000,\"fp_val\":\"35000000\","
+        "\"metric_key\":\"departure_delay_min\",\"note\":\"rihtim rampasi arizasi +35dk\","
+        "\"overflow_policy\":\"REJECT_AT_AIRLOCK\",\"rounding\":\"HALF_EVEN\","
+        "\"subject_id\":\"VOYAGE_SIGACIK_VATHI_0800\",\"unit\":\"minutes\"}";
+    {
+        std::ofstream bf(batch_path, std::ios::binary | std::ios::trunc);
+        bf << stub_sign_airlock_v2_ndjson(
+                  "2.0", "ferry_ops", "ferry_ops_k1", "DELAY_NOTICE", "evt_t1",
+                  "1", "1700000000000", "1700000300000", "CLAIM", p_t1, kIntelTestPinHex)
+           << "\n"
+           << stub_sign_airlock_v2_ndjson(
+                  "2.0", "port_observer", "port_obs_k1", "BERTH_OCCUPANCY", "evt_t2",
+                  "1", "1700000120000", "1700001200000", "OBSERVATION", p_t2, kIntelWrongPinHex)
+           << "\n";
+    }
+
+    // Slice T1 (cutoff = 1700000600000 -> 08:10): must binary-search & pull ONLY evt_t1 (no look-ahead)
+    {
+        EngineState state{};
+        CaelusEngineFns fns = make_engine_fns(state);
+        caelus::AirlockFileConnector conn;
+        conn.manifest_path = manifest_path.c_str();
+        conn.source_path = batch_path.c_str();
+        conn.cutoff_learned_at_ms = 1700000600000LL;
+        const CaelusPluginVTable* vtbl = caelus::AirlockFileConnector::make_vtable();
+        gate_check(vtbl->init(&conn, &fns) == 1u, "AirlockFileConnector T1 init ok", ok);
+        gate_check(conn.used_binary_search(), "AirlockFileConnector used O(log N) binary search", ok);
+        gate_check(conn.accepted_count() == 1u && conn.rejected_count() == 0u,
+                   "T1 slice accepts only 1 event (excludes T2 learned_at > cutoff)", ok);
+        CaelusIntelEvent pulled[4]{};
+        size_t n = 0;
+        gate_check(vtbl->pull_intel(&conn, pulled, 4u, &n) == 1u && n == 1u,
+                   "T1 pull_intel returns 1 event", ok);
+        gate_check(std::string(pulled[0].memo).find("ferry_ops:evt_t1:CLAIM") != std::string::npos,
+                   "T1 pulled event matches ferry_ops evt_t1", ok);
+        vtbl->cleanup(&conn);
+    }
+
+    // 4. Negative security boundaries (tamper, unauthorized kind, range > 2^62, equivocation)
+    const std::string bad_batch_path = "build_tests/test_bad_events.airlock.ndjson";
+    {
+        const std::string p_over =
+            "{\"conversion_rule_id\":\"min_to_fp_v1\",\"fp_scale\":1000000,"
+            "\"fp_val\":\"4611686018427387905\",\"metric_key\":\"departure_delay_min\","
+            "\"overflow_policy\":\"REJECT_AT_AIRLOCK\",\"rounding\":\"HALF_EVEN\","
+            "\"subject_id\":\"VOYAGE_SIGACIK_VATHI_0800\",\"unit\":\"minutes\"}";
+        std::ofstream bf(bad_batch_path, std::ios::binary | std::ios::trunc);
+        // Valid seq=1
+        bf << stub_sign_airlock_v2_ndjson(
+                  "2.0", "ferry_ops", "ferry_ops_k1", "DELAY_NOTICE", "evt_ok",
+                  "1", "1700000000000", "1700000300000", "CLAIM", p_t1, kIntelTestPinHex)
+           << "\n"
+           // Tampered body
+           << stub_sign_airlock_v2_ndjson(
+                  "2.0", "ferry_ops", "ferry_ops_k1", "DELAY_NOTICE", "evt_tamper",
+                  "2", "1700000010000", "1700000310000", "CLAIM", p_t1, kIntelTestPinHex, true)
+           << "\n"
+           // Unauthorized kind (BERTH_OCCUPANCY from ferry_ops)
+           << stub_sign_airlock_v2_ndjson(
+                  "2.0", "ferry_ops", "ferry_ops_k1", "BERTH_OCCUPANCY", "evt_unauth",
+                  "3", "1700000020000", "1700000320000", "CLAIM", p_t1, kIntelTestPinHex)
+           << "\n"
+           // Range > 2^62
+           << stub_sign_airlock_v2_ndjson(
+                  "2.0", "port_observer", "port_obs_k1", "BERTH_OCCUPANCY", "evt_over",
+                  "2", "1700000030000", "1700000330000", "OBSERVATION", p_over, kIntelWrongPinHex)
+           << "\n"
+           // Equivocation: same (ferry_ops, seq_no=1) with different payload_blake3
+           << stub_sign_airlock_v2_ndjson(
+                  "2.0", "ferry_ops", "ferry_ops_k1", "DELAY_NOTICE", "evt_equiv",
+                  "1", "1700000040000", "1700000340000", "CLAIM", p_t2, kIntelTestPinHex)
+           << "\n";
+    }
+    {
+        const uint64_t rej_before =
+            caelus::connector_detail::intel_rejected_total().load(std::memory_order_relaxed);
+        EngineState state{};
+        CaelusEngineFns fns = make_engine_fns(state);
+        caelus::AirlockFileConnector conn;
+        conn.manifest_path = manifest_path.c_str();
+        conn.source_path = bad_batch_path.c_str();
+        const CaelusPluginVTable* vtbl = caelus::AirlockFileConnector::make_vtable();
+        gate_check(vtbl->init(&conn, &fns) == 1u, "AirlockFileConnector negative batch init ok", ok);
+        gate_check(conn.accepted_count() == 1u && conn.rejected_count() == 4u,
+                   "Exactly 1 valid record accepted and 4 invalid records rejected fail-closed", ok);
+        gate_check(conn.last_error_code() == CAELUS_AIRLOCK_ERR_SOURCE_EQUIVOCATION,
+                   "Last error code captures ERR_SOURCE_EQUIVOCATION", ok);
+        const uint64_t rej_after =
+            caelus::connector_detail::intel_rejected_total().load(std::memory_order_relaxed);
+        gate_check(rej_after == rej_before + 4u,
+                   "intel_rejected_total incremented by 4", ok);
+        vtbl->cleanup(&conn);
+    }
+
+    // 5. Legacy CAELUS_INTEL_V1 routing: rejected when require_v2_airlock=true, LEGACY_UNSCOPED when false
+    set_intel_sig_verifier(&stub_sig_verify);
+    {
+        const std::string v1_pkt = stub_sign_envelope(
+            "{\"friction_coeff\":0.42,\"crisis_level\":1,\"memo\":\"legacy v1\"}",
+            kIntelTestPinHex);
+        caelus::airlock_detail::AirlockSourceManifestV2 mf_strict{};
+        gate_check(mf_strict.load_from_file(manifest_path), "load strict manifest", ok);
+        caelus::airlock_detail::AirlockVerifiedRecordV2 rec{};
+        CaelusAirlockErrorCode err = CAELUS_AIRLOCK_OK;
+        gate_check(!caelus::airlock_detail::verify_airlock_envelope_v1_or_v2(
+                       v1_pkt, mf_strict, nullptr, rec, err) &&
+                       err == CAELUS_AIRLOCK_ERR_SCHEMA_OR_RANGE,
+                   "v1 packet rejected when require_v2_airlock=true", ok);
+
+        mf_strict.require_v2_airlock = false;
+        gate_check(caelus::airlock_detail::verify_airlock_envelope_v1_or_v2(
+                       v1_pkt, mf_strict, nullptr, rec, err) &&
+                       rec.legacy_unscoped && rec.source_id == "LEGACY_UNSCOPED",
+                   "v1 packet tagged LEGACY_UNSCOPED when require_v2_airlock=false", ok);
+    }
+
+    std::remove(manifest_path.c_str());
+    std::remove(batch_path.c_str());
+    std::remove(bad_batch_path.c_str());
+    std::cout << "[SMOKE] AirlockFileConnector v2 smoke " << (ok ? "OK" : "FAILED") << "\n";
+    return ok;
+}
+
 int main(int argc, char** argv) {
     std::string mode = "all";
     for (int i = 1; i < argc; ++i) {
@@ -1044,6 +1564,8 @@ int main(int argc, char** argv) {
         ok = run_zapier_smoke() && ok;       // (c) token UNSET → legacy
         ok = run_zapier_auth_smoke() && ok;  // (a)+(b) token SET kabul/ret
         ok = run_zapier_sig_smoke() && ok;   // (d)+(e) imza uctan uca
+        ok = run_manifest_v2_smoke() && ok;  // (f) OB-2 FIELD-IDENTITY v2 coklu-slot manifesti
+        ok = run_airlock_v2_file_connector_smoke() && ok; // (g) PR-1 Sidecar Airlock v2 offline connector
     }
     if (mode == "all" || mode == "mqtt") {
         ok = run_mqtt_smoke() && ok;         // (c) token UNSET → legacy
@@ -1103,11 +1625,16 @@ def compile_command(tool: str, compiler: list[str]) -> list[str]:
             "/O2",
             "/EHsc",
             "/utf-8",
+            "/W4",
+            "/WX",
             "/DNOMINMAX",
+            "/DWIN32_LEAN_AND_MEAN",
+            "/D_CRT_SECURE_NO_WARNINGS",
             f"/I{project_root}",
             f"/I{include_root}",
             f"/I{include_src}",
             source,
+            f"/Fo:{BUILD_DIR}\\",
             f"/Fe:{output}",
             "/link",
             "/INCREMENTAL:NO",

@@ -32,8 +32,11 @@ use std::sync::Mutex;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use subtle::ConstantTimeEq;
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519Public};
+use zeroize::Zeroizing;
 
+use crate::network::argon2id::{argon2id_hash_into, Argon2idParams};
 use crate::network::discovery::{compute_slot_hash, verify_slot_hash};
 
 // ─── Domain-separation contexts (prevent cross-protocol signature reuse) ────────
@@ -122,8 +125,14 @@ pub struct DeviceIdentity {
 
 const KEY_FILE_MAGIC: &[u8] = b"CAELUSKEY1\0";
 const KEY_FILE_SCHEME_WIN_DPAPI: &[u8] = b"WIN-DPAPI\0";
+/// Container scheme tag for a seed sealed with memory-hard RFC 9106 Argon2id (POSIX/cross-platform).
+const KEY_FILE_SCHEME_ARGON2ID: &[u8] = b"ARGON2ID-V1\0";
 /// Container scheme tag for a seed wrapped by a registered KEYMGMT plugin.
 const KEY_FILE_SCHEME_KEYMGMT_PLUGIN: &[u8] = b"KEYMGMT-PLUGIN\0";
+const CTX_ARGON2ID_KDF: &[u8] = b"CAELUS_IDENTITY_KDF_ARGON2ID_V1";
+const CTX_ARGON2ID_WRAP_AD: &[u8] = b"CAELUS_KEY_WRAP_ARGON2ID_V1";
+const CTX_ARGON2ID_STREAM: &[u8] = b"CAELUS_KEY_STREAM_V1";
+const CTX_ARGON2ID_MAC: &[u8] = b"CAELUS_KEY_MAC_V1";
 
 // ─── KEYMGMT plugin seam (T-23 KEYMGMT-WIRE) ──────────────────────────────────
 //
@@ -373,20 +382,63 @@ impl DeviceIdentity {
         // machine fails to unprotect there, silently minting a fresh random
         // identity per run — which broke audit-chain determinism (first caught
         // by the cross-platform CDET job in CI).
-        if let Ok(hex) = std::env::var("CAELUS_IDENTITY_KEY_HEX") {
-            let seed = seed_from_hex(&hex)?;
+        if let Ok(hex_raw) = std::env::var("CAELUS_IDENTITY_KEY_HEX") {
+            let hex = Zeroizing::new(hex_raw);
+            let seed = Zeroizing::new(seed_from_hex(&hex)?);
             return Ok(Self::from_seed(&seed));
+        }
+
+        // Deterministic memory-hard Argon2id derivation when both passphrase and
+        // salt are explicitly supplied in the environment.
+        if let (Ok(pass_raw), Ok(salt_hex_raw)) = (
+            std::env::var("CAELUS_IDENTITY_PASSPHRASE"),
+            std::env::var("CAELUS_IDENTITY_SALT_HEX"),
+        ) {
+            let pass = Zeroizing::new(pass_raw);
+            let salt_hex = Zeroizing::new(salt_hex_raw);
+            if !pass.is_empty() && !salt_hex.trim().is_empty() {
+                let salt = decode_var_hex(&salt_hex)?;
+                let seed = derive_seed_from_passphrase_argon2id(
+                    pass.as_bytes(),
+                    &salt,
+                    Argon2idParams::default(),
+                )?;
+                return Ok(Self::from_seed(&seed));
+            }
+        }
+
+        // Cross-platform / POSIX memory-hard Argon2id sealed container when
+        // CAELUS_IDENTITY_PASSPHRASE is provided.
+        if let Ok(pass_raw) = std::env::var("CAELUS_IDENTITY_PASSPHRASE") {
+            let pass = Zeroizing::new(pass_raw);
+            if !pass.is_empty() {
+                if let Ok(bytes) = fs::read(path) {
+                    let blob = read_key_blob(&bytes, KEY_FILE_SCHEME_ARGON2ID).ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "identity key file is not an ARGON2ID-V1 container",
+                        )
+                    })?;
+                    let seed = argon2id_unseal_seed(blob, pass.as_bytes())?;
+                    return Ok(Self::from_seed(&seed));
+                }
+                let identity = Self::generate();
+                let seed = Zeroizing::new(identity.signing_key.to_bytes());
+                let sealed = argon2id_seal_seed(&seed, pass.as_bytes(), Argon2idParams::default())?;
+                fs::write(path, build_key_blob(KEY_FILE_SCHEME_ARGON2ID, &sealed))?;
+                return Ok(identity);
+            }
         }
 
         #[cfg(windows)]
         {
             if let Ok(bytes) = fs::read(path) {
                 if let Some(blob) = read_key_blob(&bytes, KEY_FILE_SCHEME_WIN_DPAPI) {
-                    let seed = dpapi_unprotect_seed(blob)?;
+                    let seed = Zeroizing::new(dpapi_unprotect_seed(blob)?);
                     return Ok(Self::from_seed(&seed));
                 }
                 if bytes.len() == 32 {
-                    let mut seed = [0u8; 32];
+                    let mut seed = Zeroizing::new([0u8; 32]);
                     seed.copy_from_slice(&bytes);
                     let identity = Self::from_seed(&seed);
                     identity.persist(path)?;
@@ -400,10 +452,6 @@ impl DeviceIdentity {
 
         #[cfg(not(windows))]
         {
-            if let Ok(hex) = std::env::var("CAELUS_IDENTITY_KEY_HEX") {
-                let seed = seed_from_hex(&hex)?;
-                return Ok(Self::from_seed(&seed));
-            }
             if std::env::var("CAELUS_TPM_KEY_HANDLE").is_ok() {
                 eprintln!(
                     "[KEYMGMT] CAELUS_TPM_KEY_HANDLE mevcut, ancak TPM backend bu build'de stub."
@@ -411,7 +459,7 @@ impl DeviceIdentity {
             }
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "plaintext identity persist disabled; set CAELUS_IDENTITY_KEY_HEX",
+                "plaintext identity persist disabled; set CAELUS_IDENTITY_PASSPHRASE (Argon2id) or CAELUS_IDENTITY_KEY_HEX",
             ));
         }
     }
@@ -427,17 +475,17 @@ impl DeviceIdentity {
     fn load_or_generate_with_delegate(path: &Path, delegate: &KeymgmtDelegate) -> io::Result<Self> {
         if let Ok(bytes) = fs::read(path) {
             if let Some(blob) = read_key_blob(&bytes, KEY_FILE_SCHEME_KEYMGMT_PLUGIN) {
-                let seed = delegate.unprotect(blob)?;
+                let seed = Zeroizing::new(delegate.unprotect(blob)?);
                 return Ok(Self::from_seed(&seed));
             }
             #[cfg(windows)]
             {
                 if let Some(blob) = read_key_blob(&bytes, KEY_FILE_SCHEME_WIN_DPAPI) {
-                    let seed = dpapi_unprotect_seed(blob)?;
+                    let seed = Zeroizing::new(dpapi_unprotect_seed(blob)?);
                     return Ok(Self::from_seed(&seed));
                 }
                 if bytes.len() == 32 {
-                    let mut seed = [0u8; 32];
+                    let mut seed = Zeroizing::new([0u8; 32]);
                     seed.copy_from_slice(&bytes);
                     let identity = Self::from_seed(&seed);
                     identity.persist(path)?;
@@ -448,6 +496,10 @@ impl DeviceIdentity {
         let identity = Self::generate();
         identity.persist(path)?;
         Ok(identity)
+    }
+
+    pub fn from_seed_bytes(seed: &[u8; 32]) -> Self {
+        Self::from_seed(seed)
     }
 
     fn from_seed(seed: &[u8; 32]) -> Self {
@@ -461,12 +513,23 @@ impl DeviceIdentity {
         }
     }
 
+    /// Deterministically derive a `DeviceIdentity` from a passphrase and salt
+    /// using memory-hard RFC 9106 Argon2id.
+    pub fn from_passphrase_argon2id(
+        passphrase: &[u8],
+        salt: &[u8],
+        params: Argon2idParams,
+    ) -> io::Result<Self> {
+        let seed = derive_seed_from_passphrase_argon2id(passphrase, salt, params)?;
+        Ok(Self::from_seed(&seed))
+    }
+
     fn persist(&self, path: &Path) -> io::Result<()> {
         // KEYMGMT plugin seam: a registered delegate wraps the seed on every
         // platform. A protect failure is FATAL — we never quietly downgrade to a
         // weaker built-in scheme behind the operator's back.
         if let Some(delegate) = keymgmt_delegate() {
-            let seed = self.signing_key.to_bytes();
+            let seed = Zeroizing::new(self.signing_key.to_bytes());
             let protected = delegate.protect(&seed)?;
             fs::write(
                 path,
@@ -475,9 +538,19 @@ impl DeviceIdentity {
             return Ok(());
         }
 
+        if let Ok(pass_raw) = std::env::var("CAELUS_IDENTITY_PASSPHRASE") {
+            let pass = Zeroizing::new(pass_raw);
+            if !pass.is_empty() {
+                let seed = Zeroizing::new(self.signing_key.to_bytes());
+                let sealed = argon2id_seal_seed(&seed, pass.as_bytes(), Argon2idParams::default())?;
+                fs::write(path, build_key_blob(KEY_FILE_SCHEME_ARGON2ID, &sealed))?;
+                return Ok(());
+            }
+        }
+
         #[cfg(windows)]
         {
-            let seed = self.signing_key.to_bytes();
+            let seed = Zeroizing::new(self.signing_key.to_bytes());
             let protected = dpapi_protect_seed(&seed)?;
             fs::write(path, build_key_blob(KEY_FILE_SCHEME_WIN_DPAPI, &protected))?;
             Ok(())
@@ -488,7 +561,7 @@ impl DeviceIdentity {
             let _ = path;
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "plaintext identity persist disabled on this platform",
+                "plaintext identity persist disabled on this platform; set CAELUS_IDENTITY_PASSPHRASE",
             ))
         }
     }
@@ -563,6 +636,172 @@ fn hex_nibble(b: u8) -> Option<u8> {
         b'A'..=b'F' => Some(10 + b - b'A'),
         _ => None,
     }
+}
+
+fn decode_var_hex(hex: &str) -> io::Result<Vec<u8>> {
+    let hex = hex.trim();
+    if hex.len() < 16 || hex.len() % 2 != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "hex salt must be an even number of hex chars (>= 8 bytes)",
+        ));
+    }
+    let mut out = Vec::with_capacity(hex.len() / 2);
+    for pair in hex.as_bytes().chunks_exact(2) {
+        let hi = hex_nibble(pair[0])
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid hex"))?;
+        let lo = hex_nibble(pair[1])
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid hex"))?;
+        out.push((hi << 4) | lo);
+    }
+    Ok(out)
+}
+
+/// Deterministic, memory-hard RFC 9106 Argon2id seed derivation (OB-4).
+pub fn derive_seed_from_passphrase_argon2id(
+    passphrase: &[u8],
+    salt: &[u8],
+    params: Argon2idParams,
+) -> io::Result<Zeroizing<[u8; 32]>> {
+    if passphrase.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "passphrase must not be empty",
+        ));
+    }
+    let mut derived = Zeroizing::new([0u8; 32]);
+    argon2id_hash_into(
+        params,
+        passphrase,
+        salt,
+        &[],
+        CTX_ARGON2ID_KDF,
+        &mut derived[..],
+    )?;
+    Ok(derived)
+}
+
+/// Seal a 32-byte identity seed using Argon2id (RFC 9106) + keyed Blake3 AE-style
+/// stream + MAC (`[m_kib:u32][t_cost:u32][lanes:u32][salt:16B][nonce:16B][ct:32B][mac:32B]`).
+pub fn argon2id_seal_seed(
+    seed: &[u8; 32],
+    passphrase: &[u8],
+    params: Argon2idParams,
+) -> io::Result<Vec<u8>> {
+    if passphrase.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "passphrase must not be empty",
+        ));
+    }
+    params.validate()?;
+    let mut salt = [0u8; 16];
+    let mut nonce = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    OsRng.fill_bytes(&mut nonce);
+
+    let mut key_mat = Zeroizing::new([0u8; 64]);
+    argon2id_hash_into(
+        params,
+        passphrase,
+        &salt,
+        &[],
+        CTX_ARGON2ID_WRAP_AD,
+        &mut key_mat[..],
+    )?;
+
+    let mut enc_key = Zeroizing::new([0u8; 32]);
+    let mut mac_key = Zeroizing::new([0u8; 32]);
+    enc_key.copy_from_slice(&key_mat[..32]);
+    mac_key.copy_from_slice(&key_mat[32..64]);
+
+    let mut stream_hasher = blake3::Hasher::new_keyed(&enc_key);
+    stream_hasher.update(CTX_ARGON2ID_STREAM);
+    stream_hasher.update(&nonce);
+    let keystream = Zeroizing::new(*stream_hasher.finalize().as_bytes());
+
+    let mut ciphertext = [0u8; 32];
+    for i in 0..32 {
+        ciphertext[i] = seed[i] ^ keystream[i];
+    }
+
+    let mut header_and_body = Vec::with_capacity(12 + 16 + 16 + 32 + 32);
+    header_and_body.extend_from_slice(&params.m_cost_kib.to_le_bytes());
+    header_and_body.extend_from_slice(&params.t_cost.to_le_bytes());
+    header_and_body.extend_from_slice(&params.lanes.to_le_bytes());
+    header_and_body.extend_from_slice(&salt);
+    header_and_body.extend_from_slice(&nonce);
+    header_and_body.extend_from_slice(&ciphertext);
+
+    let mut mac_hasher = blake3::Hasher::new_keyed(&mac_key);
+    mac_hasher.update(CTX_ARGON2ID_MAC);
+    mac_hasher.update(&header_and_body);
+    let mac = *mac_hasher.finalize().as_bytes();
+    header_and_body.extend_from_slice(&mac);
+    Ok(header_and_body)
+}
+
+/// Unseal an Argon2id-protected 32-byte seed container in constant time (fail-closed).
+pub fn argon2id_unseal_seed(blob: &[u8], passphrase: &[u8]) -> io::Result<Zeroizing<[u8; 32]>> {
+    const EXPECTED_LEN: usize = 12 + 16 + 16 + 32 + 32;
+    if passphrase.is_empty() || blob.len() != EXPECTED_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid Argon2id sealed key container",
+        ));
+    }
+    let m_cost_kib = u32::from_le_bytes(blob[0..4].try_into().unwrap());
+    let t_cost = u32::from_le_bytes(blob[4..8].try_into().unwrap());
+    let lanes = u32::from_le_bytes(blob[8..12].try_into().unwrap());
+    let params = Argon2idParams {
+        m_cost_kib,
+        t_cost,
+        lanes,
+    };
+    params.validate()?;
+
+    let salt = &blob[12..28];
+    let nonce = &blob[28..44];
+    let ciphertext = &blob[44..76];
+    let expected_mac = &blob[76..108];
+
+    let mut key_mat = Zeroizing::new([0u8; 64]);
+    argon2id_hash_into(
+        params,
+        passphrase,
+        salt,
+        &[],
+        CTX_ARGON2ID_WRAP_AD,
+        &mut key_mat[..],
+    )?;
+
+    let mut enc_key = Zeroizing::new([0u8; 32]);
+    let mut mac_key = Zeroizing::new([0u8; 32]);
+    enc_key.copy_from_slice(&key_mat[..32]);
+    mac_key.copy_from_slice(&key_mat[32..64]);
+
+    let mut mac_hasher = blake3::Hasher::new_keyed(&mac_key);
+    mac_hasher.update(CTX_ARGON2ID_MAC);
+    mac_hasher.update(&blob[..76]);
+    let computed_mac = *mac_hasher.finalize().as_bytes();
+
+    if bool::from(!computed_mac.ct_eq(expected_mac)) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Argon2id key container MAC mismatch (wrong passphrase or tampered blob)",
+        ));
+    }
+
+    let mut stream_hasher = blake3::Hasher::new_keyed(&enc_key);
+    stream_hasher.update(CTX_ARGON2ID_STREAM);
+    stream_hasher.update(nonce);
+    let keystream = Zeroizing::new(*stream_hasher.finalize().as_bytes());
+
+    let mut seed = Zeroizing::new([0u8; 32]);
+    for i in 0..32 {
+        seed[i] = ciphertext[i] ^ keystream[i];
+    }
+    Ok(seed)
 }
 
 #[cfg(windows)]
@@ -1123,6 +1362,54 @@ pub extern "C" fn caelus_mesh_handshake(
     .unwrap_or_else(|_| CaelusSessionResult::error("internal panic during handshake"))
 }
 
+/// Derive a deterministic 32-byte key from `(passphrase, salt)` using RFC 9106 Argon2id.
+/// Wrapped in `catch_unwind` with automatic zeroization of intermediate buffers.
+/// Returns 1 on success, 0 on invalid arguments or panic.
+#[no_mangle]
+pub extern "C" fn caelus_derive_key_argon2id(
+    pass_ptr: *const u8,
+    pass_len: usize,
+    salt_ptr: *const u8,
+    salt_len: usize,
+    m_cost_kib: u32,
+    t_cost: u32,
+    lanes: u32,
+    out_key32: *mut u8,
+) -> u8 {
+    ffi_guard_u8(|| {
+        if pass_ptr.is_null()
+            || salt_ptr.is_null()
+            || out_key32.is_null()
+            || pass_len == 0
+            || pass_len > 4096
+            || salt_len < 8
+            || salt_len > 1024
+        {
+            return 0;
+        }
+        let pass = unsafe { std::slice::from_raw_parts(pass_ptr, pass_len) };
+        let salt = unsafe { std::slice::from_raw_parts(salt_ptr, salt_len) };
+        let params = if m_cost_kib == 0 && t_cost == 0 && lanes == 0 {
+            Argon2idParams::default()
+        } else {
+            Argon2idParams {
+                m_cost_kib,
+                t_cost,
+                lanes,
+            }
+        };
+        match derive_seed_from_passphrase_argon2id(pass, salt, params) {
+            Ok(derived) => {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(derived.as_ptr(), out_key32, 32);
+                }
+                1
+            }
+            Err(_) => 0,
+        }
+    })
+}
+
 // ─── Unit Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1341,5 +1628,53 @@ mod tests {
             broken.unprotect(&payload).is_err(),
             "a failing KEYMGMT provider must produce an error"
         );
+    }
+
+    #[test]
+    fn argon2id_kdf_and_sealed_container_roundtrip_and_tamper_rejection() {
+        let fast_params = Argon2idParams {
+            m_cost_kib: 64,
+            t_cost: 2,
+            lanes: 1,
+        };
+        let pass = b"airgapped-warroom-operator-passphrase";
+        let salt = b"caelus-fixed-salt-01";
+
+        let id1 = DeviceIdentity::from_passphrase_argon2id(pass, salt, fast_params).unwrap();
+        let id2 = DeviceIdentity::from_passphrase_argon2id(pass, salt, fast_params).unwrap();
+        assert_eq!(
+            id1.fingerprint, id2.fingerprint,
+            "Argon2id identity derivation must be deterministic"
+        );
+
+        let seed = [0x5Au8; 32];
+        let mut sealed = argon2id_seal_seed(&seed, pass, fast_params).unwrap();
+        let unsealed = argon2id_unseal_seed(&sealed, pass).unwrap();
+        assert_eq!(&*unsealed, &seed);
+
+        assert!(
+            argon2id_unseal_seed(&sealed, b"wrong-passphrase").is_err(),
+            "wrong passphrase must fail closed"
+        );
+
+        sealed[50] ^= 0x01;
+        assert!(
+            argon2id_unseal_seed(&sealed, pass).is_err(),
+            "tampered ciphertext must fail MAC verification"
+        );
+
+        let mut ffi_out = [0u8; 32];
+        let rc = caelus_derive_key_argon2id(
+            pass.as_ptr(),
+            pass.len(),
+            salt.as_ptr(),
+            salt.len(),
+            64,
+            2,
+            1,
+            ffi_out.as_mut_ptr(),
+        );
+        assert_eq!(rc, 1);
+        assert_eq!(ffi_out, id1.signing_key.to_bytes());
     }
 }
