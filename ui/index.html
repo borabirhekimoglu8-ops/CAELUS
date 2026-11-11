@@ -3,14 +3,21 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#040812">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CAELUS">
   <title>CAELUS — Yaşayan Dijital Evren ve Karar Platformu</title>
-  <link rel="stylesheet" href="/vendor/cesium/Widgets/widgets.css">
-  <link rel="stylesheet" href="/vendor/vis-timeline/vis-timeline-graph2d.min.css">
-  <link rel="stylesheet" href="/vendor/open-props/open-props.caelus.min.css">
-  <link rel="stylesheet" href="/vendor/webawesome/caelus-webawesome.css">
-  <link rel="stylesheet" href="/vendor/maplibre-gl/maplibre-gl.css">
-  <link rel="stylesheet" href="/vendor/carbon-charts/styles.min.css">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./assets/caelus-symbol.svg">
+  <link rel="apple-touch-icon" href="./assets/caelus-logo.png">
+  <link rel="stylesheet" href="./vendor/cesium/Widgets/widgets.css">
+  <link rel="stylesheet" href="./vendor/vis-timeline/vis-timeline-graph2d.min.css">
+  <link rel="stylesheet" href="./vendor/open-props/open-props.caelus.min.css">
+  <link rel="stylesheet" href="./vendor/webawesome/caelus-webawesome.css">
+  <link rel="stylesheet" href="./vendor/maplibre-gl/maplibre-gl.css">
+  <link rel="stylesheet" href="./vendor/carbon-charts/styles.min.css">
   <style>
     /* ═══════════════════════════════════════════════════════════════════════════
    CAELUS — SESSİZ HOLOGRAFİ (QUIET HOLOGRAPHY) TASARIM SİSTEMİ
@@ -6358,9 +6365,12 @@ body.theme-light .linear-setting-row {
     }
 
   </style>
+  <link rel="stylesheet" href="./tokens.css">
 </head>
 
-<body data-quiet-view="dunyam" data-caelus-perf-mode="FULL">
+<body data-quiet-view="dunyam" data-caelus-perf-mode="FULL" data-ob-theme="dusk" data-c2-cockpit="active">
+
+  <div id="caelus-war-room-cockpit-shell" class="wr-cockpit-shell" role="application" aria-label="CAELUS OS 4-Bölgeli Endüstriyel Komuta Kokpiti"></div>
 
   <div class="workbench-shell">
 
@@ -7181,7 +7191,7 @@ body.theme-light .linear-setting-row {
 
             <!-- Katman 0: Eski filigran devre dışı -->
             <div class="dunyam-stage-bg-logo" id="dunyam-stage-bg-logo" aria-hidden="true">
-              <img src="/assets/caelus-logo.png" alt="" class="dunyam-stage-bg-logo-img">
+              <img src="./assets/caelus-logo.png" alt="" class="dunyam-stage-bg-logo-img">
             </div>
 
             <!-- Sahne Alt-Mod Araç Çubuğu (Varlık Ağı Arama/Filtre veya Zaman Çizgisi Tarih Kontrolü aktifken görünür) -->
@@ -12870,24 +12880,24 @@ body.theme-light .linear-setting-row {
 
   <!-- CESIUMJS 1.114.0, VIS-TIMELINE 7.7.3, FLOATING UI 1.6.12, MOTION 11.11.17, APACHE ECHARTS 5.5.1 VE 10 DEPOLU UI PAKETİ YEREL KÜTÜPHANELERİ -->
   <script>
-    window.CESIUM_BASE_URL = (location.protocol === 'file:' ? 'http://127.0.0.1:47809/vendor/cesium/' : '/vendor/cesium/');
+    window.CESIUM_BASE_URL = (location.protocol === 'file:' ? 'http://127.0.0.1:47809/vendor/cesium/' : new URL('./vendor/cesium/', location.href).href);
   </script>
-  <script src="/vendor/cesium/Cesium.js"></script>
-  <script src="/vendor/vis-timeline/vis-timeline-graph2d.min.js"></script>
-  <script src="/vendor/floating-ui/floating-ui.core.umd.min.js"></script>
-  <script src="/vendor/floating-ui/floating-ui.dom.umd.min.js"></script>
-  <script src="/vendor/motion/motion.min.js"></script>
-  <script src="/vendor/echarts/echarts.min.js"></script>
-  <script src="/vendor/lucide/lucide.min.js"></script>
-  <script src="/vendor/paper-shaders/paper-shaders.min.js"></script>
-  <script src="/vendor/theatre/theatre-core.min.js"></script>
-  <script src="/vendor/three-stack/caelus-three-stack.min.js"></script>
-  <script src="/vendor/spacekit/spacekit.js"></script>
-  <script src="/vendor/maplibre-gl/maplibre-gl.js"></script>
-  <script src="/vendor/carbon-charts/carbon-charts.min.js"></script>
-  <script src="/vendor/cytoscape/cytoscape.min.js"></script>
-  <script src="/vendor/deckgl/deckgl.min.js"></script>
-  <script src="/vendor/perspective/caelus-perspective.min.js"></script>
+  <script src="./vendor/cesium/Cesium.js"></script>
+  <script src="./vendor/vis-timeline/vis-timeline-graph2d.min.js"></script>
+  <script src="./vendor/floating-ui/floating-ui.core.umd.min.js"></script>
+  <script src="./vendor/floating-ui/floating-ui.dom.umd.min.js"></script>
+  <script src="./vendor/motion/motion.min.js"></script>
+  <script src="./vendor/echarts/echarts.min.js"></script>
+  <script src="./vendor/lucide/lucide.min.js"></script>
+  <script src="./vendor/paper-shaders/paper-shaders.min.js"></script>
+  <script src="./vendor/theatre/theatre-core.min.js"></script>
+  <script src="./vendor/three-stack/caelus-three-stack.min.js"></script>
+  <script src="./vendor/spacekit/spacekit.js"></script>
+  <script src="./vendor/maplibre-gl/maplibre-gl.js"></script>
+  <script src="./vendor/carbon-charts/carbon-charts.min.js"></script>
+  <script src="./vendor/cytoscape/cytoscape.min.js"></script>
+  <script src="./vendor/deckgl/deckgl.min.js"></script>
+  <script src="./vendor/perspective/caelus-perspective.min.js"></script>
   <!-- DETERMINİSTİK EVRENSEL SENARYO DERLEYİCİSİ VE FİNANSAL / RİSK MOTORU -->
   <script src="scenario_compiler.js"></script>
   <!-- CAELUS YAŞAYAN DÜNYA MODELİ (BITEMPORAL HAFIZA, DÜŞÜNCENİN DEĞİŞİMİ, HİPOTEZ DEFTERİ VE TİCARİ DENETİM) -->
@@ -12900,6 +12910,10 @@ body.theme-light .linear-setting-row {
   <script src="personal_agent_and_advisor.js"></script>
   <!-- CAELUS GÖRSEL EVRİM VE MEKÂNSAL ARAYÜZ MOTORU (BAŞLIKSIZ SAHNE, 8 TASARIM REFERANSI MATRİSİ VE VERİ PORTRESİ) -->
   <script src="spatial_experience.js"></script>
+  <!-- CAELUS SIDECAR AIRLOCK MCP KÖPRÜSÜ, 4 UZMAN AJAN AG-UI ORKESTRATÖRÜ VE 4-BÖLGELİ WAR ROOM KOMUTA KOKPİTİ -->
+  <script src="sidecar_airlock_mcp.js"></script>
+  <script src="war_room_ag_ui_engine.js"></script>
+  <script src="war_room_cockpit.js"></script>
   <!-- ANA UYGULAMA VE CANLI C++/RUST KÖPRÜSÜ -->
   <script src="app.js"></script>
 </body>
