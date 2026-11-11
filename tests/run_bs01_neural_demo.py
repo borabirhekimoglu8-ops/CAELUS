@@ -12,15 +12,18 @@ Ed25519/Blake3 loader while the signed scenario continues in symbolic fallback.
 from __future__ import annotations
 
 import argparse
+import contextlib
 from decimal import Decimal
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import sys
 import tempfile
-from typing import Any, Callable
+import time
+from typing import Any, Callable, Iterator
 
 try:
     from tests.run_neural_differential import run_bounded
@@ -48,6 +51,29 @@ GHOST_LINE = re.compile(
 
 class DemoFailure(RuntimeError):
     pass
+
+
+@contextlib.contextmanager
+def managed_temp_dir(prefix: str) -> Iterator[Path]:
+    directory = Path(tempfile.mkdtemp(prefix=prefix))
+    try:
+        yield directory
+    finally:
+        for attempt in range(30):
+            try:
+                if os.name == "nt":
+                    for item in directory.rglob("*"):
+                        try:
+                            os.chmod(item, stat.S_IWRITE | stat.S_IREAD)
+                        except OSError:
+                            pass
+                shutil.rmtree(directory)
+                break
+            except OSError:
+                if attempt == 29:
+                    shutil.rmtree(directory, ignore_errors=True)
+                    break
+                time.sleep(0.1)
 
 
 def read_regular(path: Path, maximum: int = MAX_FILE_BYTES) -> bytes:
@@ -272,8 +298,7 @@ def require_live_observer_evidence(output: str) -> tuple[int, ...]:
 
 
 def positive_run(binary: Path, model_directory: Path) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="caelus-bs01-neural-positive-") as temporary:
-        run_directory = Path(temporary)
+    with managed_temp_dir(prefix="caelus-bs01-neural-positive-") as run_directory:
         prepare_scenario(run_directory)
         pinned_binary = copy_executable(binary, run_directory)
         pinned_model = run_directory / "model"
@@ -419,8 +444,7 @@ def negative_case(
     *,
     remove_weights: bool = False,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix=f"caelus-neural-negative-{label}-") as temporary:
-        run_directory = Path(temporary)
+    with managed_temp_dir(prefix=f"caelus-neural-negative-{label}-") as run_directory:
         prepare_scenario(run_directory)
         pinned_binary = copy_executable(binary, run_directory)
         model_directory = run_directory / "model"

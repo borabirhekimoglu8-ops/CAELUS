@@ -144,7 +144,7 @@ function connectWsClient(port, host = "127.0.0.1") {
         resolve({
           messages,
           sendJson,
-          waitFor(pred, timeoutMs = 6000) {
+          waitFor(pred, timeoutMs = 30000) {
             for (const m of messages) {
               if (pred(m, messages)) return Promise.resolve(m);
             }

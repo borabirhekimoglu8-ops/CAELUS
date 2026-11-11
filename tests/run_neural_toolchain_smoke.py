@@ -117,7 +117,9 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     try:
         signer = require_signer(args.signer_binary)
-        with tempfile.TemporaryDirectory(prefix="caelus-neural-toolchain-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="caelus-neural-toolchain-", ignore_cleanup_errors=True
+        ) as temporary:
             work = Path(temporary)
             dataset = work / "dataset.jsonl"
             dataset_manifest = work / "dataset.manifest.json"

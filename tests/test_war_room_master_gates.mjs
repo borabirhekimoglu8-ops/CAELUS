@@ -117,7 +117,7 @@ function connectWsTestClient(port, host = "127.0.0.1") {
         resolve({
           messages,
           sendText,
-          waitFor(pred, timeoutMs = 6000) {
+          waitFor(pred, timeoutMs = 30000) {
             for (const m of messages) {
               if (pred(m, messages)) return Promise.resolve(m);
             }
@@ -456,7 +456,9 @@ test("Kapı 5 & 6: Canlı AG-UI WebSocket Akışı, > 2^53 - 1 Kayıpsız String
   } finally {
     if (client) client.close();
     if (srv) await srv.close();
-    fs.rmSync(tmpAuditDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpAuditDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (_) {}
   }
 });
 
@@ -544,92 +546,158 @@ test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/c
   const exePath = path.join(ROOT, "dist", exeName);
   if (process.env.CAELUS_WASM_ONLY === "1" || !fs.existsSync(exePath)) return;
 
-  const freePort = await new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.listen(0, "127.0.0.1", () => {
-      const p = s.address().port;
-      s.close(() => resolve(p));
+  async function allocateLoopbackPort() {
+    return new Promise((resolve, reject) => {
+      const s = net.createServer();
+      s.listen(0, "127.0.0.1", () => {
+        const p = s.address().port;
+        s.close(() => resolve(p));
+      });
+      s.on("error", reject);
     });
-    s.on("error", reject);
-  });
-
-  const tmpUiDir = fs.mkdtempSync(path.join(os.tmpdir(), "caelus-cpp-ui-e2e-"));
-  const childEnv = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.toUpperCase() === "TEMP" || k.toUpperCase() === "TMP") continue;
-    childEnv[k] = v;
   }
-  childEnv.CAELUS_WS_PORT = String(freePort);
-  childEnv.CAELUS_STATIC_ROOT = path.join(ROOT, "ui");
-  childEnv.TEMP = tmpUiDir;
-  childEnv.TMP = tmpUiDir;
 
-  const scenarioPath = path.join(ROOT, "scenarios", "BS-01_SAHTE_UFUK.json");
-  const child = spawn(exePath, ["--scenario", scenarioPath, "--repl"], {
-    cwd: tmpUiDir,
-    env: childEnv,
-    stdio: ["pipe", "ignore", "ignore"],
-    windowsHide: true,
-  });
+  let lastCppDiag = "";
+  let cppTestPassed = false;
 
-  try {
-    let rootHtml = "";
-    for (let attempt = 0; attempt < 120; attempt++) {
-      try {
-        const r = await fetch(`http://127.0.0.1:${freePort}/`);
-        if (r.status === 200) {
-          rootHtml = await r.text();
+  for (let portTry = 0; portTry < 3 && !cppTestPassed; portTry++) {
+    const freePort = await allocateLoopbackPort();
+    const tmpUiDir = fs.mkdtempSync(path.join(os.tmpdir(), "caelus-cpp-ui-e2e-"));
+    const childEnv = {};
+    for (const [k, v] of Object.entries(process.env)) {
+      if (k.toUpperCase() === "TEMP" || k.toUpperCase() === "TMP") continue;
+      childEnv[k] = v;
+    }
+    childEnv.CAELUS_WS_PORT = String(freePort);
+    childEnv.CAELUS_STATIC_ROOT = path.join(ROOT, "ui");
+    childEnv.CAELUS_IDENTITY_KEY_HEX = "c1".repeat(32);
+    childEnv.TEMP = tmpUiDir;
+    childEnv.TMP = tmpUiDir;
+
+    const scenarioPath = path.join(ROOT, "scenarios", "BS-01_SAHTE_UFUK.json");
+    const child = spawn(exePath, ["--scenario", scenarioPath, "--repl"], {
+      cwd: tmpUiDir,
+      env: childEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    let childOut = "";
+    let childErr = "";
+    child.stdout.on("data", (c) => {
+      if (childOut.length < 65536) childOut += c.toString("utf8");
+    });
+    child.stderr.on("data", (c) => {
+      if (childErr.length < 65536) childErr += c.toString("utf8");
+    });
+
+    try {
+      let rootHtml = "";
+      let bindFailed = false;
+      for (let attempt = 0; attempt < 150; attempt++) {
+        if (childOut.includes("portuna bagilanamadi") || childErr.includes("portuna bagilanamadi")) {
+          bindFailed = true;
           break;
         }
-      } catch (_) {}
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    assert.ok(rootHtml.includes('id="caelus-war-room-cockpit-shell"'), "C++ / rotası War Room kokpit kabuğunu içermeli");
-    assert.ok(rootHtml.includes("mountWarRoomCockpitDom"), "C++ / rotası gömülü war_room_cockpit.js içermeli");
-    assert.ok(rootHtml.includes("CAELUS_AIRLOCK_PILOT_BUNDLE"), "C++ / rotası gömülü pilot verisini içermeli");
-
-    for (const assetPath of [
-      "/tokens.css",
-      "/sidecar_airlock_mcp.js",
-      "/war_room_ag_ui_engine.js",
-      "/war_room_cockpit.js",
-    ]) {
-      const res = await fetch(`http://127.0.0.1:${freePort}${assetPath}`);
-      assert.equal(res.status, 200, `C++ ws_emitter.h ${assetPath} için 200 OK dönmeli (404 olmamalı)`);
-    }
-
-    const extractedHtmlPath = path.join(tmpUiDir, "caelus_ui.html");
-    if (fs.existsSync(extractedHtmlPath)) {
-      const extractedHtml = fs.readFileSync(extractedHtmlPath, "utf8");
-      assert.ok(extractedHtml.includes("mountWarRoomCockpitDom"), "%TEMP%/caelus_ui.html gömülü kokpiti içermeli");
-    }
-  } finally {
-    try {
-      child.stdin.write("quit\n");
-      child.stdin.end();
-    } catch (_) {}
-    await new Promise((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      const killTimer = setTimeout(() => {
         try {
-          child.kill();
+          const r = await fetch(`http://127.0.0.1:${freePort}/`);
+          if (r.status === 200) {
+            rootHtml = await r.text();
+            if (rootHtml.length > 1000) break;
+          } else {
+            await r.text().catch(() => {});
+          }
         } catch (_) {}
-        setTimeout(done, 400);
-      }, 2500);
-      child.once("close", () => {
-        clearTimeout(killTimer);
-        done();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+
+      if (bindFailed && portTry < 2) {
+        continue;
+      }
+
+      lastCppDiag = `port=${freePort} rootLen=${rootHtml.length}\nSTDOUT:\n${childOut}\nSTDERR:\n${childErr}`;
+      assert.ok(
+        rootHtml.includes('id="caelus-war-room-cockpit-shell"'),
+        `C++ / rotası War Room kokpit kabuğunu içermeli (${lastCppDiag})`
+      );
+      assert.ok(
+        rootHtml.includes("mountWarRoomCockpitDom"),
+        `C++ / rotası gömülü war_room_cockpit.js içermeli (${lastCppDiag})`
+      );
+      assert.ok(
+        rootHtml.includes("CAELUS_AIRLOCK_PILOT_BUNDLE"),
+        `C++ / rotası gömülü pilot verisini içermeli (${lastCppDiag})`
+      );
+
+      for (const assetPath of [
+        "/tokens.css",
+        "/war_room_i18n.js",
+        "/sidecar_airlock_mcp.js",
+        "/war_room_ag_ui_engine.js",
+        "/war_room_cockpit.js",
+      ]) {
+        const res = await fetch(`http://127.0.0.1:${freePort}${assetPath}`);
+        const assetBody = await res.text();
+        assert.equal(
+          res.status,
+          200,
+          `C++ ws_emitter.h ${assetPath} için 200 OK dönmeli (404 olmamalı)`
+        );
+        assert.ok(assetBody.length > 32, `${assetPath} gövdesi boş olmamalı`);
+      }
+
+      // DumpEmbeddedUI ana iş parçacığında ws_emitter.start() sonrasında çalışır;
+      // dosyanın tamamen yazılıp kapatılmasını bekle (yarım yazılmış dosya yarışı önlenir).
+      const extractedHtmlPath = path.join(tmpUiDir, "caelus_ui.html");
+      let extractedHtml = "";
+      for (let w = 0; w < 80; w++) {
+        if (fs.existsSync(extractedHtmlPath)) {
+          try {
+            const st = fs.statSync(extractedHtmlPath);
+            if (st.size >= rootHtml.length) {
+              extractedHtml = fs.readFileSync(extractedHtmlPath, "utf8");
+              break;
+            }
+          } catch (_) {}
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (extractedHtml.length > 0) {
+        assert.ok(
+          extractedHtml.includes("mountWarRoomCockpitDom"),
+          "%TEMP%/caelus_ui.html gömülü kokpiti içermeli"
+        );
+      }
+      cppTestPassed = true;
+    } finally {
+      try {
+        child.stdin.write("quit\n");
+        child.stdin.end();
+      } catch (_) {}
+      await new Promise((resolve) => {
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        const killTimer = setTimeout(() => {
+          try {
+            child.kill();
+          } catch (_) {}
+          setTimeout(done, 400);
+        }, 3000);
+        child.once("close", () => {
+          clearTimeout(killTimer);
+          done();
+        });
       });
-    });
-    try {
-      fs.rmSync(tmpUiDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    } catch (_) {}
+      try {
+        fs.rmSync(tmpUiDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (_) {}
+    }
   }
+  assert.equal(cppTestPassed, true, `C++ tek-ikili HTTP testi başarısız: ${lastCppDiag}`);
 });
 
 

@@ -706,6 +706,7 @@ if "!CI_PASS!"=="0" (
     echo ------------------------------------------------------------
     exit /b 0
 ) else (
+    if defined GITHUB_ACTIONS echo ::error title=CAELUS_WINDOWS_CI::ci.bat BASARISIZ ADIMLAR:!STEP_FAIL!
     echo [CI] BASARISIZ ADIMLAR:!STEP_FAIL!
     echo ------------------------------------------------------------
     exit /b 1

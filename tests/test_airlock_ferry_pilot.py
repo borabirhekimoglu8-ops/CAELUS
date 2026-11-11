@@ -248,6 +248,8 @@ class SidecarAirlockPilotTest(unittest.TestCase):
                 "--no-default-features",
                 "--edges",
                 "normal",
+                "--prefix",
+                "none",
             ],
             cwd=ROOT,
             capture_output=True,
@@ -393,7 +395,9 @@ class SidecarAirlockPilotTest(unittest.TestCase):
     # §3.4 & §6.2: İmza, Yetki, Aralık ve Equivocation Sınır Testleri
     # ─────────────────────────────────────────────────────────────────────────
     def test_airlock_security_boundaries(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="caelus_airlock_sec_") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="caelus_airlock_sec_", ignore_cleanup_errors=True
+        ) as tmp:
             wdir = Path(tmp)
             manifest_path = self._write_pilot_manifest(wdir / "source_manifest.json")
 
@@ -699,7 +703,9 @@ class SidecarAirlockPilotTest(unittest.TestCase):
         # Slice T1 cutoff: 08:10 (1700000600000) -> KANIT_YETERSİZ
         # T2 event: observed 08:02 (1700000120000 <= 08:10!), learned 08:20 (1700001200000 > 08:10!), +35 min OBSERVATION
         # Slice T2 cutoff: 08:25 (1700001500000) -> KURAL_İHLALİ
-        with tempfile.TemporaryDirectory(prefix="caelus_ferry_bitemp_") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="caelus_ferry_bitemp_", ignore_cleanup_errors=True
+        ) as tmp:
             wdir = Path(tmp)
             manifest_path = self._write_pilot_manifest(wdir / "source_manifest.json")
 
@@ -972,7 +978,9 @@ class SidecarAirlockPilotTest(unittest.TestCase):
     # §6.4: Çelişen İki Bağımsız Kaynak Koruma Testi
     # ─────────────────────────────────────────────────────────────────────────
     def test_conflicting_sources_preserved(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="caelus_airlock_conflict_") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="caelus_airlock_conflict_", ignore_cleanup_errors=True
+        ) as tmp:
             wdir = Path(tmp)
             manifest_path = self._write_pilot_manifest(wdir / "source_manifest.json")
 
@@ -1067,7 +1075,9 @@ class SidecarAirlockPilotTest(unittest.TestCase):
         self.assertIsNotNone(node_bin, "Node.js is required for MCP client test")
         assert node_bin is not None
 
-        with tempfile.TemporaryDirectory(prefix="caelus_mcp_airlock_") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="caelus_mcp_airlock_", ignore_cleanup_errors=True
+        ) as tmp:
             wdir = Path(tmp)
             manifest_path = self._write_pilot_manifest(wdir / "source_manifest.json")
 
@@ -1343,7 +1353,9 @@ class SidecarAirlockPilotTest(unittest.TestCase):
             ("VOYAGE_SEFERIHISAR_SAMOS_10", "13.0", "15.5", None), # corroborated pass
         ]
 
-        with tempfile.TemporaryDirectory(prefix="caelus_value_cmp_") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="caelus_value_cmp_", ignore_cleanup_errors=True
+        ) as tmp:
             wdir = Path(tmp)
             manifest_path = self._write_pilot_manifest(wdir / "source_manifest.json")
 

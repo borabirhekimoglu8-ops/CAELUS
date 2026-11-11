@@ -527,6 +527,11 @@ export async function startWarRoomAgUiServer(options = {}) {
 
   const localesRootDir = path.join(REPO_ROOT, "locales");
 
+  function isPathInsideRoot(rootDir, targetPath) {
+    const rel = path.relative(path.resolve(rootDir), path.resolve(targetPath));
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  }
+
   const server = http.createServer((req, res) => {
     const reqUrl = new URL(req.url || "/", `http://${host}:${port}`);
     const pathname = decodeURIComponent(reqUrl.pathname);
@@ -577,7 +582,7 @@ export async function startWarRoomAgUiServer(options = {}) {
         return;
       }
       const localeCandidate = path.resolve(localesRootDir, localeRel);
-      if (!localeCandidate.startsWith(path.resolve(localesRootDir))) {
+      if (!isPathInsideRoot(localesRootDir, localeCandidate)) {
         res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
         res.end("Forbidden");
         return;
@@ -604,7 +609,7 @@ export async function startWarRoomAgUiServer(options = {}) {
       return;
     }
     const candidate = path.resolve(uiDir, relPath);
-    if (!candidate.startsWith(path.resolve(uiDir))) {
+    if (!isPathInsideRoot(uiDir, candidate)) {
       res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("Forbidden");
       return;
@@ -739,10 +744,13 @@ export async function startWarRoomAgUiServer(options = {}) {
           }
         }
         clients.clear();
+        if (typeof server.closeAllConnections === "function") {
+          server.closeAllConnections();
+        }
         server.close(() => {
           if (!options.auditLogPath) {
             try {
-              fs.rmSync(workDir, { recursive: true, force: true });
+              fs.rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
             } catch (_) {
               // ignore
             }

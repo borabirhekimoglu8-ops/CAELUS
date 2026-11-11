@@ -194,21 +194,20 @@ const outputJs = `/**
     const roundedUnits = (abs + step / 2n) / step;
     const intPart = roundedUnits / factor;
     const fracPart = roundedUnits % factor;
-    const numVal = Number(intPart) + (decimals > 0 ? Number(fracPart) / Number(factor) : 0);
 
-    let formatted;
+    let sep = normalizeLocale(locale) === "tr" ? "," : ".";
     try {
-      formatted = new Intl.NumberFormat(getIntlLocaleTag(locale), {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      }).format(numVal);
-    } catch (_) {
-      const sep = normalizeLocale(locale) === "tr" ? "," : ".";
-      formatted =
-        decimals > 0
-          ? intPart.toString() + sep + fracPart.toString().padStart(decimals, "0")
-          : intPart.toString();
-    }
+      const parts = new Intl.NumberFormat(getIntlLocaleTag(locale)).formatToParts(1.1);
+      const decPart = parts.find((p) => p.type === "decimal");
+      if (decPart && (decPart.value === "," || decPart.value === ".")) {
+        sep = decPart.value;
+      }
+    } catch (_) {}
+
+    const formatted =
+      decimals > 0
+        ? intPart.toString() + sep + fracPart.toString().padStart(decimals, "0")
+        : intPart.toString();
     const prefix = neg ? "-" : explicitPlus ? "+" : "";
     return prefix + formatted;
   }

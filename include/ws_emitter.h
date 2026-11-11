@@ -295,6 +295,23 @@ inline bool recv_http_header(SocketFd s, std::string& out) {
     }
 }
 
+// ── Gracefully close an HTTP response socket without sending TCP RST ────────
+inline void drain_and_close_http(SocketFd s) {
+    shutdown_write(s);
+    char drain_buf[2048];
+    for (int i = 0; i < 8; ++i) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        timeval tv{0, 20000};
+        int ready = ::select((int)(s + 1), &rfds, nullptr, nullptr, &tv);
+        if (ready <= 0) break;
+        int n = (int)::recv(s, drain_buf, (int)sizeof(drain_buf), 0);
+        if (n <= 0) break;
+    }
+    close_socket(s);
+}
+
 } // namespace ws_detail
 
 
@@ -943,9 +960,10 @@ private:
         bool served_http = false;
         if (!perform_handshake(cl, served_http)) {
             if (served_http) {
-                shutdown_write(cl);
+                ws_detail::drain_and_close_http(cl);
+            } else {
+                close_socket(cl);
             }
-            close_socket(cl);
             return;
         }
 
