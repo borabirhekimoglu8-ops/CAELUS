@@ -3115,6 +3115,19 @@
             min_independent_groups_for_pass: rawArgs.min_independent_groups_for_pass,
           });
           if (toolName === "caelus_evaluate_slice") {
+            if (nodeDeps && resolvedAuditPath) {
+              const sliceAuditLine =
+                JSON.stringify({
+                  entry_kind: "AIRLOCK_SLICE_EVALUATED",
+                  scenario_id: evalRes.scenario_id,
+                  policy_id: evalRes.policy_id,
+                  cutoff_learned_at_ms: evalRes.cutoff_learned_at_ms,
+                  verdict: evalRes.verdict,
+                  state_blake3: evalRes.state_blake3,
+                  mode: "PURE_JS_BIGINT_FALLBACK",
+                }) + "\n";
+              nodeDeps.fs.appendFileSync(resolvedAuditPath, sliceAuditLine, "utf8");
+            }
             return {
               ...evalRes,
               tool: toolName,
@@ -3222,10 +3235,30 @@
           return res.parsed;
         }
       }
-      // Browser/offline fallback seal receipt
+      // Browser/WASM-only fallback seal receipt
       const localChainHead = blake3Hex(
         `CAELUS_AUDIT_LOCAL_SEAL_V1|${payload}|${sealArgs.operator_pubkey || ""}|${sealArgs.operator_sig || ""}`
       );
+      if (nodeDeps && sealArgs.audit_log_path) {
+        const ar = resolveSafeFilePath(sealArgs.audit_log_path, repoRootDir, true);
+        if (ar.ok) {
+          const fallbackLine =
+            JSON.stringify({
+              entry_kind: "OPERATOR_ACTION_CARD_APPROVED",
+              card_id: String(sealArgs.card_id || ""),
+              scenario_id: String(sealArgs.scenario_id || "AEGEAN_FERRY_01"),
+              verdict_context: String(sealArgs.verdict_context || "KURAL_İHLALİ"),
+              state_blake3: String(sealArgs.state_blake3 || ""),
+              branch_state_blake3: String(sealArgs.branch_state_blake3 || ""),
+              approved_at_ms: String(sealArgs.approved_at_ms),
+              operator_pubkey: String(sealArgs.operator_pubkey || ""),
+              operator_sig: String(sealArgs.operator_sig || ""),
+              audit_chain_head: localChainHead,
+              mode: "OFFLINE_WASM_NODE_SEAL",
+            }) + "\n";
+          nodeDeps.fs.appendFileSync(ar.resolvedPath, fallbackLine, "utf8");
+        }
+      }
       return {
         ok: true,
         card_id: String(sealArgs.card_id || ""),

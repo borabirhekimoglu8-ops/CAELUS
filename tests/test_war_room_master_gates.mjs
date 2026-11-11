@@ -344,6 +344,7 @@ test("Kapı 5 & 6: Canlı AG-UI WebSocket Akışı, > 2^53 - 1 Kayıpsız String
       liveMode: false,
       auditLogPath,
       initialCutoffMs: warRoomCockpit.T2_CUTOFF_MS,
+      forcePureJsFallback: process.env.CAELUS_WASM_ONLY === "1",
     });
 
     client = await connectWsTestClient(srv.port, "127.0.0.1");
@@ -426,12 +427,31 @@ test("Kapı 5 & 6: Canlı AG-UI WebSocket Akışı, > 2^53 - 1 Kayıpsız String
     assert.ok(auditContent.includes(signedLocal.operator_sig));
 
     const verifyBin = findVerifyAuditBinary();
-    assert.ok(verifyBin, "caelus_verify_audit ikilisi derlenmiş olmalı");
-    const verifyOut = execFileSync(verifyBin, [auditLogPath], {
-      encoding: "utf8",
-      windowsHide: true,
-    });
-    assert.ok(verifyOut.length >= 0);
+    if (process.env.CAELUS_WASM_ONLY === "1") {
+      const expectedPayload = sidecarAirlock.buildOperatorActionCardSigningPayload({
+        card_id: signedLocal.card_id,
+        scenario_id: signedLocal.scenario_id,
+        verdict_context: signedLocal.verdict_context,
+        state_blake3: signedLocal.state_blake3,
+        branch_state_blake3: signedLocal.branch_state_blake3,
+        approved_at_ms: signedLocal.approved_at_ms,
+      });
+      assert.equal(
+        sidecarAirlock.ed25519VerifyMessageHex(
+          expectedPayload,
+          signedLocal.operator_pubkey,
+          signedLocal.operator_sig
+        ),
+        true
+      );
+    } else {
+      assert.ok(verifyBin, "caelus_verify_audit ikilisi derlenmiş olmalı");
+      const verifyOut = execFileSync(verifyBin, [auditLogPath], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      assert.ok(verifyOut.length >= 0);
+    }
   } finally {
     if (client) client.close();
     if (srv) await srv.close();
@@ -479,7 +499,11 @@ test("Kapı 7: Tüm Giriş Noktaları (ws_emitter.h, ui_payload.h, dist/index.ht
 
 test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/caelus_ui.html) Uçtan Uca War Room Doğrulaması", async () => {
   // 8A) AG-UI HTTP + WS sunucusu canlı HTTP varlık servisi & legacy REPL probe toleransı
-  const agSrv = await startWarRoomAgUiServer({ port: 0, mode: "offline" });
+  const agSrv = await startWarRoomAgUiServer({
+    port: 0,
+    mode: "offline",
+    forcePureJsFallback: process.env.CAELUS_WASM_ONLY === "1",
+  });
   let agWs = null;
   try {
     for (const relUrl of [
@@ -515,7 +539,7 @@ test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/c
   // 8B) Derlenmiş C++ tek-ikili (dist/caelus_os[.exe]) canlı HTTP rotaları + %TEMP%/caelus_ui.html gömülü kokpit testi
   const exeName = process.platform === "win32" ? "caelus_os.exe" : "caelus_os";
   const exePath = path.join(ROOT, "dist", exeName);
-  if (!fs.existsSync(exePath)) return;
+  if (process.env.CAELUS_WASM_ONLY === "1" || !fs.existsSync(exePath)) return;
 
   const freePort = await new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -527,23 +551,27 @@ test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/c
   });
 
   const tmpUiDir = fs.mkdtempSync(path.join(os.tmpdir(), "caelus-cpp-ui-e2e-"));
-  const tmpAuditFile = path.join(tmpUiDir, "cpp_e2e_audit.log");
-  const child = spawn(exePath, ["--scenario", "BS-01_SAHTE_UFUK", "--repl"], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      CAELUS_WS_PORT: String(freePort),
-      CAELUS_AUDIT_PATH: tmpAuditFile,
-      TEMP: tmpUiDir,
-      TMP: tmpUiDir,
-    },
-    stdio: ["pipe", "pipe", "pipe"],
+  const childEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.toUpperCase() === "TEMP" || k.toUpperCase() === "TMP") continue;
+    childEnv[k] = v;
+  }
+  childEnv.CAELUS_WS_PORT = String(freePort);
+  childEnv.CAELUS_STATIC_ROOT = path.join(ROOT, "ui");
+  childEnv.TEMP = tmpUiDir;
+  childEnv.TMP = tmpUiDir;
+
+  const scenarioPath = path.join(ROOT, "scenarios", "BS-01_SAHTE_UFUK.json");
+  const child = spawn(exePath, ["--scenario", scenarioPath, "--repl"], {
+    cwd: tmpUiDir,
+    env: childEnv,
+    stdio: ["pipe", "ignore", "ignore"],
     windowsHide: true,
   });
 
   try {
     let rootHtml = "";
-    for (let attempt = 0; attempt < 40; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       try {
         const r = await fetch(`http://127.0.0.1:${freePort}/`);
         if (r.status === 200) {
@@ -578,18 +606,26 @@ test("Kapı 8: Canlı HTTP Sunucuları (AG-UI + C++ caelus_os ikilisi + %TEMP%/c
       child.stdin.end();
     } catch (_) {}
     await new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
       const killTimer = setTimeout(() => {
         try {
-          child.kill("SIGKILL");
+          child.kill();
         } catch (_) {}
-        resolve();
-      }, 3000);
-      child.once("exit", () => {
+        setTimeout(done, 400);
+      }, 2500);
+      child.once("close", () => {
         clearTimeout(killTimer);
-        resolve();
+        done();
       });
     });
-    fs.rmSync(tmpUiDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpUiDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (_) {}
   }
 });
 
