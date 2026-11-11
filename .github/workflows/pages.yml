@@ -42,8 +42,8 @@ jobs:
           RUSTFLAGS: "-D warnings"
         run: >-
           cargo build --release --locked
+          --manifest-path caelus_wasm/Cargo.toml
           --target wasm32-unknown-unknown
-          -p caelus_wasm
 
       - name: Validate universal scenario compiler and agent studio
         env:
@@ -58,6 +58,9 @@ jobs:
           node --check ui/discovery_value_engine.js
           node --check ui/first_real_task_engine.js
           node --check ui/personal_agent_and_advisor.js
+          node --check ui/sidecar_airlock_mcp.js
+          node --check ui/war_room_ag_ui_engine.js
+          node --check ui/war_room_cockpit.js
           node --check ui/spatial_experience.js
           node --check ui/app.js
           node --test tests/universal_scenario_compiler.test.mjs
@@ -65,6 +68,7 @@ jobs:
           node --test tests/discovery_value_engine.test.mjs
           node --test tests/first_real_task.test.mjs
           node --test tests/personal_agent_and_advisor.test.mjs
+          node --test tests/test_war_room_master_gates.mjs
           node --test tests/universal_wasm_scenario.test.mjs
 
       - name: Assemble offline-first iPhone PWA package

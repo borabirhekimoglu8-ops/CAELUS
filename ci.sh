@@ -152,7 +152,7 @@ log "Production build (CAELUS_PRODUCTION=1)"
 if [[ "$IS_WINDOWS_BASH" == "1" ]]; then
     CAELUS_PRODUCTION=1 cmd.exe //c "$(cygpath -w "$ROOT/build.bat")"
 else
-    CAELUS_PRODUCTION=1 "$ROOT/build.sh"
+    CAELUS_PRODUCTION=1 bash "$ROOT/build.sh"
 fi
 
 [[ -f "$EXE" ]] || die "missing binary: $EXE"
@@ -296,7 +296,7 @@ cargo build --release --locked --manifest-path "$(host_path "$ROOT/caelus_core/C
 
 if [[ "$IS_WINDOWS_BASH" != "1" ]]; then
     log "Mobile C ABI bridge: host build + C++ bridge test suite"
-    "$ROOT/tools/build_host_bridge.sh" --with-tests
+    bash "$ROOT/tools/build_host_bridge.sh" --with-tests
 
     if command -v swift >/dev/null 2>&1; then
         log "Mobile Swift package: build + XCTest against the real native core"
