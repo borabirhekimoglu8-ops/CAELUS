@@ -1,0 +1,13 @@
+{
+  "scenario_id": "AEGEAN_FERRY_01",
+  "policy_id": "MARITIME_SAFETY_V2",
+  "corridor": "Sigacik (TR) <-> Vathi, Samos (GR)",
+  "t1_cutoff_learned_at_ms": "1762848600000",
+  "t1_expected_verdict": "KANIT_YETERSİZ",
+  "t1_state_blake3": "0f928df78c501fcb9bd7c351d69c0088395efad5f0f3b25110f2b2be45dbd520",
+  "t2_cutoff_learned_at_ms": "1762849500000",
+  "t2_expected_verdict": "KURAL_İHLALİ",
+  "t2_state_blake3": "ff5eb3571331b01a944ae0fea3998652943cc6189b0fb96d2a564b72eece7b00",
+  "max_allowed_delay_fp": "20000000",
+  "precision_test_seq_no": "9007199254740993"
+}

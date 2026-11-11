@@ -19,10 +19,20 @@
 
 extern crate alloc;
 
+pub mod airlock;
 pub mod det_rng;
 pub mod engine;
 pub mod fp;
 
+pub use airlock::{
+    apply_slice_to_causal_engine, format_i64_decimal_ascii, format_u64_decimal_ascii,
+    ingest_verified_slice, is_within_airlock_safe_fp_range, parse_decimal_to_fp_half_even,
+    parse_i64_decimal_ascii, parse_u64_decimal_ascii, AirlockErrorCode, AirlockSliceError,
+    CausalSliceSnapshotFp, EpistemicStatus, IdempotentDuplicateRecord, OverflowPolicy,
+    PreservedSliceAssertion, RoundingMode, SliceEvaluationReport, SlicePolicy, SliceVerdict,
+    SourceConflictRecord, VerifiedAirlockEvent, AIRLOCK_FP_SAFE_MAX_ABS, AIRLOCK_FP_SCALE,
+    AIRLOCK_SCHEMA_V1_LEGACY, AIRLOCK_SCHEMA_V2,
+};
 pub use det_rng::DetRng;
 pub use engine::{
     CausalEngine, Edge, EngineSnapshot, FeedbackLoop, Hysteresis, IntelBinding, IntelBindingMode,

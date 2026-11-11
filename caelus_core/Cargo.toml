@@ -26,8 +26,3 @@ name = "caelus_core"
 name = "caelus_core_repl"
 path = "src/bin/caelus_core_repl.rs"
 required-features = ["std"]
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1

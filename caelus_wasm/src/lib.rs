@@ -37,9 +37,15 @@ impl<T> WasmGlobal<T> {
 static ENGINE: WasmGlobal<Option<CausalEngine>> = WasmGlobal::new(None);
 static SCENARIO_ID: WasmGlobal<String> = WasmGlobal::new(String::new());
 static LEVERS: WasmGlobal<Vec<PackLever>> = WasmGlobal::new(Vec::new());
+static REPLAY: WasmGlobal<ReplaySchedule> = WasmGlobal::new(ReplaySchedule::empty());
 
 const BUF_CAP: usize = 512 * 1024;
 static BUF: WasmGlobal<[u8; BUF_CAP]> = WasmGlobal::new([0u8; BUF_CAP]);
+
+const ARENA_CAP: usize = 1024 * 1024;
+static ARENA_BUF: WasmGlobal<[u8; ARENA_CAP]> = WasmGlobal::new([0u8; ARENA_CAP]);
+static ARENA_OFFSET: WasmGlobal<usize> = WasmGlobal::new(0);
+static RESULT_BUF: WasmGlobal<Vec<u8>> = WasmGlobal::new(Vec::new());
 
 #[no_mangle]
 pub extern "C" fn cae_buf() -> *mut u8 {
@@ -48,6 +54,236 @@ pub extern "C" fn cae_buf() -> *mut u8 {
 #[no_mangle]
 pub extern "C" fn cae_buf_cap() -> usize {
     BUF_CAP
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_reset_heap() {
+    unsafe {
+        *ARENA_OFFSET.get() = 0;
+        (*RESULT_BUF.get()).clear();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_alloc(len: usize) -> *mut u8 {
+    if len == 0 {
+        return unsafe { (*ARENA_BUF.get()).as_mut_ptr() };
+    }
+    let aligned_len = (len + 7) & !7;
+    unsafe {
+        let cur = *ARENA_OFFSET.get();
+        let next = match cur.checked_add(aligned_len) {
+            Some(v) if v <= ARENA_CAP => v,
+            _ => return core::ptr::null_mut(),
+        };
+        let ptr = (*ARENA_BUF.get()).as_mut_ptr().add(cur);
+        *ARENA_OFFSET.get() = next;
+        ptr
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_result_ptr() -> *const u8 {
+    unsafe { (*RESULT_BUF.get()).as_ptr() }
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_result_len() -> usize {
+    unsafe { (*RESULT_BUF.get()).len() }
+}
+
+fn load_scenario_from_str(src: &str) -> i32 {
+    let root = match Parser::new(src).parse() {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let mut eng = CausalEngine::new();
+    let levers = apply_pack(&root, &mut eng);
+    let replay = ReplaySchedule::from_root(&root);
+    let sid = {
+        let top = root.get("id").as_s();
+        if !top.is_empty() {
+            top.to_string()
+        } else {
+            root.get("meta").get("id").as_s().to_string()
+        }
+    };
+    unsafe {
+        *SCENARIO_ID.get() = sid;
+        *LEVERS.get() = levers;
+        *REPLAY.get() = replay;
+        *ENGINE.get() = Some(eng);
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_load_scenario_json(ptr: *const u8, len: usize) -> i32 {
+    if ptr.is_null() || len == 0 || len > ARENA_CAP {
+        return -1;
+    }
+    let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
+    let src = match core::str::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(_) => return -2,
+    };
+    let rc = load_scenario_from_str(src);
+    if rc == 0 {
+        // core_engine.cpp REPL load_json (tick 0 -> 1 başlangıç adımı) ile birebir hizalama
+        unsafe {
+            if let Some(eng) = (&mut *ENGINE.get()).as_mut() {
+                let now_tick = eng.current_tick();
+                (&*REPLAY.get()).dispatch_exact(eng, now_tick);
+                eng.tick();
+            }
+        }
+    }
+    rc
+}
+
+#[no_mangle]
+pub extern "C" fn wasm_compare_lever(
+    lever_ptr: *const u8,
+    lever_len: usize,
+    horizon_ticks: u32,
+    custom_seed: u64,
+) -> i32 {
+    if lever_ptr.is_null() || lever_len == 0 || lever_len > 4096 {
+        return -1;
+    }
+    let lever_bytes = unsafe { core::slice::from_raw_parts(lever_ptr, lever_len) };
+    let lever_id = match core::str::from_utf8(lever_bytes) {
+        Ok(s) => s.trim(),
+        Err(_) => return -2,
+    };
+    if lever_id.is_empty() {
+        return -1;
+    }
+
+    let (mut branch_a, mut branch_b, scenario_id, replay_events) = unsafe {
+        let eng = match (&*ENGINE.get()).as_ref() {
+            Some(e) => e,
+            None => return -3,
+        };
+        if !(&*LEVERS.get()).iter().any(|l| l.id == lever_id) {
+            return -4;
+        }
+        (
+            eng.clone(),
+            eng.clone(),
+            (*SCENARIO_ID.get()).clone(),
+            (&*REPLAY.get()).clone(),
+        )
+    };
+
+    let ticks = horizon_ticks.clamp(1, 2000);
+    let tick_start = branch_a.current_tick();
+    let effective_seed = if custom_seed != 0 {
+        custom_seed
+    } else if branch_a.prng_seed() != 0 {
+        branch_a.prng_seed().wrapping_add(tick_start)
+    } else if tick_start != 0 {
+        tick_start
+    } else {
+        1
+    };
+
+    let lever_applied_ok = branch_b.apply_lever(lever_id, effective_seed);
+    let mut snap_a = branch_a.build_snapshot();
+    let mut snap_b = branch_b.build_snapshot();
+    let mut sum_tp_a_fp: i128 = 0;
+    let mut sum_tp_b_fp: i128 = 0;
+    let mut outage_ticks_a: u32 = 0;
+    let mut outage_ticks_b: u32 = 0;
+
+    for _ in 0..ticks {
+        let ta = branch_a.current_tick();
+        let tb = branch_b.current_tick();
+        replay_events.dispatch_exact(&mut branch_a, ta);
+        replay_events.dispatch_exact(&mut branch_b, tb);
+        snap_a = branch_a.tick();
+        snap_b = branch_b.tick();
+        sum_tp_a_fp += snap_a.throughput_ratio_fp as i128;
+        sum_tp_b_fp += snap_b.throughput_ratio_fp as i128;
+        if snap_a.outage_active {
+            outage_ticks_a += 1;
+        }
+        if snap_b.outage_active {
+            outage_ticks_b += 1;
+        }
+    }
+
+    let avg_tp_a_fp = (sum_tp_a_fp / (ticks as i128)) as i64;
+    let avg_tp_b_fp = (sum_tp_b_fp / (ticks as i128)) as i64;
+    let delta_tp_fp = avg_tp_b_fp.saturating_sub(avg_tp_a_fp);
+
+    let mut o = String::with_capacity(1024);
+    o.push_str("{\"type\":\"counterfactual_result\",\"scenario_id\":\"");
+    o.push_str(&json_escape(&scenario_id));
+    o.push_str("\",\"lever_id\":\"");
+    o.push_str(&json_escape(lever_id));
+    o.push_str("\",\"lever_success\":");
+    o.push_str(if lever_applied_ok { "true" } else { "false" });
+    o.push_str(",\"seed\":");
+    push_u64(&mut o, effective_seed);
+    o.push_str(",\"tick_start\":");
+    push_u64(&mut o, tick_start);
+    o.push_str(",\"horizon_ticks\":");
+    push_u64(&mut o, ticks as u64);
+    o.push_str(",\"baseline_end_friction\":");
+    push_fp6(&mut o, snap_a.clamped_friction_fp);
+    o.push_str(",\"intervention_end_friction\":");
+    push_fp6(&mut o, snap_b.clamped_friction_fp);
+    o.push_str(",\"baseline_end_throughput\":");
+    push_fp6(&mut o, snap_a.throughput_ratio_fp);
+    o.push_str(",\"intervention_end_throughput\":");
+    push_fp6(&mut o, snap_b.throughput_ratio_fp);
+    o.push_str(",\"baseline_avg_throughput\":");
+    push_fp6(&mut o, avg_tp_a_fp);
+    o.push_str(",\"intervention_avg_throughput\":");
+    push_fp6(&mut o, avg_tp_b_fp);
+    o.push_str(",\"delta_avg_throughput\":");
+    push_fp6(&mut o, delta_tp_fp);
+    o.push_str(",\"baseline_outage_ticks\":");
+    push_u64(&mut o, outage_ticks_a as u64);
+    o.push_str(",\"intervention_outage_ticks\":");
+    push_u64(&mut o, outage_ticks_b as u64);
+    o.push_str(",\"baseline_end_outage\":");
+    o.push_str(if snap_a.outage_active { "true" } else { "false" });
+    o.push_str(",\"intervention_end_outage\":");
+    o.push_str(if snap_b.outage_active { "true" } else { "false" });
+    o.push_str(",\"branch_a\":{\"tick\":");
+    push_u64(&mut o, branch_a.current_tick());
+    o.push_str(",\"throughput_ratio\":");
+    push_fp6(&mut o, snap_a.throughput_ratio_fp);
+    o.push_str(",\"clamped_friction\":");
+    push_fp6(&mut o, snap_a.clamped_friction_fp);
+    o.push_str(",\"outage_active\":");
+    o.push_str(if snap_a.outage_active { "true" } else { "false" });
+    o.push_str(",\"deadline_missed\":");
+    o.push_str(if snap_a.any_deadline_missed { "true" } else { "false" });
+    o.push_str(",\"any_hysteresis_flip\":");
+    o.push_str(if snap_a.any_hysteresis_flip { "true" } else { "false" });
+    o.push_str("},\"branch_b\":{\"tick\":");
+    push_u64(&mut o, branch_b.current_tick());
+    o.push_str(",\"throughput_ratio\":");
+    push_fp6(&mut o, snap_b.throughput_ratio_fp);
+    o.push_str(",\"clamped_friction\":");
+    push_fp6(&mut o, snap_b.clamped_friction_fp);
+    o.push_str(",\"outage_active\":");
+    o.push_str(if snap_b.outage_active { "true" } else { "false" });
+    o.push_str(",\"deadline_missed\":");
+    o.push_str(if snap_b.any_deadline_missed { "true" } else { "false" });
+    o.push_str(",\"any_hysteresis_flip\":");
+    o.push_str(if snap_b.any_hysteresis_flip { "true" } else { "false" });
+    o.push_str("}}");
+
+    unsafe {
+        let rb = &mut *RESULT_BUF.get();
+        rb.clear();
+        rb.extend_from_slice(o.as_bytes());
+    }
+    0
 }
 
 fn buf_str(len: usize) -> String {
@@ -70,18 +306,7 @@ fn write_buf(s: &str) -> usize {
 #[no_mangle]
 pub extern "C" fn cae_load(len: usize) -> i32 {
     let src = buf_str(len);
-    let root = match Parser::new(&src).parse() {
-        Ok(j) => j,
-        Err(_) => return -1,
-    };
-    let mut eng = CausalEngine::new();
-    let levers = apply_pack(&root, &mut eng);
-    unsafe {
-        *SCENARIO_ID.get() = root.get("id").as_s().to_string();
-        *LEVERS.get() = levers;
-        *ENGINE.get() = Some(eng);
-    }
-    0
+    load_scenario_from_str(&src)
 }
 
 /// n tick ilerlet.
@@ -261,6 +486,22 @@ fn push_i64(o: &mut String, v: i64) {
     } else {
         push_u64(o, v as u64);
     }
+}
+fn push_fp6(o: &mut String, fp: i64) {
+    let abs = (fp as i128).unsigned_abs() as u64;
+    if fp < 0 && abs != 0 {
+        o.push('-');
+    }
+    let ip = abs / 1_000_000;
+    let mut frac = abs % 1_000_000;
+    push_u64(o, ip);
+    o.push('.');
+    let mut d = [0u8; 6];
+    for k in (0..6).rev() {
+        d[k] = b'0' + (frac % 10) as u8;
+        frac /= 10;
+    }
+    o.push_str(core::str::from_utf8(&d).unwrap());
 }
 fn push_f6(o: &mut String, v: f64) {
     // 6 ondalık, C++ std::fixed<<setprecision(6) ile aynı gösterim.
@@ -552,6 +793,60 @@ struct PackLever {
     success_p_fp: i64,
     cost_ticks: i32,
     lockout_ticks: i32,
+}
+
+#[derive(Clone)]
+struct ReplayIntelEvent {
+    tick: u64,
+    friction_coeff: f64,
+    crisis_level: i32,
+    memo: String,
+}
+
+#[derive(Clone)]
+struct ReplaySchedule {
+    events: Vec<ReplayIntelEvent>,
+}
+
+impl ReplaySchedule {
+    const fn empty() -> Self {
+        Self { events: Vec::new() }
+    }
+
+    fn from_root(root: &Json) -> Self {
+        let tick_minutes = root.get("meta").get("tick_minutes").as_i(15);
+        let safe_min = if tick_minutes > 0 { tick_minutes } else { 15 };
+        let tph = (60 / safe_min).max(1) as u64;
+        let mut events = Vec::new();
+        for ev in root
+            .get("v1_engine_bridge")
+            .get("intel_feed_sequence")
+            .arr()
+        {
+            let t_hour = ev.get("t_hour").as_i(0).max(0) as u64;
+            let fc = match ev.find("friction_coefficient") {
+                Some(Json::Float(f)) => *f,
+                Some(Json::Int(i)) => *i as f64,
+                _ => 0.0,
+            };
+            events.push(ReplayIntelEvent {
+                tick: t_hour.saturating_mul(tph),
+                friction_coeff: fc,
+                crisis_level: ev.get("crisis_level").as_i(0) as i32,
+                memo: ev.get("memo").as_s().to_string(),
+            });
+        }
+        events.sort_by_key(|e| e.tick);
+        Self { events }
+    }
+
+    fn dispatch_exact(&self, eng: &mut CausalEngine, now_tick: u64) {
+        for ev in &self.events {
+            if ev.tick == now_tick {
+                eng.inject_intel(ev.friction_coeff, ev.crisis_level, &ev.memo);
+            }
+        }
+    }
 }
 
 fn parse_outcome(v: &Json) -> LeverOutcome {

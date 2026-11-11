@@ -53,6 +53,26 @@ fn hex_n(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
 
+/// RFC 8259 JSON string content escaper (single-line, pure ASCII control escapes).
+pub fn escape_audit_json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                use std::fmt::Write;
+                let _ = write!(&mut out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CaelusAuditLog — ana yapı
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,6 +467,119 @@ impl CaelusAuditLog {
     }
     pub fn is_sealed(&self) -> bool {
         self.sealed
+    }
+
+    pub fn signer_pubkey_hex(&self) -> String {
+        hex_n(self.identity.verifying_key.as_bytes())
+    }
+
+    pub fn signer_fingerprint_hex(&self) -> String {
+        hex32(&self.identity.fingerprint)
+    }
+
+    /// Append a canonical `SESSION_START` record bound to this audit signer's device fingerprint.
+    pub fn append_session_start(&mut self, scenario_id: &str, det_mode: bool) -> bool {
+        let ev = format!(
+            "{{\"type\":\"SESSION_START\",\"scenario\":\"{}\",\"fingerprint\":\"{}\",\"det_mode\":{}}}",
+            escape_audit_json_str(scenario_id),
+            self.signer_fingerprint_hex(),
+            if det_mode { "true" } else { "false" }
+        );
+        self.append(&ev)
+    }
+
+    /// Append a canonical `SESSION_END` record closing `SESSION_START` before `SEAL`.
+    pub fn append_session_end(&mut self, scenario_id: &str) -> bool {
+        let ev = format!(
+            "{{\"type\":\"SESSION_END\",\"scenario\":\"{}\"}}",
+            escape_audit_json_str(scenario_id)
+        );
+        self.append(&ev)
+    }
+
+    /// Append a fail-closed Sidecar Airlock rejection (`INGEST_REJECTED` or `SECURITY_ALERT_EQUIVOCATION`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_airlock_rejection(
+        &mut self,
+        record_type: &str,
+        error_code: &str,
+        source_id: &str,
+        key_id: &str,
+        event_id: &str,
+        seq_no: u64,
+        packet_blake3_hex: &str,
+        detail: &str,
+    ) -> bool {
+        let ev = format!(
+            "{{\"type\":\"{}\",\"error_code\":\"{}\",\"source_id\":\"{}\",\"key_id\":\"{}\",\"event_id\":\"{}\",\"seq_no\":\"{}\",\"packet_blake3\":\"{}\",\"detail\":\"{}\"}}",
+            escape_audit_json_str(record_type),
+            escape_audit_json_str(error_code),
+            escape_audit_json_str(source_id),
+            escape_audit_json_str(key_id),
+            escape_audit_json_str(event_id),
+            seq_no,
+            escape_audit_json_str(packet_blake3_hex),
+            escape_audit_json_str(detail)
+        );
+        self.append(&ev)
+    }
+
+    /// Append a sealed bi-temporal slice evaluation summary (`SLICE_EVALUATION`) with all
+    /// 64-bit timestamps serialized as decimal ASCII strings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_slice_evaluation(
+        &mut self,
+        input_batch_blake3: &str,
+        cutoff_ts_ms: i64,
+        scenario_id: &str,
+        policy_id: &str,
+        engine_version: &str,
+        verdict: &str,
+        applied_rule_id: &str,
+        state_blake3: &str,
+        conflict_detected: bool,
+    ) -> bool {
+        let ev = format!(
+            "{{\"type\":\"SLICE_EVALUATION\",\"input_batch_blake3\":\"{}\",\"cutoff_ts\":\"{}\",\"scenario_id\":\"{}\",\"policy_id\":\"{}\",\"engine_version\":\"{}\",\"verdict\":\"{}\",\"applied_rule_id\":\"{}\",\"state_blake3\":\"{}\",\"conflict_detected\":{}}}",
+            escape_audit_json_str(input_batch_blake3),
+            cutoff_ts_ms,
+            escape_audit_json_str(scenario_id),
+            escape_audit_json_str(policy_id),
+            escape_audit_json_str(engine_version),
+            escape_audit_json_str(verdict),
+            escape_audit_json_str(applied_rule_id),
+            escape_audit_json_str(state_blake3),
+            if conflict_detected { "true" } else { "false" }
+        );
+        self.append(&ev)
+    }
+
+    /// Append a human-in-the-loop Ed25519-signed Action Approval Card (`OPERATOR_ACTION_CARD_APPROVED`)
+    /// binding `card_id`, `state_blake3`, `branch_state_blake3`, and the operator's Ed25519 signature.
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_operator_action_approval(
+        &mut self,
+        card_id: &str,
+        scenario_id: &str,
+        verdict_context: &str,
+        state_blake3: &str,
+        branch_state_blake3: &str,
+        operator_pubkey_hex: &str,
+        operator_sig_hex: &str,
+        approved_at_ms: i64,
+    ) -> bool {
+        let ev = format!(
+            "{{\"type\":\"OPERATOR_ACTION_CARD_APPROVED\",\"card_id\":\"{}\",\"scenario_id\":\"{}\",\"verdict_context\":\"{}\",\"state_blake3\":\"{}\",\"branch_state_blake3\":\"{}\",\"operator_pubkey\":\"{}\",\"operator_sig\":\"{}\",\"approved_at_ms\":\"{}\"}}",
+            escape_audit_json_str(card_id),
+            escape_audit_json_str(scenario_id),
+            escape_audit_json_str(verdict_context),
+            escape_audit_json_str(state_blake3),
+            escape_audit_json_str(branch_state_blake3),
+            escape_audit_json_str(operator_pubkey_hex),
+            escape_audit_json_str(operator_sig_hex),
+            approved_at_ms
+        );
+        self.append(&ev)
     }
 }
 

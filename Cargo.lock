@@ -104,10 +104,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "caelus_core"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "caelus_network"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "caelus_core",
  "ed25519-dalek",
  "proptest",
  "rand 0.8.6",
@@ -115,6 +123,13 @@ dependencies = [
  "subtle",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "caelus_wasm"
+version = "0.1.0"
+dependencies = [
+ "caelus_core",
 ]
 
 [[package]]

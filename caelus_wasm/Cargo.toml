@@ -13,10 +13,3 @@ caelus_core = { path = "../caelus_core" }
 
 [lib]
 crate-type = ["cdylib"]
-
-[profile.release]
-opt-level = "s"     # boyut (base64 gömülü olacak)
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
