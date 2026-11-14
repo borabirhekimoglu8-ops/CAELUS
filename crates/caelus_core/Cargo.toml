@@ -1,0 +1,8 @@
+[package]
+name = "caelus_core"
+version = "0.9.1"
+edition = "2021"
+publish = false
+description = "CAELUS OS Pure-Rust Synchronous & Headless Decision Core (Zero external deps)"
+
+[dependencies]

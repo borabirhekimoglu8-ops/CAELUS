@@ -1,0 +1,11 @@
+[package]
+name = "caelus_tui"
+version = "0.9.1"
+edition = "2021"
+publish = false
+description = "CAELUS OS Zero-GPU Field & SSH Terminal UI (ratatui + crossterm)"
+
+[dependencies]
+caelus_core = { path = "../caelus_core" }
+crossterm = "0.29"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }

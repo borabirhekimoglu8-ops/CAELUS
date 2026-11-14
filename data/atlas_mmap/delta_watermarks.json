@@ -1,0 +1,48 @@
+{
+  "mode": "etag_if_modified_since",
+  "last_build_unix_s": 1794695575,
+  "sources": {
+    "digitraffic_ais": {
+      "etag": "W/\"0833364a5f4749d991053d46ad895b47c\"",
+      "last_modified": "Sat, 14 Nov 2026 21:54:50 GMT",
+      "last_sync_unix_s": 1794693328,
+      "bytes": 321745,
+      "not_modified_304": true
+    },
+    "digitraffic_vessels": {
+      "etag": "W/\"0bcb466dbb14e2c76cfa90fb4e1efa6c3\"",
+      "last_modified": "Sat, 14 Nov 2026 21:54:06 GMT",
+      "last_sync_unix_s": 1794693328,
+      "bytes": 250476,
+      "not_modified_304": true
+    },
+    "eurlex_cellar_sparql": {
+      "etag": null,
+      "last_modified": null,
+      "last_sync_unix_s": 1794693328,
+      "bytes": 4593,
+      "not_modified_304": false
+    },
+    "gleif_lei_api": {
+      "etag": null,
+      "last_modified": null,
+      "last_sync_unix_s": 1794693328,
+      "bytes": 140930,
+      "not_modified_304": false
+    },
+    "opensanctions_maritime_csv": {
+      "etag": "W/\"99c42280c6eebecb6079f86ede8bc2c7\"",
+      "last_modified": "Sat, 14 Nov 2026 15:04:20 GMT",
+      "last_sync_unix_s": 1794693328,
+      "bytes": 5173073,
+      "not_modified_304": true
+    },
+    "wikidata_sparql": {
+      "etag": "wd-lines-102755",
+      "last_modified": null,
+      "last_sync_unix_s": 1794695575,
+      "bytes": 8424419,
+      "not_modified_304": true
+    }
+  }
+}

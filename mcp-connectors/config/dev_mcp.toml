@@ -1,0 +1,12 @@
+[[dev_connector]]
+id = "chrome-devtools-mcp"
+repo = "ChromeDevTools/chrome-devtools-mcp"
+purpose = "Yalnizca gelistirme/test surecinde; son kullanici runtime'ina girmez"
+
+[[dev_connector]]
+id = "playwright-mcp"
+repo = "microsoft/playwright-mcp"
+
+[[dev_connector]]
+id = "mcp-nixos"
+repo = "utensils/mcp-nixos"

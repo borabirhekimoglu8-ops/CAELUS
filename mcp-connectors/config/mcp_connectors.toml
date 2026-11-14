@@ -1,0 +1,44 @@
+[security]
+default_policy = "read_only_until_z3_and_glass_wall_approved"
+
+[[connector]]
+id = "anytype-local-e2ee"
+transport = "stdio"
+command = "caelus-mcp-anytype"
+scopes = ["objects:read", "dossiers:write_approved"]
+
+[[connector]]
+id = "documenso-signing"
+transport = "tcp"
+endpoint = "127.0.0.1:9420"
+scopes = ["contracts:prepare_envelope", "signatures:glass_wall_approved"]
+
+[[connector]]
+id = "github"
+transport = "stdio"
+command = "caelus-mcp-github"
+scopes = ["repo:read", "pr:draft_only_until_approved"]
+
+[[connector]]
+id = "google-workspace"
+transport = "stdio"
+command = "caelus-mcp-workspace"
+scopes = ["drive:read", "keep:read_write_approved", "gmail:draft_only", "calendar:read"]
+
+[[connector]]
+id = "vortex-oxigraph-xtdb"
+transport = "stdio"
+command = "caelus-mcp-local-graph"
+args = ["--memory-cap-mb", "40", "--zero-copy-rkyv"]
+
+[[connector]]
+id = "port-erp-tos"
+transport = "tcp"
+endpoint = "127.0.0.1:9410"
+scopes = ["berth_slots:read", "tariff_envelope:simulate"]
+
+[[connector]]
+id = "nmea2000-ais-vhf"
+transport = "stdio"
+command = "caelus-mcp-nmea"
+endpoint = "127.0.0.1:10110"

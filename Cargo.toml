@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/caelus_core",
+    "crates/caelus_ingest",
+    "crates/caelus_graph",
+    "crates/caelus_mcp",
+    "crates/caelus_atlas",
+    "crates/caelus_daemon",
+    "crates/caelus_ui",
+    "crates/caelus_tui",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -1,0 +1,10 @@
+[package]
+name = "caelus_daemon"
+version = "0.9.1"
+edition = "2021"
+publish = false
+description = "CAELUS OS headless zero-GPU decision daemon (<5 MiB RAM) + Sentinel + Ingest Ring sync"
+
+[dependencies]
+caelus_core = { path = "../caelus_core" }
+caelus_ingest = { path = "../caelus_ingest" }

@@ -1,0 +1,63 @@
+[delta_sync]
+mode = "etag_if_modified_since"
+memory_cap_mb = 40
+
+[[source]]
+id = "digitraffic_ais"
+url = "https://meri.digitraffic.fi/api/ais/v1/locations"
+
+[[source]]
+id = "digitraffic_vessels"
+url = "https://meri.digitraffic.fi/api/ais/v1/vessels"
+
+[[source]]
+id = "gleif_golden_copy"
+url = "https://www.gleif.org/en/lei-data/gleif-golden-copy/download-the-golden-copy"
+
+[[source]]
+id = "gleif_lei_api"
+url = "https://api.gleif.org/api/v1/lei-records?page%5Bsize%5D=50"
+
+[[source]]
+id = "openownership_bods"
+url = "https://standard.openownership.org/"
+
+[[source]]
+id = "opensanctions_maritime"
+url = "https://www.opensanctions.org/datasets/"
+
+[[source]]
+id = "opensanctions_maritime_csv"
+url = "https://data.opensanctions.org/datasets/latest/maritime/maritime.csv"
+
+[[source]]
+id = "wikidata_sparql"
+url = "https://query.wikidata.org/sparql"
+
+[[source]]
+id = "eurlex_cellar_sparql"
+url = "https://publications.europa.eu/webapi/rdf/sparql"
+
+[[source]]
+id = "imf_portwatch"
+url = "https://portwatch.imf.org/"
+
+[[source]]
+id = "paris_mou_psc"
+url = "https://parismou.org/inspection-search/"
+
+[[source]]
+id = "tokyo_mou_apcis"
+url = "https://apcis.tmou.org/public/"
+
+[[source]]
+id = "equasis_fleet"
+url = "https://www.equasis.org/EquasisWeb/public/Moa?fs=HomePage&P_MOA=faq"
+
+[[source]]
+id = "imo_conventions"
+url = "https://www.imo.org/en/about/conventions/pages/listofconventions.aspx"
+
+[[source]]
+id = "unclos_1982"
+url = "https://www.un.org/depts/los/convention_agreements/texts/unclos/unclos_e.pdf"

@@ -1,0 +1,28 @@
+[[connector]]
+id = "oxigraph-living-atlas"
+transport = "stdio"
+command = "caelus-mcp-atlas"
+args = ["--mmap-dir", "./data/atlas_mmap", "--zero-copy-rkyv"]
+
+[[connector]]
+id = "opensanctions-gleif-delta"
+transport = "stdio"
+command = "caelus-mcp-compliance"
+scopes = ["vessel:read", "ubo:read", "sanctions:verify"]
+
+[[connector]]
+id = "equasis-iacs-pi-compliance"
+transport = "stdio"
+command = "caelus-mcp-class-pi"
+scopes = ["iacs:read", "blue_card:verify_feb20", "psc:read"]
+
+[[connector]]
+id = "port-erp-tos"
+transport = "tcp"
+endpoint = "127.0.0.1:9410"
+
+[[connector]]
+id = "nmea2000-ais-vhf"
+transport = "stdio"
+command = "caelus-mcp-nmea"
+endpoint = "127.0.0.1:10110"

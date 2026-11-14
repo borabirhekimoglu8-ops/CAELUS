@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="sym-01-leo-satellite" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="9" y="9" width="6" height="6" rx="1"/>
+    <path d="M2 10h5v4H2zM17 10h5v4h-5zM12 15v3M9 20a5 5 0 0 0 6 0"/>
+  </symbol>
+  <symbol id="sym-02-launch-vehicle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2c2.5 3.5 3.5 7 3.5 11.5L18 17H6l2.5-3.5C8.5 9 9.5 5.5 12 2z"/>
+    <circle cx="12" cy="9" r="1.2"/>
+    <path d="M10 17v4M14 17v4M12 17v5"/>
+  </symbol>
+  <symbol id="sym-03-airliner-adsb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2v19M12 8l9 5v2l-9-2.5L3 15v-2l9-5zM9 20l3-1.5L15 20"/>
+  </symbol>
+  <symbol id="sym-04-rotorcraft-sar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 6h16M12 6v4"/>
+    <rect x="7" y="10" width="9" height="6" rx="3"/>
+    <path d="M16 13h5v-2M6 19h12M9 16v3M14 16v3"/>
+  </symbol>
+  <symbol id="sym-05-vessel-container" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 16l2 4h14l2-4H3zM5 16v-5h14v5M8 11V7h4v4M12 11V7h4v4"/>
+  </symbol>
+  <symbol id="sym-06-vessel-ferry" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3l6 6v8l-6 4-6-4V9l6-6z"/>
+    <path d="M9 11h6M12 3v18"/>
+  </symbol>
+  <symbol id="sym-07-port-hub-crane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 20h16M7 20V5l12 3M7 9h10M15 8v7h3v-3"/>
+  </symbol>
+  <symbol id="sym-08-chokepoint-strait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 5c5 2 5 12 0 14M21 5c-5 2-5 12 0 14M12 4v16M9 9l3-3 3 3M9 15l3 3 3-3"/>
+  </symbol>
+  <symbol id="sym-09-rail-corridor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="3" width="12" height="14" rx="3"/>
+    <path d="M6 11h12M9 17l-2 4M15 17l2 4M8 20h8"/>
+    <circle cx="9.5" cy="14" r="1"/>
+    <circle cx="14.5" cy="14" r="1"/>
+  </symbol>
+  <symbol id="sym-10-transit-gtfs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5" y="4" width="14" height="13" rx="2"/>
+    <path d="M5 10h14M8 17v3M16 17v3M3 7v3M21 7v3"/>
+    <circle cx="8.5" cy="13.5" r="1"/>
+    <circle cx="15.5" cy="13.5" r="1"/>
+  </symbol>
+  <symbol id="sym-11-subsea-cable" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 14c3-4 6 4 9 0s6 4 11 0"/>
+    <circle cx="6" cy="12" r="2"/>
+    <circle cx="18" cy="12" r="2"/>
+    <path d="M2 19h20"/>
+  </symbol>
+  <symbol id="sym-12-power-grid-hvdc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 2L5 13h6l-1 9 9-11h-6l0-9z"/>
+  </symbol>
+  <symbol id="sym-13-hazard-seismic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 12h4l2-6 4 12 3-9 2 3h5"/>
+  </symbol>
+  <symbol id="sym-14-space-weather-gnss" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="4"/>
+    <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2.2 2.2M16.8 16.8L19 19M19 5l-2.2 2.2M7.2 16.8L5 19"/>
+  </symbol>
+  <symbol id="sym-15-deal-ma-ledger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2"/>
+    <path d="M8 9h8M8 13h5M8 17h3M15 14l2 2 3-3"/>
+  </symbol>
+  <symbol id="sym-16-sentinel-chronometer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="13" r="8"/>
+    <path d="M10 3h4M12 3v2M12 13l3-3M12 9v4"/>
+  </symbol>
+</svg>

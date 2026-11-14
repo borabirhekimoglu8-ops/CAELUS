@@ -1,0 +1,5 @@
+(declare-const mutation_requested Bool)
+(declare-const glass_wall_human_signed Bool)
+(declare-const z3_proof_valid Bool)
+(assert (=> mutation_requested (and glass_wall_human_signed z3_proof_valid)))
+(check-sat)
